@@ -171,6 +171,11 @@ class AxonEngine:
 
     def _on_fabric_state(self, state: dict):
         self._emit("neural_state", state)
+        # Push synapse count to header counter every tick
+        self._emit("synapse_count", {
+            "connections": state.get("total_connections", 0),
+            "neurons":     state.get("total_neurons", 0),
+        })
         # Bubble thoughts to UI
         thoughts = state.get("thoughts", [])
         if thoughts:

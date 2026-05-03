@@ -209,7 +209,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);
 
   <!-- COL 2: Neural Canvas (top) + Chat (bottom) -->
   <div class="panel" style="grid-row:1;grid-column:2;">
-    <div class="panel-title">? Neural Activity -- <span id="neuron-count">0</span> virtual neurons | <span id="conn-count">0</span> connections</div>
+    <div class="panel-title">? Neural Activity -- <span id="neuron-count">0</span> neurons | <span id="conn-count" style="color:#00ff88;transition:color 0.3s;">0</span> synaptic connections</div>
     <div class="panel-body" style="padding:0;background:#020205;position:relative;">
       <canvas id="neural-canvas"></canvas>
       <div id="region-legend" style="
@@ -576,8 +576,7 @@ function updateNeuralPanel(state) {
   // Counts
   document.getElementById('neuron-count').textContent =
     (state.total_neurons||0).toLocaleString();
-  document.getElementById('conn-count').textContent =
-    (state.total_connections||0).toLocaleString();
+  // conn-count updated via synapse_count event
 }
 
 // -- Chat ------------------------------------------------------
@@ -679,6 +678,18 @@ socket.on('thinking', d => {
 socket.on('response', d => {
   if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; }
   addMsg(d.text, 'axon');
+});
+
+socket.on('synapse_count', data => {
+  const el = document.getElementById('conn-count');
+  if (!el) return;
+  const prev = parseInt(el.textContent.replace(/,/g,'')) || 0;
+  const next  = data.connections || 0;
+  el.textContent = next.toLocaleString();
+  if (next > prev) {
+    el.style.color = '#00ffaa';
+    setTimeout(() => { el.style.color = '#00ff88'; }, 400);
+  }
 });
 
 socket.on('thought', d => {
