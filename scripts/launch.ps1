@@ -51,7 +51,27 @@ New-Item -ItemType Directory -Force -Path "data\memory" | Out-Null
 Write-Host "  [5/5] Launching AXON..." -ForegroundColor Green
 Write-Host ""
 Write-Host "  Open: http://localhost:7777" -ForegroundColor Cyan
+Write-Host "  Press Ctrl+C here to stop AXON" -ForegroundColor DarkGray
 Write-Host ""
 Start-Process "http://localhost:7777"
-& $venvPy -m axon.ui.app
+
+# Register Ctrl+C handler so it cleanly stops AXON
+[Console]::TreatControlCAsInput = $false
+
+$proc = Start-Process -FilePath $venvPy `
+    -ArgumentList "-m", "axon.ui.app" `
+    -NoNewWindow -PassThru
+
+try {
+    $proc.WaitForExit()
+} finally {
+    if (-not $proc.HasExited) {
+        Write-Host ""
+        Write-Host "  [AXON] Stopping..." -ForegroundColor Yellow
+        $proc.CloseMainWindow() | Out-Null
+        Start-Sleep -Milliseconds 800
+        if (-not $proc.HasExited) { $proc.Kill() }
+    }
+    Write-Host "  [AXON] Exited." -ForegroundColor Cyan
+}
 pause

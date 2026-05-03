@@ -136,5 +136,30 @@ def on_stop():
     emit("log", {"msg": "AXON stopped."})
 
 if __name__ == "__main__":
+    import signal, sys
+
+    def _shutdown(sig=None, frame=None):
+        print("\n  [AXON] Shutting down…")
+        global _engine
+        if _engine:
+            try:
+                _engine.stop()
+            except Exception:
+                pass
+            _engine = None
+        # Give threads a moment then hard-exit
+        import threading
+        t = threading.Thread(target=lambda: (__import__("time").sleep(1.5), os._exit(0)), daemon=True)
+        t.start()
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT,  _shutdown)
+    signal.signal(signal.SIGTERM, _shutdown)
+
     print("\n  AXON — Emerging Intelligence\n  Open: http://localhost:7777\n")
-    socketio.run(app, host="0.0.0.0", port=7777, debug=False)
+    print("  Press Ctrl+C to exit\n")
+    try:
+        socketio.run(app, host="0.0.0.0", port=7777, debug=False,
+                     allow_unsafe_werkzeug=True)
+    except KeyboardInterrupt:
+        _shutdown()
