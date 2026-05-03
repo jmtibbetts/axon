@@ -287,11 +287,12 @@ class NeuralFabric:
         self.emotions    = EmotionalCore(self.neuromod)
         self.personality = PersonalityMatrix(data_dir)
         self.thoughts    = ThoughtStream()
-        self._callbacks  = []
-        self._tick       = 0
-        self.running     = False
-        self._thread     = None
-        self._lock       = threading.Lock()
+        self._callbacks    = []
+        self._tick         = 0
+        self.running       = False
+        self._thread       = None
+        self._lock         = threading.Lock()
+        self._new_synapses = []
 
         # Build cluster registry
         self.clusters: Dict[str, NeuronCluster] = {}
