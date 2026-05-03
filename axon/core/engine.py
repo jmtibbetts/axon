@@ -55,14 +55,14 @@ class AxonEngine:
             on_frame=self._on_frame,
             on_face=self._on_face,
         )
-        self.auditory = AuditorySystem(on_speech=lambda text, conf: self._on_transcript(text), on_volume=lambda v: None)
+        self.auditory = AuditorySystem(on_speech=lambda text, conf: self._on_transcript(text), on_volume=lambda v: None, device_index=None)
 
         self._last_visual_ctx = {}
 
     # ── Start / Stop ──────────────────────────────────────────
 
     def start(self, enable_camera: bool = True, enable_mic: bool = True,
-              camera_index: int = -1):
+              camera_index: int = -1, mic_index: int = None):
         self.running = True
         self.fabric.start()
 
@@ -75,6 +75,8 @@ class AxonEngine:
 
         if enable_mic:
             try:
+                if mic_index is not None:
+                    self.auditory.device_idx = mic_index
                 self.auditory.start()
                 self._emit("log", {"msg": "🎤 Auditory system online"})
             except Exception as e:
@@ -84,6 +86,10 @@ class AxonEngine:
         self._emit("lm_status", status)
         self._emit("log", {"msg": f"🧠 Neural fabric online — {self.fabric.get_state_snapshot()['total_neurons']:,} virtual neurons"})
         self._emit("log", {"msg": f"🤖 LLM: {'LM Studio (' + status['lm_model'] + ')' if status['lm_studio'] else 'Claude'}"})
+        vs = self.voice.get_status()
+        self._emit("voice_speaking", {"speaking": False, "enabled": vs["enabled"], "playback": vs.get("playback","none")})
+        if not vs["enabled"]:
+            self._emit("log", {"msg": f"⚠ Voice output disabled — edge-tts or audio playback missing"})
 
         # Wake thought
         threading.Timer(2.0, self._wake_thought).start()
@@ -151,7 +157,17 @@ class AxonEngine:
                 self._emit("response",  {"text": response})
                 self._emit("thinking",  {"state": False})
                 # Voice output
+                self._emit("voice_speaking", {
+                    "speaking": True,
+                    "enabled":  self.voice.enabled,
+                    "playback": self.voice.get_status().get("playback","none")
+                })
                 self.voice.speak(response)
+                self._emit("voice_speaking", {
+                    "speaking": False,
+                    "enabled":  self.voice.enabled,
+                    "playback": self.voice.get_status().get("playback","none")
+                })
                 # Stimulate language output neurons
                 self.fabric.stimulate_for_input("language_out", 0.5)
                 self.fabric.neuromod.reward(0.15)

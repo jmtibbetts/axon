@@ -23,6 +23,38 @@ def index():
 def status():
     return jsonify(_engine.get_status() if _engine else {"running": False})
 
+@app.route("/api/audio_diag")
+def audio_diag():
+    """Returns full audio diagnostics: TTS engine, playback method, mic devices."""
+    from axon.sensory.auditory import AuditorySystem
+    from axon.cognition.voice_output import EDGE_TTS_OK, PLAYBACK
+    mics = []
+    try:
+        mics = AuditorySystem.list_devices()
+    except Exception as e:
+        pass
+    voice_status = {}
+    if _engine:
+        voice_status = _engine.voice.get_status()
+    return jsonify({
+        "edge_tts":    EDGE_TTS_OK,
+        "playback":    PLAYBACK or "none",
+        "mics":        mics,
+        "voice":       voice_status,
+        "mic_running": _engine.auditory.running if _engine else False,
+        "whisper_loaded": _engine.auditory._whisper is not None if _engine else False,
+    })
+
+@app.route("/api/mics")
+def list_mics():
+    from axon.sensory.auditory import AuditorySystem
+    try:
+        devs = AuditorySystem.list_devices()
+    except Exception as e:
+        devs = []
+        print(f"  [Mics] Error: {e}")
+    return jsonify({"mics": devs})
+
 @app.route("/api/cameras")
 def list_cameras():
     from axon.sensory.optic import OpticSystem
@@ -87,6 +119,7 @@ def on_start(config):
         enable_camera=config.get("camera",       True),
         enable_mic=config.get("mic",             True),
         camera_index=config.get("camera_index",  -1),
+        mic_index=config.get("mic_index", None),
     )
 
 @socketio.on("stop_engine")

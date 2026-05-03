@@ -161,6 +161,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);
   <div class="voice-row" style="border:none;margin:0;padding:0;">
     <div class="voice-indicator" id="voice-dot"></div>
     <span id="voice-label" style="font-size:8px;color:var(--muted)">voice</span>
+    <span id="voice-backend" style="font-size:7px;color:#4b5563;margin-left:4px;"></span>
   </div>
 </div>
 
@@ -190,6 +191,11 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);
           <label class="toggle"><input type="checkbox" id="cfg-cam"   checked/> Cam</label>
           <label class="toggle"><input type="checkbox" id="cfg-mic"   checked/> Mic</label>
         </div>
+        <label>Microphone <button onclick="scanMics()" style="font-size:7px;padding:1px 5px;background:#1e293b;border:1px solid #334155;color:#94a3b8;border-radius:3px;cursor:pointer;margin-left:4px;">Scan</button></label>
+        <select id="cfg-micidx" style="width:100%;background:#0f172a;color:#e2e8f0;border:1px solid #334155;padding:3px;font-size:9px;border-radius:3px;">
+          <option value="-1">Default mic</option>
+        </select>
+        <div id="mic-scan-status" style="font-size:7.5px;color:#64748b;margin-top:2px;"></div>
         <div class="settings-row" style="margin-top:6px;">
           <button class="ctrl-btn active" onclick="startAxon()">> ACTIVATE</button>
           <button class="ctrl-btn"        onclick="reprobe()" style="flex:.5">?</button>
@@ -623,6 +629,37 @@ function sysLog(msg, err=false) {
 }
 
 // -- Engine control --------------------------------------------
+function scanMics() {
+  const status = document.getElementById('mic-scan-status');
+  const sel    = document.getElementById('cfg-micidx');
+  status.textContent = 'Scanning...';
+  status.style.color = '#facc15';
+  fetch('/api/mics').then(r => r.json()).then(data => {
+    const mics = data.mics || [];
+    sel.innerHTML = '<option value="-1">Default mic</option>';
+    mics.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.index;
+      opt.textContent = m.label;
+      sel.appendChild(opt);
+    });
+    if (mics.length === 0) {
+      status.textContent = 'No input devices found.';
+      status.style.color = '#ef4444';
+    } else {
+      status.textContent = mics.length + ' mic(s) found. Pick one above.';
+      status.style.color = '#4ade80';
+      // Auto-select first device that isn't a loopback/virtual
+      const preferred = mics.find(m => !m.name.toLowerCase().includes('loopback') && !m.name.toLowerCase().includes('virtual'));
+      if (preferred) sel.value = preferred.index;
+      else sel.value = mics[0].index;
+    }
+  }).catch(e => {
+    status.textContent = 'Scan error: ' + e;
+    status.style.color = '#ef4444';
+  });
+}
+
 function scanCameras() {
   const status = document.getElementById('cam-scan-status');
   const sel    = document.getElementById('cfg-camidx');
@@ -666,6 +703,7 @@ function startAxon() {
     voice:        document.getElementById('cfg-voice').checked,
     camera:       document.getElementById('cfg-cam').checked,
     mic:          document.getElementById('cfg-mic').checked,
+    mic_index:    parseInt(document.getElementById('cfg-micidx').value),
     camera_index: parseInt(document.getElementById('cfg-camidx').value) || -1,
   });
   sysLog('Activating AXON...');
@@ -781,8 +819,9 @@ function renderProfile() {
 renderProfile();
 setInterval(renderProfile, 8000);
 
-// Auto-scan cameras on load
+// Auto-scan cameras and mics on load
 scanCameras();
+scanMics();
 
 socket.on('synapse_count', data => {
   const el = document.getElementById('conn-count');
@@ -808,12 +847,14 @@ socket.on('neural_state', d => {
 socket.on('voice_speaking', d => {
   const dot = document.getElementById('voice-dot');
   const lbl = document.getElementById('voice-label');
+  const bk  = document.getElementById('voice-backend');
   if (d.speaking) {
     dot.className = 'voice-indicator speaking';
     lbl.textContent = 'speaking';
   } else {
     dot.className = 'voice-indicator';
-    lbl.textContent = 'voice';
+    lbl.textContent = d.enabled ? 'voice ready' : 'voice off';
+    if (bk) bk.textContent = d.playback ? '[' + d.playback + ']' : '';
   }
 });
 

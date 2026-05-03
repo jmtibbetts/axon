@@ -31,6 +31,26 @@ class AuditorySystem:
         self.listening  = False
         self.volume_db  = -60.0
 
+    @staticmethod
+    def list_devices() -> list:
+        """Return all input audio devices available on this system."""
+        try:
+            import sounddevice as sd
+            devices = sd.query_devices()
+            results = []
+            for i, d in enumerate(devices):
+                if d["max_input_channels"] > 0:
+                    results.append({
+                        "index":    i,
+                        "name":     d["name"],
+                        "channels": d["max_input_channels"],
+                        "label":    f"[{i}] {d['name']} ({d['max_input_channels']}ch)",
+                    })
+            return results
+        except Exception as e:
+            print(f"  [Auditory] list_devices error: {e}")
+            return []
+
     def _load_whisper(self):
         import whisper
         print("  [Auditory] Loading Whisper tiny.en model...")
