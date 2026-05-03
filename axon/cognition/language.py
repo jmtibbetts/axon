@@ -42,40 +42,64 @@ Rules:
 
 
 class WebSearchTool:
-    """DuckDuckGo instant answer + Wikipedia — no API key needed."""
+    """Serper.dev (Google Search API) with Wikipedia fallback."""
 
-    @staticmethod
-    def ddg_search(query: str, max_results: int = 4) -> str:
-        """DuckDuckGo instant answers API."""
+    SERPER_URL = "https://google.serper.dev/search"
+
+    def __init__(self):
+        self.api_key = os.getenv("SERPER_API_KEY", "")
+
+    def serper_search(self, query: str, max_results: int = 5) -> str:
+        """Real Google results via Serper.dev — free tier: 2,500 queries/month."""
+        if not self.api_key:
+            return ""
         try:
-            q = urllib.parse.urlencode({"q": query, "format": "json", "no_html": 1, "skip_disambig": 1})
-            url = f"https://api.duckduckgo.com/?{q}"
-            req = urllib.request.Request(url, headers={"User-Agent": "AXON/1.0"})
-            with urllib.request.urlopen(req, timeout=5) as r:
+            payload = json.dumps({"q": query, "num": max_results}).encode()
+            req = urllib.request.Request(
+                self.SERPER_URL,
+                data=payload,
+                headers={
+                    "X-API-KEY": self.api_key,
+                    "Content-Type": "application/json",
+                    "User-Agent": "AXON/1.0",
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=6) as r:
                 data = json.loads(r.read().decode())
 
             parts = []
-            if data.get("AbstractText"):
-                parts.append(f"Summary: {data['AbstractText'][:400]}")
-            if data.get("Answer"):
-                parts.append(f"Answer: {data['Answer']}")
-            for item in data.get("RelatedTopics", [])[:max_results]:
-                if isinstance(item, dict) and item.get("Text"):
-                    parts.append(f"• {item['Text'][:200]}")
+            # Knowledge graph snippet (rich direct answer)
+            kg = data.get("knowledgeGraph", {})
+            if kg.get("description"):
+                parts.append(f"[Knowledge Graph] {kg['title']}: {kg['description'][:300]}")
+            # Answer box
+            ab = data.get("answerBox", {})
+            if ab.get("answer"):
+                parts.append(f"[Answer] {ab['answer']}")
+            elif ab.get("snippet"):
+                parts.append(f"[Answer] {ab['snippet'][:300]}")
+            # Organic results
+            for r in data.get("organic", [])[:max_results]:
+                title   = r.get("title", "")
+                snippet = r.get("snippet", "")
+                if snippet:
+                    parts.append(f"• {title}: {snippet[:200]}")
             return "\n".join(parts) if parts else ""
         except Exception as e:
-            return f"[DDG error: {e}]"
+            print(f"  [Search] Serper error: {e}")
+            return ""
 
     @staticmethod
     def wikipedia(topic: str) -> str:
-        """Wikipedia summary via REST API."""
+        """Wikipedia summary — always-available fallback."""
         try:
             slug = urllib.parse.quote(topic.replace(" ", "_"))
             url  = f"https://en.wikipedia.org/api/rest_v1/page/summary/{slug}"
             req  = urllib.request.Request(url, headers={"User-Agent": "AXON/1.0"})
             with urllib.request.urlopen(req, timeout=5) as r:
                 data = json.loads(r.read().decode())
-            return data.get("extract", "")[:500]
+            return data.get("extract", "")[:600]
         except:
             return ""
 
@@ -86,19 +110,20 @@ class WebSearchTool:
             "what is", "who is", "who was", "what are", "how does", "how do",
             "when did", "when was", "where is", "tell me about", "search",
             "look up", "find out", "latest", "current", "today", "news",
-            "price of", "weather", "define", "explain", "how to",
+            "price of", "weather", "define", "explain", "how to", "show me",
+            "what happened", "recent", "update", "score", "release",
         ]
         low = text.lower()
         return any(t in low for t in triggers)
 
     def search(self, query: str) -> str:
-        """Combined search: DDG first, then Wikipedia if thin."""
-        ddg = self.ddg_search(query)
-        if len(ddg) < 80:
+        """Serper (Google) first, Wikipedia fallback if thin/no key."""
+        result = self.serper_search(query)
+        if len(result) < 80:
             wiki = self.wikipedia(query)
             if wiki:
-                ddg = wiki + ("\n\n" + ddg if ddg else "")
-        return ddg or "No results found."
+                result = wiki + ("\n\n" + result if result else "")
+        return result or "No results found."
 
 
 class LanguageCore:
