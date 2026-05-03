@@ -88,6 +88,35 @@ class OpticSystem:
         print(f"  [Optic] Selected camera index: {chosen}")
         return chosen
 
+    @staticmethod
+    def list_cameras() -> list:
+        """Enumerate all available cameras. Returns list of dicts with index, resolution, label."""
+        import cv2
+        results = []
+        print("  [Optic] Enumerating cameras...")
+        for idx in range(10):
+            cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
+            if not cap.isOpened():
+                cap.release()
+                continue
+            ok, frame = cap.read()
+            if not ok or frame is None:
+                cap.release()
+                continue
+            w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            # Try to get backend name
+            backend = cap.getBackendName() if hasattr(cap, "getBackendName") else "DSHOW"
+            cap.release()
+            # Guess label
+            label = f"Camera {idx} ({w}x{h})"
+            if idx == 0:
+                label = f"Default Camera ({w}x{h})"
+            results.append({"index": idx, "width": w, "height": h, "label": label})
+            print(f"  [Optic]   [{idx}] {w}x{h}")
+        print(f"  [Optic] Found {len(results)} camera(s)")
+        return results
+
     def start(self, camera_index: int = None):
         if camera_index is not None:
             self.camera_idx = camera_index

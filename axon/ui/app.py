@@ -23,6 +23,16 @@ def index():
 def status():
     return jsonify(_engine.get_status() if _engine else {"running": False})
 
+@app.route("/api/cameras")
+def list_cameras():
+    from axon.sensory.optic import OpticSystem
+    try:
+        cams = OpticSystem.list_cameras()
+    except Exception as e:
+        cams = []
+        print(f"  [Cameras] Error: {e}")
+    return jsonify({"cameras": cams})
+
 @app.route("/api/user_profile")
 def user_profile():
     if _engine and hasattr(_engine.language, "user_model"):

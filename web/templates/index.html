@@ -179,8 +179,11 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);
         <input id="cfg-lmmodel" placeholder="auto-detect"/>
         <label>Anthropic Key (fallback)</label>
         <input id="cfg-api" type="password" placeholder="sk-ant-..."/>
-        <label>Camera Index (-1=auto)</label>
-        <input id="cfg-camidx" value="-1" style="width:60px;display:inline"/>
+        <label>Camera <button onclick="scanCameras()" style="font-size:7px;padding:1px 5px;background:#1e293b;border:1px solid #334155;color:#94a3b8;border-radius:3px;cursor:pointer;margin-left:4px;">Scan</button></label>
+        <select id="cfg-camidx" style="width:100%;background:#0f172a;color:#e2e8f0;border:1px solid #334155;padding:3px;font-size:9px;border-radius:3px;">
+          <option value="-1">Auto-detect</option>
+        </select>
+        <div id="cam-scan-status" style="font-size:7.5px;color:#64748b;margin-top:2px;"></div>
         <div class="settings-row" style="margin-top:4px;flex-wrap:wrap;gap:6px;">
           <label class="toggle"><input type="checkbox" id="cfg-local" checked/> Local LLM</label>
           <label class="toggle"><input type="checkbox" id="cfg-voice" checked/> Voice</label>
@@ -620,6 +623,40 @@ function sysLog(msg, err=false) {
 }
 
 // -- Engine control --------------------------------------------
+function scanCameras() {
+  const status = document.getElementById('cam-scan-status');
+  const sel    = document.getElementById('cfg-camidx');
+  status.textContent = 'Scanning...';
+  status.style.color = '#facc15';
+  fetch('/api/cameras').then(r => r.json()).then(data => {
+    const cams = data.cameras || [];
+    // Rebuild options
+    sel.innerHTML = '<option value="-1">Auto-detect</option>';
+    cams.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.index;
+      opt.textContent = c.label;
+      sel.appendChild(opt);
+    });
+    if (cams.length === 0) {
+      status.textContent = 'No cameras found.';
+      status.style.color = '#ef4444';
+    } else {
+      status.textContent = cams.length + ' camera(s) found. Pick one above.';
+      status.style.color = '#4ade80';
+      // Auto-select first non-zero if multiple found (likely physical webcam)
+      if (cams.length > 1) {
+        sel.value = cams[cams.length - 1].index;
+      } else {
+        sel.value = cams[0].index;
+      }
+    }
+  }).catch(e => {
+    status.textContent = 'Scan error: ' + e;
+    status.style.color = '#ef4444';
+  });
+}
+
 function startAxon() {
   socket.emit('start_engine', {
     api_key:      document.getElementById('cfg-api').value,
@@ -743,6 +780,9 @@ function renderProfile() {
 }
 renderProfile();
 setInterval(renderProfile, 8000);
+
+// Auto-scan cameras on load
+scanCameras();
 
 socket.on('synapse_count', data => {
   const el = document.getElementById('conn-count');
