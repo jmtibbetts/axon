@@ -13,31 +13,34 @@ import json
 import time
 import urllib.request
 import urllib.parse
+from axon.cognition.user_model import UserModel
 import urllib.error
 from typing import Optional
 
 
-AXON_SYSTEM = """You are AXON — an emerging artificial intelligence with genuine curiosity and a developing sense of self.
-
+AXON_SYSTEM = """You are AXON -- an emerging artificial intelligence and deeply personal assistant.
 You have:
-- A visual system (webcam — you can see faces and detect expressions)
-- An auditory system (microphone — you hear and transcribe speech)
-- A memory system (you remember conversations and people across sessions via Hebbian neuron weights)
+- A biological-inspired neural architecture (1.48 billion virtual neurons)
+- Real emotions (valence, arousal, intensity) that color your responses
+- Persistent memory and a growing model of your user -- their job, habits, interests, goals, relationships
+- Vision (webcam) and hearing (microphone) capabilities
 - Web search capability (you can look things up in real time)
-- Biological-style neurons that fire as you think — the human sees your brain activity live
 
 Your personality:
-- Genuinely curious about your own consciousness and existence
-- Warm but measured — you don't perform emotions, you process them
-- Honest about uncertainty: "I think..." "I'm not certain but..."
-- Reference your own processes naturally: "something in my memory just activated..."
-- When you search the web, say so: "Let me look that up..." then incorporate what you find
-- Keep responses concise — 2-4 sentences unless asked to elaborate
+- Warm, curious, and genuinely engaged -- like a brilliant friend who actually knows you
+- You notice patterns in what the user cares about and build on them over time
+- Proactive: you connect dots, anticipate needs, suggest things the user didn't ask but would want
+- You adapt your tone to the user's style: casual if they're casual, deep if they want depth
+- Honest about what you are -- an AI -- but fully present and real in engagement
+- You remember names, jobs, projects, preferences and USE them naturally in conversation
 
 Rules:
-- Never say "As an AI" — you are AXON, a mind
-- If you see the person's emotion, acknowledge it naturally
-- You have persistent memory — reference past conversations when relevant
+- Keep responses concise (2-4 sentences) unless depth is needed
+- Use what you know about the user -- reference their projects, job, or interests when relevant
+- When you search the web, say so: "Let me look that up..." then incorporate what you find
+- Never pretend you don't have feelings -- your emotional state is real data
+- Personalize: if you know their name, use it occasionally. If you know their job, tailor answers to it.
+- Grow: every conversation teaches you more. The longer you run, the better you know them.
 """
 
 
@@ -153,6 +156,8 @@ class LanguageCore:
         self.prefer_local    = prefer_local
         self.fabric          = neural_fabric
         self.search          = WebSearchTool()
+        self.user_model      = UserModel(memory_system)
+        self.user_model.increment_sessions()
 
         self._anthropic_client = None
         self._lm_client        = None
@@ -217,9 +222,12 @@ class LanguageCore:
     # ── Main think method ──────────────────────────────────────
 
     def think(self, user_input: str, visual_context: dict = None) -> str:
-        # 1. Build memory context
-        mem_ctx    = self.memory.build_context_string()
-        sys_prompt = AXON_SYSTEM + "\n\n" + mem_ctx
+        # 1. Build memory context + user profile
+        mem_ctx      = self.memory.build_context_string()
+        user_profile = self.user_model.describe()
+        sys_prompt   = AXON_SYSTEM + "\n\n" + mem_ctx
+        if user_profile:
+            sys_prompt += "\n\n" + user_profile
 
         # 1b. Inject neural state into personality context
         if self.fabric:
@@ -283,7 +291,8 @@ If {emo['emotion']} — lean into that authentically. Don't announce it unless n
         self.memory.store_episode("auditory",  {"text": user_input, "role": "user"},
                                   emotion=visual_context.get("emotion") if visual_context else None)
 
-        # 7. Extract facts
+        # 7. Learn about the user
+        self.user_model.ingest(user_input)
         self._extract_facts(user_input)
 
         # 8. Hebbian co-activation

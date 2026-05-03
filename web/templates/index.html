@@ -64,6 +64,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);
 
 /* -- NEURAL CANVAS -- */
 #neural-canvas{width:100%;height:100%;display:block;}
+#user-profile-panel .prow{display:flex;gap:4px;margin-bottom:1px;}
+#user-profile-panel .pk{color:#7c3aed;min-width:70px;font-size:7.5px;text-transform:uppercase;letter-spacing:.05em;padding-top:1px;}
+#user-profile-panel .pv{color:#ddd6fe;flex:1;word-break:break-word;}
 #region-legend .rl{display:flex;align-items:center;gap:5px;font-size:9px;color:rgba(255,255,255,0.75);letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;}
 #region-legend .rl .dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;box-shadow:0 0 4px currentColor;}
 
@@ -270,6 +273,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);
       <div class="neuro-section">
         <div class="neuro-title">Region Activity</div>
         <div id="region-bars"></div>
+      </div>
+
+      <!-- User Profile -->
+      <div class="neuro-section">
+        <div class="neuro-title" style="color:#a78bfa;">Know Me <span id="profile-turns" style="font-size:7px;color:#6b7280;margin-left:4px;"></span></div>
+        <div id="user-profile-panel" style="font-size:8.5px;color:#c4b5fd;line-height:1.7;"></div>
       </div>
 
     </div>
@@ -679,6 +688,61 @@ socket.on('response', d => {
   if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; }
   addMsg(d.text, 'axon');
 });
+
+// User profile polling
+function renderProfile() {
+  fetch('/api/user_profile').then(r => r.json()).then(p => {
+    const el = document.getElementById('user-profile-panel');
+    if (!el) return;
+    const turns = p.total_turns || 0;
+    const tEl = document.getElementById('profile-turns');
+    if (tEl) tEl.textContent = turns + ' turns';
+    const rows = [];
+    const id = p.identity || {};
+    if (id.name)     rows.push(['Name', id.name]);
+    if (id.age)      rows.push(['Age',  id.age]);
+    const w = p.work || {};
+    if (w.job_title) rows.push(['Job',  (w.job_title + (w.employer ? ' @ ' + w.employer : ''))]);
+    if (w.industry)  rows.push(['Industry', w.industry]);
+    const loc = p.location || {};
+    if (loc.city)    rows.push(['Location', loc.city]);
+    if (loc.timezone)rows.push(['Timezone', loc.timezone]);
+    const sched = [loc.wake_time && ('up ' + loc.wake_time), loc.sleep_time && ('sleep ' + loc.sleep_time)].filter(Boolean);
+    if (sched.length) rows.push(['Schedule', sched.join(', ')]);
+    const interests = (p.interests||[]).slice(0,5);
+    if (interests.length) rows.push(['Interests', interests.join(', ')]);
+    const skills = (p.skills||[]).slice(0,4);
+    if (skills.length) rows.push(['Skills', skills.join(', ')]);
+    const projects = (p.projects||[]).slice(0,3);
+    if (projects.length) rows.push(['Projects', projects.join(', ')]);
+    const goals = (p.goals||[]).slice(0,3);
+    if (goals.length) rows.push(['Goals', goals.join(', ')]);
+    const relations = (p.relations||[]).slice(0,4);
+    if (relations.length) rows.push(['People', relations.join(', ')]);
+    // Top topics
+    const topics = p.topics || {};
+    const topTopics = Object.entries(topics).sort((a,b)=>b[1]-a[1]).slice(0,5).map(t=>t[0]);
+    if (topTopics.length) rows.push(['Talks about', topTopics.join(', ')]);
+    const style = p.style || {};
+    const styleParts = [style.message_length, style.formality].filter(Boolean);
+    if (styleParts.length) rows.push(['Style', styleParts.join(', ')]);
+    const peak = (p.peak_hours||[]).slice(0,3).map(h => {
+      const ampm = h < 12 ? 'am' : 'pm';
+      return (h===0?12:h>12?h-12:h) + ampm;
+    });
+    if (peak.length) rows.push(['Active', peak.join(', ')]);
+
+    if (rows.length === 0) {
+      el.innerHTML = '<span style="color:#4b5563;font-size:8px;">Learning... talk to me!</span>';
+    } else {
+      el.innerHTML = rows.map(([k,v]) =>
+        `<div class="prow"><span class="pk">${k}</span><span class="pv">${v}</span></div>`
+      ).join('');
+    }
+  }).catch(()=>{});
+}
+renderProfile();
+setInterval(renderProfile, 8000);
 
 socket.on('synapse_count', data => {
   const el = document.getElementById('conn-count');

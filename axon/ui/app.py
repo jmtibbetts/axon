@@ -23,6 +23,12 @@ def index():
 def status():
     return jsonify(_engine.get_status() if _engine else {"running": False})
 
+@app.route("/api/user_profile")
+def user_profile():
+    if _engine and hasattr(_engine.language, "user_model"):
+        return jsonify(_engine.language.user_model.get_profile())
+    return jsonify({})
+
 @socketio.on("connect")
 def on_connect():
     emit("log", {"msg": "Connected to AXON."})
