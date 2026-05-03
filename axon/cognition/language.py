@@ -193,12 +193,27 @@ class LanguageCore:
     def _call_lm_studio(self, messages: list, system: str) -> str:
         """Call LM Studio's OpenAI-compatible /v1/chat/completions."""
         model = self.lm_studio_model or self._detected_model or "local-model"
+
+        # Sanitise messages — LM Studio requires strict user/assistant alternation.
+        # Drop any consecutive same-role messages (keep the last one of the pair).
+        clean = []
+        for msg in messages:
+            if clean and clean[-1]["role"] == msg["role"]:
+                clean[-1] = msg   # overwrite — keep latest of duplicate role
+            else:
+                clean.append(dict(msg))
+        # Must start with user
+        while clean and clean[0]["role"] != "user":
+            clean.pop(0)
+        if not clean:
+            clean = [{"role": "user", "content": "(no input)"}]
+
         payload = json.dumps({
-            "model": model,
-            "messages": [{"role": "system", "content": system}] + messages,
-            "max_tokens": 400,
+            "model":       model,
+            "messages":    [{"role": "system", "content": system}] + clean,
+            "max_tokens":  400,
             "temperature": 0.75,
-            "stream": False,
+            "stream":      False,
         }).encode()
         req = urllib.request.Request(
             f"{self.lm_studio_url}/v1/chat/completions",
@@ -206,7 +221,7 @@ class LanguageCore:
             headers={"Content-Type": "application/json", "User-Agent": "AXON/1.0"},
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=30) as r:
+        with urllib.request.urlopen(req, timeout=45) as r:
             data = json.loads(r.read().decode())
         return data["choices"][0]["message"]["content"].strip()
 
@@ -266,30 +281,54 @@ If {emo['emotion']} — lean into that authentically. Don't announce it unless n
             except Exception as e:
                 print(f"  [Language] Search error: {e}")
 
-        # 4. Add turn to working memory
+        # 4. Add user turn to working memory, then trim to last 3 full turns (6 msgs)
+        #    IMPORTANT: trim AFTER appending so we never orphan a user message at pos[0]
         self._history.append({"role": "user", "content": user_input})
-        if len(self._history) > 6:
-            self._history = self._history[-6:]   # 3 turns — prevents topic looping
 
-        # 5. Call LLM
+        # 5. Call LLM — clamp system prompt size to avoid 400s on long context
+        MAX_SYS_CHARS = 2000
+        if len(sys_prompt) > MAX_SYS_CHARS:
+            sys_prompt = sys_prompt[:MAX_SYS_CHARS] + "\n[...context trimmed]"
+
+        text = ""
         try:
             use_local = self.prefer_local and self._lm_studio_available()
             if use_local:
                 try:
                     text = self._call_lm_studio(self._history, sys_prompt)
+                except urllib.error.HTTPError as e:
+                    body = ""
+                    try:
+                        body = e.read().decode()[:200]
+                    except Exception:
+                        pass
+                    print(f"  [Language] LM Studio HTTP {e.code} ({body}), falling back to Claude.")
+                    if self.api_key:
+                        text = self._call_claude(self._history, sys_prompt)
+                    else:
+                        text = "LM Studio returned an error and no Claude key is configured."
                 except Exception as e:
                     print(f"  [Language] LM Studio error ({e}), falling back to Claude.")
-                    text = self._call_claude(self._history, sys_prompt)
+                    if self.api_key:
+                        text = self._call_claude(self._history, sys_prompt)
+                    else:
+                        text = "LM Studio error and no fallback configured."
             elif self.api_key:
                 text = self._call_claude(self._history, sys_prompt)
             else:
-                text = "My language core isn't connected. Please provide an API key or start LM Studio."
+                text = "My language core isn't connected — please start LM Studio or provide an API key."
 
         except Exception as e:
             text = f"Processing disrupted: {str(e)[:80]}"
 
+        if not text:
+            text = "..."
+
         # 6. Store ONLY user input to episodic memory (never Axon's output)
+        #    Trim history AFTER appending assistant reply so pairs stay intact
         self._history.append({"role": "assistant", "content": text})
+        if len(self._history) > 8:
+            self._history = self._history[-8:]   # keep last 4 full turns (user+assistant pairs)
         detected_topics = self._extract_topics(user_input)
         emotion_tag = visual_context.get("emotion") if visual_context else None
         # Importance: higher if emotionally charged or question-bearing
