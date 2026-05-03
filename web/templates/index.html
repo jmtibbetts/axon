@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>AXON — Emerging Intelligence</title>
+<title>AXON -- Emerging Intelligence</title>
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <style>
 :root{
@@ -16,7 +16,7 @@
 body{background:var(--bg);color:var(--text);font-family:var(--font);
      font-size:11px;height:100vh;display:flex;flex-direction:column;overflow:hidden;}
 
-/* ── TOP BAR ── */
+/* -- TOP BAR -- */
 .topbar{display:flex;align-items:center;padding:6px 12px;
         background:var(--panel);border-bottom:1px solid var(--border);
         gap:12px;flex-shrink:0;}
@@ -32,12 +32,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);
              overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
              padding:0 8px;}
 
-/* ── MAIN GRID ── */
+/* -- MAIN GRID -- */
 .grid{display:grid;grid-template-columns:220px 1fr 260px;
       grid-template-rows:1fr 160px;gap:6px;padding:6px;
       flex:1;overflow:hidden;}
 
-/* ── PANELS ── */
+/* -- PANELS -- */
 .panel{background:var(--panel);border:1px solid var(--border);
        border-radius:6px;overflow:hidden;display:flex;flex-direction:column;}
 .panel-title{padding:5px 8px;font-size:9px;color:var(--muted);
@@ -45,7 +45,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);
              text-transform:uppercase;flex-shrink:0;}
 .panel-body{flex:1;overflow:auto;padding:8px;}
 
-/* ── SETTINGS ── */
+/* -- SETTINGS -- */
 .settings label{display:block;color:var(--muted);font-size:8px;
                 margin:3px 0 1px;letter-spacing:1px;text-transform:uppercase;}
 .settings input{width:100%;background:#060610;border:1px solid var(--border);
@@ -62,10 +62,10 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);
 .ctrl-btn.danger:hover{border-color:var(--red);color:var(--red);}
 .ctrl-btn.active{border-color:var(--green);color:var(--green);}
 
-/* ── NEURAL CANVAS ── */
+/* -- NEURAL CANVAS -- */
 #neural-canvas{width:100%;height:100%;display:block;}
 
-/* ── CHAT ── */
+/* -- CHAT -- */
 .chat-area{display:flex;flex-direction:column;height:100%;}
 .chat-messages{flex:1;overflow-y:auto;padding:8px;display:flex;
                flex-direction:column;gap:6px;}
@@ -85,7 +85,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);
                    color:var(--accent);font-family:var(--font);cursor:pointer;
                    border-radius:3px;font-size:10px;}
 
-/* ── NEURAL STATE PANEL ── */
+/* -- NEURAL STATE PANEL -- */
 .neuro-section{margin-bottom:8px;}
 .neuro-title{font-size:8px;color:var(--muted);letter-spacing:2px;
              text-transform:uppercase;margin-bottom:4px;}
@@ -110,16 +110,16 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);
 .cluster-bar .bar-fill{background:var(--accent);}
 .cluster-bar.hot .bar-fill{background:var(--red);}
 
-/* ── VISION ── */
+/* -- VISION -- */
 #vision-canvas{width:100%;height:100%;display:block;image-rendering:pixelated;}
 
-/* ── SYSTEM LOG ── */
+/* -- SYSTEM LOG -- */
 .log-area{font-size:8px;color:var(--muted);overflow-y:auto;
           padding:4px 8px;height:100%;}
 .log-entry{padding:1px 0;border-bottom:1px solid #0a0a0a;}
 .log-entry.err{color:var(--red);}
 
-/* ── EMOTION RING ── */
+/* -- EMOTION RING -- */
 .emotion-ring{display:flex;flex-direction:column;align-items:center;
               gap:4px;padding:4px 0;}
 .e-circle{width:60px;height:60px;border-radius:50%;border:2px solid var(--purple);
@@ -129,7 +129,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);
 .e-label{font-size:9px;color:var(--purple);}
 .e-coords{font-size:7px;color:var(--muted);}
 
-/* ── VOICE ── */
+/* -- VOICE -- */
 .voice-row{display:flex;align-items:center;gap:6px;padding:4px 0;
            border-top:1px solid var(--border);margin-top:4px;}
 .voice-indicator{width:8px;height:8px;border-radius:50%;background:var(--muted);}
@@ -137,7 +137,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);
                            animation:pulse .5s infinite alternate;}
 @keyframes pulse{from{opacity:.5}to{opacity:1}}
 
-/* ── SCROLLBAR ── */
+/* -- SCROLLBAR -- */
 ::-webkit-scrollbar{width:3px;height:3px;}
 ::-webkit-scrollbar-track{background:transparent;}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
@@ -151,7 +151,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);
   <div class="status-pill off" id="pill-engine">OFFLINE</div>
   <div class="status-pill off" id="pill-cam">CAM</div>
   <div class="status-pill off" id="pill-mic">MIC</div>
-  <div id="emotion-pill">···</div>
+  <div id="emotion-pill">...</div>
   <div id="thought-bar">awaiting consciousness...</div>
   <div class="voice-row" style="border:none;margin:0;padding:0;">
     <div class="voice-indicator" id="voice-dot"></div>
@@ -166,7 +166,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);
   <div style="display:flex;flex-direction:column;gap:6px;grid-row:1/3;">
 
     <div class="panel" style="flex:0 0 auto;">
-      <div class="panel-title">⚙ Configuration</div>
+      <div class="panel-title">? Configuration</div>
       <div class="panel-body settings" style="padding:6px;">
         <label>LM Studio URL</label>
         <input id="cfg-lmurl" value="http://localhost:1234"/>
@@ -183,23 +183,23 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);
           <label class="toggle"><input type="checkbox" id="cfg-mic"   checked/> Mic</label>
         </div>
         <div class="settings-row" style="margin-top:6px;">
-          <button class="ctrl-btn active" onclick="startAxon()">▶ ACTIVATE</button>
-          <button class="ctrl-btn"        onclick="reprobe()" style="flex:.5">⟳</button>
-          <button class="ctrl-btn danger" onclick="stopAxon()">■</button>
+          <button class="ctrl-btn active" onclick="startAxon()">> ACTIVATE</button>
+          <button class="ctrl-btn"        onclick="reprobe()" style="flex:.5">?</button>
+          <button class="ctrl-btn danger" onclick="stopAxon()">?</button>
         </div>
         <div id="llm-status" style="font-size:8px;color:var(--muted);margin-top:4px;"></div>
       </div>
     </div>
 
     <div class="panel" style="flex:1;min-height:0;">
-      <div class="panel-title">👁 Optic Feed</div>
+      <div class="panel-title">? Optic Feed</div>
       <div class="panel-body" style="padding:0;background:#000;">
         <canvas id="vision-canvas"></canvas>
       </div>
     </div>
 
     <div class="panel" style="flex:0 0 100px;">
-      <div class="panel-title">📋 System Log</div>
+      <div class="panel-title">? System Log</div>
       <div class="log-area" id="sys-log"></div>
     </div>
 
@@ -207,14 +207,14 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);
 
   <!-- COL 2: Neural Canvas (top) + Chat (bottom) -->
   <div class="panel" style="grid-row:1;grid-column:2;">
-    <div class="panel-title">🧠 Neural Activity — <span id="neuron-count">0</span> virtual neurons | <span id="conn-count">0</span> connections</div>
+    <div class="panel-title">? Neural Activity -- <span id="neuron-count">0</span> virtual neurons | <span id="conn-count">0</span> connections</div>
     <div class="panel-body" style="padding:0;background:#020205;">
       <canvas id="neural-canvas"></canvas>
     </div>
   </div>
 
   <div class="panel" style="grid-row:2;grid-column:2;">
-    <div class="panel-title">💬 Consciousness Interface</div>
+    <div class="panel-title">? Consciousness Interface</div>
     <div class="chat-area">
       <div class="chat-messages" id="chat-messages"></div>
       <div class="chat-input">
@@ -226,7 +226,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);
 
   <!-- COL 3: Neural State (spans both rows) -->
   <div class="panel" style="grid-row:1/3;grid-column:3;overflow:auto;">
-    <div class="panel-title">⚡ Neural State</div>
+    <div class="panel-title">? Neural State</div>
     <div class="panel-body" id="neural-state-panel">
 
       <!-- Emotion -->
@@ -234,7 +234,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);
         <div class="neuro-title">Emotional State</div>
         <div class="emotion-ring">
           <div class="e-circle" id="e-circle">
-            <span id="e-name">···</span>
+            <span id="e-name">...</span>
           </div>
           <div class="e-label" id="e-label">neutral</div>
           <div class="e-coords" id="e-coords">v:0 a:0 i:0</div>
@@ -273,71 +273,143 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);
 <script>
 const socket = io();
 
-// ── Neural canvas ─────────────────────────────────────────────
+// -- Neural canvas ---------------------------------------------
 const nCanvas = document.getElementById('neural-canvas');
 const nCtx    = nCanvas.getContext('2d');
 let neuronNodes = [];
 let neuralState = null;
+let axonFrame = 0;
+
+const REGION_DEFS = {
+  prefrontal_cortex:    {x:.18,y:.14,color:'#00d4ff', spread:.09, count:320},
+  temporal_lobe:        {x:.35,y:.28,color:'#a855f7', spread:.08, count:280},
+  limbic_system:        {x:.50,y:.52,color:'#ff6b35', spread:.07, count:240},
+  parietal_lobe:        {x:.68,y:.18,color:'#00ff88', spread:.08, count:240},
+  occipital_lobe:       {x:.82,y:.32,color:'#ffcc00', spread:.07, count:220},
+  cingulate_cortex:     {x:.50,y:.32,color:'#ff006e', spread:.06, count:180},
+  basal_ganglia:        {x:.40,y:.62,color:'#ff4060', spread:.06, count:180},
+  cerebellum:           {x:.72,y:.68,color:'#7ec8e3', spread:.09, count:260},
+  insula:               {x:.28,y:.58,color:'#c084fc', spread:.06, count:160},
+  default_mode_network: {x:.50,y:.74,color:'#4ade80', spread:.09, count:240},
+  association_cortex:   {x:.64,y:.46,color:'#fb923c', spread:.07, count:200},
+  thalamus:             {x:.50,y:.50,color:'#f9a8d4', spread:.04, count:120},
+};
 
 function initNeurons() {
-  const W = nCanvas.offsetWidth, H = nCanvas.offsetHeight;
-  nCanvas.width  = W; nCanvas.height = H;
+  const W = nCanvas.offsetWidth || 600;
+  const H = nCanvas.offsetHeight || 400;
+  nCanvas.width  = W;
+  nCanvas.height = H;
   neuronNodes = [];
-  const REGIONS = {
-    prefrontal_cortex:    {x:.15,y:.15,color:'#00d4ff'},
-    temporal_lobe:        {x:.35,y:.25,color:'#a855f7'},
-    limbic_system:        {x:.50,y:.50,color:'#ff6b35'},
-    parietal_lobe:        {x:.65,y:.20,color:'#00ff88'},
-    occipital_lobe:       {x:.80,y:.30,color:'#ffcc00'},
-    cingulate_cortex:     {x:.50,y:.35,color:'#ff006e'},
-    basal_ganglia:        {x:.40,y:.60,color:'#ff4060'},
-    cerebellum:           {x:.70,y:.65,color:'#7ec8e3'},
-    insula:               {x:.30,y:.55,color:'#c084fc'},
-    default_mode_network: {x:.50,y:.70,color:'#4ade80'},
-    association_cortex:   {x:.65,y:.45,color:'#fb923c'},
-    thalamus:             {x:.50,y:.55,color:'#f9a8d4'},
-  };
-  for (const [region, props] of Object.entries(REGIONS)) {
-    const cx = props.x * W, cy = props.y * H;
-    for (let i = 0; i < 12; i++) {
-      const angle = (i/12)*Math.PI*2;
-      const r = 20 + Math.random()*25;
+
+  for (const [region, props] of Object.entries(REGION_DEFS)) {
+    const cx = props.x * W;
+    const cy = props.y * H;
+    const sx = props.spread * W;
+    const sy = props.spread * H * 0.7;
+    for (let i = 0; i < props.count; i++) {
+      // Gaussian distribution within cluster
+      const angle = Math.random() * Math.PI * 2;
+      const r     = Math.abs(gaussRand()) * Math.sqrt(sx*sx + sy*sy) * 0.5;
       neuronNodes.push({
-        x: cx + Math.cos(angle)*r + (Math.random()-.5)*15,
-        y: cy + Math.sin(angle)*r + (Math.random()-.5)*15,
-        region, color: props.color, activation: 0,
-        baseR: 2 + Math.random()*2,
+        x:          cx + Math.cos(angle) * r * (sx/Math.sqrt(sx*sx+sy*sy)*2),
+        y:          cy + Math.sin(angle) * r * (sy/Math.sqrt(sx*sx+sy*sy)*2),
+        region,
+        color:      props.color,
+        activation: Math.random() * 0.08,
+        baseR:      0.8 + Math.random() * 1.2,
+        phase:      Math.random() * Math.PI * 2,
+        speed:      0.02 + Math.random() * 0.04,
+        // Pre-compute nearby indices for connection drawing (done after all nodes created)
+        neighbors:  [],
       });
     }
   }
+
+  // Build neighbor lists for connections (within same region, nearby)
+  const BY_REGION = {};
+  neuronNodes.forEach((n,i) => {
+    if (!BY_REGION[n.region]) BY_REGION[n.region] = [];
+    BY_REGION[n.region].push(i);
+  });
+  // Each neuron gets up to 4 random same-region neighbors
+  neuronNodes.forEach((n,i) => {
+    const pool = BY_REGION[n.region].filter(j => j !== i);
+    n.neighbors = pool.sort(() => Math.random()-.5).slice(0,4);
+  });
+}
+
+function gaussRand() {
+  let u=0,v=0;
+  while(u===0) u=Math.random();
+  while(v===0) v=Math.random();
+  return Math.sqrt(-2*Math.log(u)) * Math.cos(2*Math.PI*v);
 }
 
 function drawNeural() {
+  axonFrame++;
   const W = nCanvas.width, H = nCanvas.height;
-  nCtx.fillStyle = 'rgba(2,2,5,0.25)';
+
+  // Fade trail
+  nCtx.fillStyle = 'rgba(2,2,5,0.18)';
   nCtx.fillRect(0,0,W,H);
 
-  if (!neuralState) { requestAnimationFrame(drawNeural); return; }
+  const regionMap = (neuralState && neuralState.regions) ? neuralState.regions : {};
 
-  const actMap = {};
-  const regionMap = neuralState.regions || {};
+  // Update activations
   neuronNodes.forEach(n => {
-    const a = regionMap[n.region] || 0;
-    n.activation += (a - n.activation) * 0.08;
-    n.activation  = Math.max(0, Math.min(1, n.activation + (Math.random()-.5)*0.01));
+    const target = (regionMap[n.region] || 0);
+    // Drift toward region activation with noise
+    n.activation += (target - n.activation) * 0.06;
+    n.phase      += n.speed;
+    // Spontaneous flicker proportional to region activity
+    const flicker = Math.sin(n.phase) * 0.5 + 0.5;
+    n.activation  = Math.max(0, Math.min(1, n.activation + flicker * target * 0.04 - 0.002));
   });
 
-  // Draw connections between active neurons
-  for (let i = 0; i < neuronNodes.length; i++) {
-    for (let j = i+1; j < neuronNodes.length; j++) {
-      const a = neuronNodes[i], b = neuronNodes[j];
-      if (a.region === b.region && (a.activation + b.activation) > 0.3) {
-        const alpha = (a.activation * b.activation * 0.4).toFixed(3);
+  // Draw connections (only when active enough, batched)
+  nCtx.lineWidth = 0.4;
+  neuronNodes.forEach(n => {
+    if (n.activation < 0.12) return;
+    n.neighbors.forEach(j => {
+      const m = neuronNodes[j];
+      const coAct = n.activation * m.activation;
+      if (coAct < 0.02) return;
+      const alpha = Math.min(255, Math.round(coAct * 180));
+      nCtx.beginPath();
+      nCtx.moveTo(n.x, n.y);
+      nCtx.lineTo(m.x, m.y);
+      nCtx.strokeStyle = n.color + alpha.toString(16).padStart(2,'0');
+      nCtx.stroke();
+    });
+  });
+
+  // Draw cross-region connections from top active clusters
+  if (neuralState && neuralState.top_clusters && axonFrame % 3 === 0) {
+    const topNames = neuralState.top_clusters.slice(0,6).map(c=>c.name.replace(/_/g,' '));
+    // Find region centroids
+    const centroids = {};
+    Object.entries(REGION_DEFS).forEach(([r,p])=>{
+      centroids[r] = {x: p.x*W, y: p.y*H, color: p.color};
+    });
+    // Draw arcs between high-activity regions
+    const activeRegions = Object.entries(regionMap)
+      .filter(([,v])=>v>0.25)
+      .sort(([,a],[,b])=>b-a)
+      .slice(0,5);
+    for (let i=0;i<activeRegions.length;i++) {
+      for (let j=i+1;j<activeRegions.length;j++) {
+        const [r1]=activeRegions[i], [r2]=activeRegions[j];
+        if (!centroids[r1]||!centroids[r2]) continue;
+        const c1=centroids[r1], c2=centroids[r2];
+        const coact = regionMap[r1]*regionMap[r2];
+        const alpha = Math.round(coact*80).toString(16).padStart(2,'0');
+        const mx = (c1.x+c2.x)/2, my = (c1.y+c2.y)/2 - 30;
         nCtx.beginPath();
-        nCtx.moveTo(a.x, a.y);
-        nCtx.lineTo(b.x, b.y);
-        nCtx.strokeStyle = a.color + Math.round(alpha*255).toString(16).padStart(2,'0');
-        nCtx.lineWidth = 0.5;
+        nCtx.moveTo(c1.x,c1.y);
+        nCtx.quadraticCurveTo(mx,my,c2.x,c2.y);
+        nCtx.strokeStyle = c1.color + alpha;
+        nCtx.lineWidth = 0.8;
         nCtx.stroke();
       }
     }
@@ -345,21 +417,31 @@ function drawNeural() {
 
   // Draw neurons
   neuronNodes.forEach(n => {
-    const r   = n.baseR + n.activation * 5;
-    const grd = nCtx.createRadialGradient(n.x,n.y,0, n.x,n.y,r*2.5);
-    const alpha = Math.round(40 + n.activation*215).toString(16).padStart(2,'0');
-    grd.addColorStop(0, n.color + 'ff');
-    grd.addColorStop(1, n.color + '00');
+    if (n.activation < 0.03) return;
+    const r = n.baseR + n.activation * 4;
+    // Core dot
     nCtx.beginPath();
     nCtx.arc(n.x, n.y, r, 0, Math.PI*2);
-    nCtx.fillStyle = grd;
+    const alpha = Math.round(60 + n.activation * 195).toString(16).padStart(2,'0');
+    nCtx.fillStyle = n.color + alpha;
     nCtx.fill();
-    // Spike ring
-    if (n.activation > 0.5) {
+    // Glow halo for highly active neurons
+    if (n.activation > 0.45) {
+      const grd = nCtx.createRadialGradient(n.x,n.y,r,n.x,n.y,r*4);
+      grd.addColorStop(0, n.color+'55');
+      grd.addColorStop(1, n.color+'00');
       nCtx.beginPath();
-      nCtx.arc(n.x, n.y, r + n.activation*8, 0, Math.PI*2);
-      nCtx.strokeStyle = n.color + '44';
-      nCtx.lineWidth = 1;
+      nCtx.arc(n.x,n.y,r*4,0,Math.PI*2);
+      nCtx.fillStyle = grd;
+      nCtx.fill();
+    }
+    // Spike ring burst
+    if (n.activation > 0.7) {
+      const ring = r + (axonFrame % 20) * 0.4;
+      nCtx.beginPath();
+      nCtx.arc(n.x,n.y,ring,0,Math.PI*2);
+      nCtx.strokeStyle = n.color + '33';
+      nCtx.lineWidth = 0.6;
       nCtx.stroke();
     }
   });
@@ -367,7 +449,7 @@ function drawNeural() {
   requestAnimationFrame(drawNeural);
 }
 
-// ── Vision canvas ─────────────────────────────────────────────
+// -- Vision canvas ---------------------------------------------
 const vCanvas = document.getElementById('vision-canvas');
 const vCtx    = vCanvas.getContext('2d');
 function drawVision(pixels, edges, W=64, H=48) {
@@ -387,7 +469,7 @@ function drawVision(pixels, edges, W=64, H=48) {
   vCtx.putImageData(img, 0, 0);
 }
 
-// ── Bar helpers ───────────────────────────────────────────────
+// -- Bar helpers -----------------------------------------------
 function makeBar(label, val, cls='', color='') {
   const pct = Math.round(val*100);
   const fill = color ? `background:${color}` : '';
@@ -469,7 +551,7 @@ function updateNeuralPanel(state) {
     (state.total_connections||0).toLocaleString();
 }
 
-// ── Chat ──────────────────────────────────────────────────────
+// -- Chat ------------------------------------------------------
 function sendChat() {
   const inp = document.getElementById('chat-in');
   const txt = inp.value.trim();
@@ -489,7 +571,7 @@ function addMsg(text, role, thinking=false) {
 }
 let thinkingEl = null;
 
-// ── System log ────────────────────────────────────────────────
+// -- System log ------------------------------------------------
 function sysLog(msg, err=false) {
   const log = document.getElementById('sys-log');
   const d   = document.createElement('div');
@@ -500,7 +582,7 @@ function sysLog(msg, err=false) {
   if (log.children.length > 200) log.removeChild(log.firstChild);
 }
 
-// ── Engine control ────────────────────────────────────────────
+// -- Engine control --------------------------------------------
 function startAxon() {
   socket.emit('start_engine', {
     api_key:      document.getElementById('cfg-api').value,
@@ -517,17 +599,17 @@ function startAxon() {
 function stopAxon()  { socket.emit('stop_engine'); }
 function reprobe()   { socket.emit('reprobe_lm'); sysLog('Re-probing LM Studio...'); }
 
-// ── Socket events ─────────────────────────────────────────────
+// -- Socket events ---------------------------------------------
 socket.on('connect', () => sysLog('Socket connected.'));
 
 socket.on('lm_status', d => {
   const s = document.getElementById('llm-status');
   if (d.lm_studio) {
     s.style.color = 'var(--green)';
-    s.textContent = '⬡ LM Studio: ' + d.lm_model;
+    s.textContent = '? LM Studio: ' + d.lm_model;
   } else {
     s.style.color = 'var(--muted)';
-    s.textContent = d.claude ? '◇ Claude fallback' : '⚠ No LLM';
+    s.textContent = d.claude ? '? Claude fallback' : '? No LLM';
   }
 });
 
@@ -552,7 +634,7 @@ socket.on('frame', d => {
 });
 
 socket.on('transcript', d => {
-  sysLog('🎤 ' + d.text);
+  sysLog('? ' + d.text);
   addMsg(d.text, 'user');
 });
 
@@ -591,7 +673,7 @@ socket.on('voice_speaking', d => {
   }
 });
 
-// ── Init ──────────────────────────────────────────────────────
+// -- Init ------------------------------------------------------
 window.addEventListener('resize', () => {
   initNeurons();
   const vc = document.getElementById('vision-canvas');
