@@ -761,7 +761,12 @@ socket.on('thinking', d => {
 
 socket.on('response', d => {
   if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; }
-  addMsg(d.text, 'axon');
+  if (d && d.text) {
+    addMsg(d.text, 'axon');
+    sysLog('? response received (' + d.text.length + ' chars)');
+  } else {
+    sysLog('? response event received but no text', true);
+  }
 });
 
 // User profile polling

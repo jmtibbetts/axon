@@ -175,7 +175,10 @@ class AxonEngine:
                 self._emit("log",      {"msg": f"⚠ Think error: {e}"})
                 self._emit("thinking", {"state": False})
 
-        threading.Thread(target=_run, daemon=True).start()
+        if self.socketio:
+            self.socketio.start_background_task(_run)
+        else:
+            threading.Thread(target=_run, daemon=True).start()
 
     def chat(self, user_input: str):
         """Called from UI text input."""
@@ -202,9 +205,13 @@ class AxonEngine:
     def _emit(self, event: str, data: dict):
         if self.socketio:
             try:
-                self.socketio.emit(event, data)
-            except:
-                pass
+                self.socketio.emit(event, data, broadcast=True)
+            except Exception as e:
+                try:
+                    # Fallback: push via server-side emit with namespace
+                    self.socketio.emit(event, data, namespace="/")
+                except Exception:
+                    pass
 
     def get_status(self) -> dict:
         fabric_state = self.fabric.get_state_snapshot()
