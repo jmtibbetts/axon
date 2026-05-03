@@ -41,7 +41,7 @@ if (-not $isNightly) {
 }
 
 Write-Host "  [3/5] Core deps..." -ForegroundColor Yellow
-& $venvPip install --quiet flask flask-socketio flask-cors eventlet anthropic openai-whisper sounddevice opencv-python mediapipe edge-tts pygame numpy scipy
+& $venvPip install --quiet flask flask-socketio flask-cors eventlet anthropic openai-whisper sounddevice opencv-python mediapipe edge-tts pygame numpy scipy pyaudio
 
 Write-Host "  [4/5] Creating data dirs..." -ForegroundColor Yellow
 New-Item -ItemType Directory -Force -Path "data\memory" | Out-Null

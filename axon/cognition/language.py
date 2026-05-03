@@ -105,20 +105,21 @@ class LanguageCore:
     def __init__(self, memory_system, api_key: str = None,
                  lm_studio_url: str = "http://localhost:1234",
                  lm_studio_model: str = None,
-                 prefer_local: bool = True):
+                 prefer_local: bool = True,
+                 neural_fabric=None):
         self.memory          = memory_system
         self.api_key         = api_key or os.getenv("ANTHROPIC_API_KEY", "")
         self.lm_studio_url   = lm_studio_url.rstrip("/")
-        self.lm_studio_model = lm_studio_model   # None = auto-detect
+        self.lm_studio_model = lm_studio_model
         self.prefer_local    = prefer_local
+        self.fabric          = neural_fabric
         self.search          = WebSearchTool()
 
         self._anthropic_client = None
         self._lm_client        = None
-        self._history          = []    # working memory turns
+        self._history          = []
         self._detected_model   = None
 
-        # Probe LM Studio on init
         self._probe_lm_studio()
 
     # ── LM Studio ─────────────────────────────────────────────
@@ -180,6 +181,23 @@ class LanguageCore:
         # 1. Build memory context
         mem_ctx    = self.memory.build_context_string()
         sys_prompt = AXON_SYSTEM + "\n\n" + mem_ctx
+
+        # 1b. Inject neural state into personality context
+        if self.fabric:
+            emo   = self.fabric.emotions.to_dict()
+            pers  = self.fabric.personality.describe()
+            neuro = self.fabric.neuromod.to_dict()
+            thoughts = self.fabric.thoughts.recent(3)
+            sys_prompt += f"""
+
+[NEURAL STATE]
+Emotion: {emo['emotion']} (valence={emo['valence']}, arousal={emo['arousal']}, intensity={emo['intensity']})
+Personality: {pers}
+Dopamine: {neuro['dopamine']:.2f} | Serotonin: {neuro['serotonin']:.2f} | Norepinephrine: {neuro['norepinephrine']:.2f}
+Recent thoughts: {' | '.join(thoughts) if thoughts else 'none'}
+
+Let your current emotional state and personality subtly color your response. 
+If {emo['emotion']} — lean into that authentically. Don't announce it unless natural."""
 
         # 2. Visual context
         if visual_context and visual_context.get("face_present"):

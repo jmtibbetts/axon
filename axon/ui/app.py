@@ -50,6 +50,8 @@ def on_start(config):
         lm_studio_model=lm_model,
         prefer_local=prefer_local,
     )
+    if not config.get("voice", True):
+        _engine.voice.enabled = False
     _engine.start(
         enable_camera=config.get("camera", True),
         enable_mic=config.get("mic", True),

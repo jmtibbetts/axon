@@ -2,226 +2,269 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<title>AXON</title>
-<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>AXON — Emerging Intelligence</title>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
 :root{
-  --bg:#020408;--panel:#060c14;--border:#0a1628;
-  --cyan:#00f5ff;--green:#00ff88;--purple:#bf5fff;
-  --red:#ff3355;--orange:#ff8800;--yellow:#ffdd00;
-  --text:#c8e0f0;--muted:#1a3050;--dim:#0d1f35;
+  --bg:#050508;--panel:#0a0a12;--border:#1a1a2e;--accent:#00d4ff;
+  --green:#00ff88;--red:#ff4060;--yellow:#ffcc00;--purple:#a855f7;
+  --orange:#ff6b35;--pink:#ff006e;--muted:#444466;--text:#ccd6f6;
+  --font:'Courier New',monospace;
 }
 *{box-sizing:border-box;margin:0;padding:0;}
-html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:'Share Tech Mono',monospace;}
+body{background:var(--bg);color:var(--text);font-family:var(--font);
+     font-size:11px;height:100vh;display:flex;flex-direction:column;overflow:hidden;}
 
-/* ── LAYOUT ─────────────────────────────────────────────── */
-#app{display:grid;grid-template-columns:280px 1fr 280px;grid-template-rows:48px 1fr 160px;height:100vh;gap:1px;background:var(--border);}
-#header{grid-column:1/-1;background:var(--panel);display:flex;align-items:center;gap:16px;padding:0 20px;border-bottom:1px solid var(--border);}
-#left-panel{background:var(--panel);display:flex;flex-direction:column;overflow:hidden;}
-#brain-view{background:var(--bg);position:relative;overflow:hidden;}
-#right-panel{background:var(--panel);display:flex;flex-direction:column;overflow:hidden;}
-#bottom-bar{grid-column:1/-1;background:var(--panel);display:flex;gap:1px;overflow:hidden;}
+/* ── TOP BAR ── */
+.topbar{display:flex;align-items:center;padding:6px 12px;
+        background:var(--panel);border-bottom:1px solid var(--border);
+        gap:12px;flex-shrink:0;}
+.logo{color:var(--accent);font-size:16px;font-weight:bold;letter-spacing:4px;}
+.status-pill{padding:2px 8px;border-radius:10px;font-size:9px;
+             background:#111;border:1px solid var(--muted);}
+.status-pill.on{border-color:var(--green);color:var(--green);}
+.status-pill.off{border-color:var(--red);color:var(--red);}
+#emotion-pill{padding:2px 10px;border-radius:10px;font-size:9px;
+              background:#111;border:1px solid var(--purple);color:var(--purple);
+              transition:all .5s;}
+#thought-bar{flex:1;color:var(--muted);font-size:9px;font-style:italic;
+             overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+             padding:0 8px;}
 
-/* ── HEADER ─────────────────────────────────────────────── */
-.logo{font-family:'Orbitron',sans-serif;font-size:20px;font-weight:900;color:var(--cyan);letter-spacing:4px;text-shadow:0 0 20px var(--cyan);}
-.logo span{color:var(--purple);}
-.status-row{display:flex;gap:10px;align-items:center;margin-left:auto;}
-.status-dot{width:7px;height:7px;border-radius:50%;background:var(--muted);}
-.status-dot.active{background:var(--green);box-shadow:0 0 8px var(--green);animation:blink 1.5s infinite;}
-.status-dot.thinking{background:var(--purple);box-shadow:0 0 8px var(--purple);animation:blink .6s infinite;}
-.status-dot.speaking{background:var(--cyan);box-shadow:0 0 8px var(--cyan);animation:blink .4s infinite;}
-@keyframes blink{0%,100%{opacity:1;}50%{opacity:.3;}}
-.status-label{font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;}
-.hdr-stat{text-align:center;border-left:1px solid var(--border);padding-left:12px;}
-.hdr-stat .v{font-size:14px;font-weight:700;font-family:'Orbitron',sans-serif;}
-.hdr-stat .l{font-size:8px;color:var(--muted);letter-spacing:.5px;}
+/* ── MAIN GRID ── */
+.grid{display:grid;grid-template-columns:220px 1fr 260px;
+      grid-template-rows:1fr 160px;gap:6px;padding:6px;
+      flex:1;overflow:hidden;}
 
-/* ── LEFT PANEL ──────────────────────────────────────────── */
-.panel-title{font-size:9px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;padding:8px 10px;border-bottom:1px solid var(--border);flex-shrink:0;}
-.region-list{flex:1;overflow-y:auto;padding:6px;}
-.region-row{display:flex;align-items:center;gap:7px;padding:4px 6px;margin-bottom:3px;border-radius:3px;transition:background .2s;}
-.region-row.active{background:#0a1628;}
-.region-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;transition:all .2s;}
-.region-name{font-size:9px;letter-spacing:.5px;flex:1;}
-.region-bar-wrap{width:60px;background:var(--dim);border-radius:2px;height:3px;}
-.region-bar{height:100%;border-radius:2px;transition:width .2s;}
-.region-val{font-size:9px;width:28px;text-align:right;color:var(--muted);}
+/* ── PANELS ── */
+.panel{background:var(--panel);border:1px solid var(--border);
+       border-radius:6px;overflow:hidden;display:flex;flex-direction:column;}
+.panel-title{padding:5px 8px;font-size:9px;color:var(--muted);
+             border-bottom:1px solid var(--border);letter-spacing:2px;
+             text-transform:uppercase;flex-shrink:0;}
+.panel-body{flex:1;overflow:auto;padding:8px;}
 
-/* Memory section */
-.mem-section{border-top:1px solid var(--border);padding:6px 8px;flex-shrink:0;}
-.mem-title{font-size:8px;letter-spacing:1px;color:var(--muted);margin-bottom:5px;text-transform:uppercase;}
-.mem-stat{display:flex;justify-content:space-between;font-size:9px;padding:1px 0;}
-.mem-stat .k{color:var(--muted);}
-.mem-stat .v{color:var(--cyan);}
-.mem-connections{margin-top:4px;}
-.mem-conn{font-size:8px;color:#1a3050;margin:1px 0;}
-.mem-conn.strong{color:var(--purple);}
+/* ── SETTINGS ── */
+.settings label{display:block;color:var(--muted);font-size:8px;
+                margin:3px 0 1px;letter-spacing:1px;text-transform:uppercase;}
+.settings input{width:100%;background:#060610;border:1px solid var(--border);
+                color:var(--text);padding:3px 5px;font-family:var(--font);
+                font-size:10px;border-radius:3px;}
+.settings input:focus{outline:none;border-color:var(--accent);}
+.settings-row{display:flex;gap:4px;margin-top:4px;}
+.toggle{display:flex;align-items:center;gap:3px;color:var(--muted);
+        font-size:8px;cursor:pointer;}
+.ctrl-btn{flex:1;padding:5px;background:#0d1117;border:1px solid var(--border);
+          color:var(--text);font-family:var(--font);font-size:9px;cursor:pointer;
+          border-radius:3px;transition:.2s;}
+.ctrl-btn:hover{border-color:var(--accent);color:var(--accent);}
+.ctrl-btn.danger:hover{border-color:var(--red);color:var(--red);}
+.ctrl-btn.active{border-color:var(--green);color:var(--green);}
 
-/* ── BRAIN CANVAS ────────────────────────────────────────── */
-#brain-canvas{position:absolute;top:0;left:0;width:100%;height:100%;}
-#optic-canvas{position:absolute;bottom:8px;right:8px;width:120px;height:90px;border:1px solid #0a1628;border-radius:3px;opacity:.85;}
-.brain-overlay{position:absolute;top:0;left:0;right:0;bottom:0;pointer-events:none;}
-.signal-output{position:absolute;top:8px;left:50%;transform:translateX(-50%);display:flex;gap:6px;}
-.sig-pill{padding:3px 10px;border-radius:12px;font-size:9px;font-weight:700;border:1px solid;letter-spacing:1px;transition:all .3s;font-family:'Orbitron',sans-serif;}
-.sig-pill-buy {border-color:#00ff8833;color:#00ff88;background:#00ff880a;}
-.sig-pill-hold{border-color:#ffdd0033;color:#ffdd00;background:#ffdd000a;}
-.sig-pill-sell{border-color:#ff335533;color:#ff3355;background:#ff33550a;}
-.sig-pill.hot{filter:brightness(1.5);box-shadow:0 0 12px currentColor;}
-.brain-label{position:absolute;font-size:7px;letter-spacing:1.5px;color:#ffffff15;text-transform:uppercase;font-family:'Orbitron',sans-serif;transition:color .4s;}
-.brain-label.lit{color:#ffffff50;}
-.thought-bubble{position:absolute;bottom:8px;left:8px;right:135px;background:rgba(6,12,20,.9);border:1px solid var(--border);border-radius:4px;padding:6px 10px;font-size:10px;color:var(--text);line-height:1.4;max-height:70px;overflow:hidden;transition:border-color .3s;}
-.thought-bubble.thinking{border-color:var(--purple);}
-.thought-bubble.speaking{border-color:var(--cyan);}
+/* ── NEURAL CANVAS ── */
+#neural-canvas{width:100%;height:100%;display:block;}
 
-/* ── RIGHT PANEL ─────────────────────────────────────────── */
-.conversation{flex:1;overflow-y:auto;padding:6px 8px;display:flex;flex-direction:column;gap:5px;}
-.msg{padding:5px 8px;border-radius:4px;font-size:10px;line-height:1.4;max-width:100%;word-break:break-word;}
-.msg-user{background:#0a1a2a;border-left:2px solid var(--cyan);color:var(--text);}
-.msg-axon{background:#080d18;border-left:2px solid var(--purple);color:#d0e8ff;}
-.msg-sys {background:#050a10;color:var(--muted);font-size:9px;border-left:2px solid var(--border);}
-.msg-label{font-size:8px;letter-spacing:1px;margin-bottom:2px;text-transform:uppercase;}
+/* ── CHAT ── */
+.chat-area{display:flex;flex-direction:column;height:100%;}
+.chat-messages{flex:1;overflow-y:auto;padding:8px;display:flex;
+               flex-direction:column;gap:6px;}
+.msg{padding:6px 10px;border-radius:6px;max-width:90%;line-height:1.5;font-size:10px;}
+.msg.user{background:#0d1a2e;border:1px solid #1a3a5c;align-self:flex-end;
+          color:#7ec8e3;}
+.msg.axon{background:#0d0d1a;border:1px solid #2a1a4a;align-self:flex-start;
+          color:var(--text);}
+.msg.axon.thinking{opacity:.6;font-style:italic;color:var(--purple);}
+.chat-input{display:flex;gap:4px;padding:6px;border-top:1px solid var(--border);
+            flex-shrink:0;}
+.chat-input input{flex:1;background:#060610;border:1px solid var(--border);
+                  color:var(--text);padding:6px 8px;font-family:var(--font);
+                  font-size:11px;border-radius:3px;}
+.chat-input input:focus{outline:none;border-color:var(--accent);}
+.chat-input button{padding:6px 12px;background:#0d1117;border:1px solid var(--accent);
+                   color:var(--accent);font-family:var(--font);cursor:pointer;
+                   border-radius:3px;font-size:10px;}
 
-/* Input area */
-.input-area{border-top:1px solid var(--border);padding:7px 8px;flex-shrink:0;}
-.input-row{display:flex;gap:6px;}
-#text-input{flex:1;background:var(--dim);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:3px;font-family:'Share Tech Mono',monospace;font-size:10px;outline:none;transition:border-color .2s;}
-#text-input:focus{border-color:var(--cyan);}
-.mic-btn{width:30px;border:1px solid var(--border);background:var(--dim);color:var(--muted);border-radius:3px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;transition:all .2s;}
-.mic-btn.hot{border-color:var(--red);color:var(--red);box-shadow:0 0 8px var(--red);}
-.send-btn{padding:5px 10px;background:var(--cyan);color:var(--bg);border:none;border-radius:3px;cursor:pointer;font-family:'Orbitron',sans-serif;font-size:9px;font-weight:700;letter-spacing:1px;transition:opacity .15s;}
-.send-btn:hover{opacity:.8;}
+/* ── NEURAL STATE PANEL ── */
+.neuro-section{margin-bottom:8px;}
+.neuro-title{font-size:8px;color:var(--muted);letter-spacing:2px;
+             text-transform:uppercase;margin-bottom:4px;}
+.bar-row{display:flex;align-items:center;gap:4px;margin:2px 0;}
+.bar-label{width:90px;font-size:8px;color:var(--muted);flex-shrink:0;
+           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.bar-track{flex:1;height:5px;background:#0a0a12;border-radius:2px;overflow:hidden;}
+.bar-fill{height:100%;border-radius:2px;transition:width .3s;}
+.bar-val{width:32px;text-align:right;font-size:8px;color:var(--muted);}
 
-/* ── BOTTOM BAR ──────────────────────────────────────────── */
-.bottom-section{flex:1;background:var(--panel);display:flex;flex-direction:column;overflow:hidden;padding:6px 8px;}
-.bottom-title{font-size:7px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;margin-bottom:5px;}
-#console-out{flex:1;overflow-y:auto;font-size:8px;color:#1a4a2a;line-height:1.4;}
-#console-out span{display:block;}
-#console-out .info{color:#0a3050;}
-#console-out .heard{color:#0a5030;}
-#console-out .said{color:#1a2060;}
-#console-out .err{color:#501010;}
+/* Trait bars */
+.trait-bar .bar-fill{background:var(--purple);}
+/* Neuromod bars */
+.nm-dopamine .bar-fill    {background:var(--yellow);}
+.nm-serotonin .bar-fill   {background:var(--green);}
+.nm-norepinephrine .bar-fill{background:var(--orange);}
+.nm-acetylcholine .bar-fill {background:var(--accent);}
+.nm-gaba .bar-fill         {background:var(--pink);}
+.nm-glutamate .bar-fill    {background:var(--red);}
 
-/* Waveform canvas */
-#wave-canvas{width:100%;height:100%;display:block;}
+/* Cluster bars */
+.cluster-bar .bar-fill{background:var(--accent);}
+.cluster-bar.hot .bar-fill{background:var(--red);}
 
-/* Memory graph */
-#mem-canvas{width:100%;height:100%;display:block;}
+/* ── VISION ── */
+#vision-canvas{width:100%;height:100%;display:block;image-rendering:pixelated;}
 
-/* Settings section */
-.settings{padding:6px 8px;display:flex;flex-direction:column;gap:5px;}
-.settings label{font-size:8px;color:var(--muted);letter-spacing:.5px;}
-.settings input{width:100%;background:var(--dim);border:1px solid var(--border);color:var(--text);padding:3px 6px;border-radius:2px;font-size:9px;font-family:monospace;}
-.settings-row{display:flex;gap:5px;}
-.toggle{display:flex;align-items:center;gap:4px;font-size:8px;color:var(--muted);}
-.toggle input{width:auto;}
-.ctrl-btn{flex:1;padding:4px;border-radius:3px;border:1px solid var(--border);background:var(--dim);color:var(--text);font-size:9px;font-family:'Share Tech Mono',monospace;cursor:pointer;transition:all .15s;letter-spacing:.5px;}
-.ctrl-btn:hover{border-color:var(--cyan);color:var(--cyan);}
-.ctrl-btn.danger{border-color:#ff335533;color:var(--red);}
-.ctrl-btn.danger:hover{border-color:var(--red);}
+/* ── SYSTEM LOG ── */
+.log-area{font-size:8px;color:var(--muted);overflow-y:auto;
+          padding:4px 8px;height:100%;}
+.log-entry{padding:1px 0;border-bottom:1px solid #0a0a0a;}
+.log-entry.err{color:var(--red);}
+
+/* ── EMOTION RING ── */
+.emotion-ring{display:flex;flex-direction:column;align-items:center;
+              gap:4px;padding:4px 0;}
+.e-circle{width:60px;height:60px;border-radius:50%;border:2px solid var(--purple);
+          display:flex;align-items:center;justify-content:center;
+          font-size:9px;text-align:center;line-height:1.2;
+          transition:all .5s;position:relative;}
+.e-label{font-size:9px;color:var(--purple);}
+.e-coords{font-size:7px;color:var(--muted);}
+
+/* ── VOICE ── */
+.voice-row{display:flex;align-items:center;gap:6px;padding:4px 0;
+           border-top:1px solid var(--border);margin-top:4px;}
+.voice-indicator{width:8px;height:8px;border-radius:50%;background:var(--muted);}
+.voice-indicator.speaking{background:var(--green);box-shadow:0 0 6px var(--green);
+                           animation:pulse .5s infinite alternate;}
+@keyframes pulse{from{opacity:.5}to{opacity:1}}
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar{width:3px;height:3px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
 </style>
 </head>
 <body>
-<div id="app">
 
-  <!-- HEADER -->
-  <header id="header">
-    <div class="logo">AX<span>O</span>N</div>
-    <div style="font-size:8px;color:var(--muted);letter-spacing:2px;">EMERGING INTELLIGENCE v0.1</div>
-    <div class="status-row">
-      <div class="status-dot" id="dot-alive"></div>
-      <div class="status-label" id="lbl-status">OFFLINE</div>
-      <div class="status-dot" id="dot-listen" style="margin-left:8px"></div>
-      <div class="status-label">LISTEN</div>
-      <div class="status-dot" id="dot-think"></div>
-      <div class="status-label">THINK</div>
-      <div class="status-dot" id="dot-speak"></div>
-      <div class="status-label">SPEAK</div>
-    </div>
-    <div style="display:flex;gap:16px;margin-left:16px;">
-      <div class="hdr-stat"><div class="v" id="h-episodes" style="color:var(--purple)">0</div><div class="l">Episodes</div></div>
-      <div class="hdr-stat"><div class="v" id="h-emotion" style="color:var(--cyan)">—</div><div class="l">Emotion</div></div>
-      <div class="hdr-stat"><div class="v" id="h-uptime" style="color:var(--green)">0s</div><div class="l">Uptime</div></div>
-    </div>
-  </header>
-
-  <!-- LEFT: Neuron regions -->
-  <div id="left-panel">
-    <div class="panel-title">⬡ Neural Regions</div>
-    <div class="region-list" id="region-list"></div>
-    <div class="mem-section">
-      <div class="mem-title">⟳ Hebbian Memory</div>
-      <div class="mem-stat"><span class="k">Episodes</span><span class="v" id="m-eps">0</span></div>
-      <div class="mem-stat"><span class="k">Connections</span><span class="v" id="m-conn">0</span></div>
-      <div class="mem-connections" id="m-conns"></div>
-    </div>
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="logo">A X O N</div>
+  <div class="status-pill off" id="pill-engine">OFFLINE</div>
+  <div class="status-pill off" id="pill-cam">CAM</div>
+  <div class="status-pill off" id="pill-mic">MIC</div>
+  <div id="emotion-pill">···</div>
+  <div id="thought-bar">awaiting consciousness...</div>
+  <div class="voice-row" style="border:none;margin:0;padding:0;">
+    <div class="voice-indicator" id="voice-dot"></div>
+    <span id="voice-label" style="font-size:8px;color:var(--muted)">voice</span>
   </div>
+</div>
 
-  <!-- CENTER: Brain visualization -->
-  <div id="brain-view">
-    <canvas id="brain-canvas"></canvas>
-    <canvas id="optic-canvas"></canvas>
-    <div class="brain-overlay">
-      <div class="signal-output" id="signal-output" style="display:none">
-        <div class="sig-pill sig-pill-buy"  id="pill-buy">BUY</div>
-        <div class="sig-pill sig-pill-hold" id="pill-hold">HOLD</div>
-        <div class="sig-pill sig-pill-sell" id="pill-sell">SELL</div>
-      </div>
-    </div>
-    <div class="thought-bubble" id="thought-bubble">Initializing neural substrate...</div>
-  </div>
+<!-- MAIN GRID -->
+<div class="grid">
 
-  <!-- RIGHT: Conversation -->
-  <div id="right-panel">
-    <div class="panel-title">◈ Consciousness Stream</div>
-    <div class="conversation" id="conversation"></div>
-    <div class="input-area">
-      <div class="input-row">
-        <button class="mic-btn" id="mic-btn" title="Push to talk">🎙</button>
-        <input id="text-input" placeholder="speak or type..." autocomplete="off"/>
-        <button class="send-btn" onclick="sendText()">SEND</button>
-      </div>
-    </div>
-  </div>
+  <!-- COL 1: Settings + Vision + Log -->
+  <div style="display:flex;flex-direction:column;gap:6px;grid-row:1/3;">
 
-  <!-- BOTTOM: Console + Waveform + Memory + Settings -->
-  <div id="bottom-bar">
-    <div class="bottom-section" style="flex:2">
-      <div class="bottom-title">▸ System Log</div>
-      <div id="console-out"></div>
-    </div>
-    <div class="bottom-section" style="flex:1;background:#04080f;">
-      <div class="bottom-title">◎ Auditory Wave</div>
-      <canvas id="wave-canvas"></canvas>
-    </div>
-    <div class="bottom-section" style="flex:1;background:#04080f;">
-      <div class="bottom-title">◈ Memory Graph</div>
-      <canvas id="mem-canvas"></canvas>
-    </div>
-    <div class="bottom-section" style="flex:1.2;">
-      <div class="bottom-title">⚙ Control</div>
-      <div class="settings">
+    <div class="panel" style="flex:0 0 auto;">
+      <div class="panel-title">⚙ Configuration</div>
+      <div class="panel-body settings" style="padding:6px;">
         <label>LM Studio URL</label>
-        <input id="cfg-lmurl" value="http://localhost:1234" placeholder="http://localhost:1234"/>
-        <label style="margin-top:4px;">LM Studio Model (leave blank = auto)</label>
+        <input id="cfg-lmurl" value="http://localhost:1234"/>
+        <label>Model (blank=auto)</label>
         <input id="cfg-lmmodel" placeholder="auto-detect"/>
-        <label style="margin-top:4px;">Anthropic API Key (fallback)</label>
-        <input id="cfg-api" type="password" placeholder="sk-ant-... (optional if using LM Studio)"/>
-        <label style="margin-top:4px;">Camera Index (-1 = auto-detect)</label>
-        <input id="cfg-camidx" value="-1" placeholder="-1 = auto" style="width:80px;display:inline"/>
-        <span style="font-size:8px;color:var(--muted);margin-left:6px;">try 0,1,2... if wrong cam</span>
-        <div class="settings-row" style="margin-top:4px;">
-          <label class="toggle"><input type="checkbox" id="cfg-local" checked/> Prefer Local LLM</label>
-          <label class="toggle"><input type="checkbox" id="cfg-cam" checked/> Cam</label>
-          <label class="toggle"><input type="checkbox" id="cfg-mic" checked/> Mic</label>
+        <label>Anthropic Key (fallback)</label>
+        <input id="cfg-api" type="password" placeholder="sk-ant-..."/>
+        <label>Camera Index (-1=auto)</label>
+        <input id="cfg-camidx" value="-1" style="width:60px;display:inline"/>
+        <div class="settings-row" style="margin-top:4px;flex-wrap:wrap;gap:6px;">
+          <label class="toggle"><input type="checkbox" id="cfg-local" checked/> Local LLM</label>
+          <label class="toggle"><input type="checkbox" id="cfg-voice" checked/> Voice</label>
+          <label class="toggle"><input type="checkbox" id="cfg-cam"   checked/> Cam</label>
+          <label class="toggle"><input type="checkbox" id="cfg-mic"   checked/> Mic</label>
         </div>
-        <div class="settings-row" style="margin-top:4px;">
-          <button class="ctrl-btn" onclick="startAxon()">▶ ACTIVATE</button>
-          <button class="ctrl-btn" onclick="reprobe()" style="flex:.6">⟳ LM</button>
-          <button class="ctrl-btn danger" onclick="stopAxon()">■ STOP</button>
+        <div class="settings-row" style="margin-top:6px;">
+          <button class="ctrl-btn active" onclick="startAxon()">▶ ACTIVATE</button>
+          <button class="ctrl-btn"        onclick="reprobe()" style="flex:.5">⟳</button>
+          <button class="ctrl-btn danger" onclick="stopAxon()">■</button>
         </div>
         <div id="llm-status" style="font-size:8px;color:var(--muted);margin-top:4px;"></div>
       </div>
+    </div>
+
+    <div class="panel" style="flex:1;min-height:0;">
+      <div class="panel-title">👁 Optic Feed</div>
+      <div class="panel-body" style="padding:0;background:#000;">
+        <canvas id="vision-canvas"></canvas>
+      </div>
+    </div>
+
+    <div class="panel" style="flex:0 0 100px;">
+      <div class="panel-title">📋 System Log</div>
+      <div class="log-area" id="sys-log"></div>
+    </div>
+
+  </div>
+
+  <!-- COL 2: Neural Canvas (top) + Chat (bottom) -->
+  <div class="panel" style="grid-row:1;grid-column:2;">
+    <div class="panel-title">🧠 Neural Activity — <span id="neuron-count">0</span> virtual neurons | <span id="conn-count">0</span> connections</div>
+    <div class="panel-body" style="padding:0;background:#020205;">
+      <canvas id="neural-canvas"></canvas>
+    </div>
+  </div>
+
+  <div class="panel" style="grid-row:2;grid-column:2;">
+    <div class="panel-title">💬 Consciousness Interface</div>
+    <div class="chat-area">
+      <div class="chat-messages" id="chat-messages"></div>
+      <div class="chat-input">
+        <input id="chat-in" placeholder="Speak or type to AXON..." onkeydown="if(event.key==='Enter')sendChat()"/>
+        <button onclick="sendChat()">SEND</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- COL 3: Neural State (spans both rows) -->
+  <div class="panel" style="grid-row:1/3;grid-column:3;overflow:auto;">
+    <div class="panel-title">⚡ Neural State</div>
+    <div class="panel-body" id="neural-state-panel">
+
+      <!-- Emotion -->
+      <div class="neuro-section">
+        <div class="neuro-title">Emotional State</div>
+        <div class="emotion-ring">
+          <div class="e-circle" id="e-circle">
+            <span id="e-name">···</span>
+          </div>
+          <div class="e-label" id="e-label">neutral</div>
+          <div class="e-coords" id="e-coords">v:0 a:0 i:0</div>
+        </div>
+      </div>
+
+      <!-- Neuromodulators -->
+      <div class="neuro-section">
+        <div class="neuro-title">Neuromodulators</div>
+        <div id="nm-bars"></div>
+      </div>
+
+      <!-- Personality -->
+      <div class="neuro-section">
+        <div class="neuro-title">Personality Traits</div>
+        <div id="trait-bars"></div>
+      </div>
+
+      <!-- Top clusters -->
+      <div class="neuro-section">
+        <div class="neuro-title">Active Clusters</div>
+        <div id="cluster-bars"></div>
+      </div>
+
+      <!-- Regions -->
+      <div class="neuro-section">
+        <div class="neuro-title">Region Activity</div>
+        <div id="region-bars"></div>
+      </div>
+
     </div>
   </div>
 
@@ -229,524 +272,335 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 
 <script>
 const socket = io();
-let startTime = null;
-let volumeHistory = new Array(120).fill(-60);
 
-// ═══════════════════════════════════════════════════════════
-//  REGION DEFINITIONS
-// ═══════════════════════════════════════════════════════════
-const REGIONS = [
-  {id:'optic',      label:'Optic Cortex',   color:'#00f5ff', icon:'👁'},
-  {id:'auditory',   label:'Auditory Cortex',color:'#00ff88', icon:'👂'},
-  {id:'thalamus',   label:'Thalamus',       color:'#ffdd00', icon:'⬡'},
-  {id:'columns',    label:'Cortical Cols',  color:'#bf5fff', icon:'⊞'},
-  {id:'hippocampus',label:'Hippocampus',    color:'#ff8800', icon:'🐚'},
-  {id:'prefrontal', label:'Prefrontal',     color:'#00ff88', icon:'◈'},
-  {id:'dopamine',   label:'Dopamine (VTA)', color:'#ff3355', icon:'💊'},
-  {id:'language',   label:'Language Core',  color:'#00f5ff', icon:'◇'},
-  {id:'memory',     label:'Memory Trace',   color:'#bf5fff', icon:'⟳'},
-  {id:'speech',     label:'Speech Output',  color:'#00ff88', icon:'◉'},
-];
+// ── Neural canvas ─────────────────────────────────────────────
+const nCanvas = document.getElementById('neural-canvas');
+const nCtx    = nCanvas.getContext('2d');
+let neuronNodes = [];
+let neuralState = null;
 
-// Build region list
-const rl = document.getElementById('region-list');
-REGIONS.forEach(r => {
-  const row = document.createElement('div');
-  row.className='region-row'; row.id='rr-'+r.id;
-  row.innerHTML=`<div class="region-dot" id="rdot-${r.id}" style="background:${r.color}22;border:1px solid ${r.color}44"></div>
-    <div class="region-name" style="color:${r.color}88">${r.icon} ${r.label}</div>
-    <div class="region-bar-wrap"><div class="region-bar" id="rbar-${r.id}" style="background:${r.color};width:0%"></div></div>
-    <div class="region-val" id="rval-${r.id}">0%</div>`;
-  rl.appendChild(row);
-});
-
-function updateRegions(state) {
-  REGIONS.forEach(r => {
-    let val = 0;
-    if (r.id === 'columns') {
-      const arr = state[r.id] || [];
-      val = arr.reduce((s,v)=>s+v,0)/Math.max(arr.length,1);
-    } else {
-      val = state[r.id] || 0;
-    }
-    const pct  = (val*100).toFixed(0);
-    const dot  = document.getElementById('rdot-'+r.id);
-    const bar  = document.getElementById('rbar-'+r.id);
-    const lbl  = document.getElementById('rval-'+r.id);
-    const row  = document.getElementById('rr-'+r.id);
-    bar.style.width  = pct+'%';
-    lbl.textContent  = pct+'%';
-    row.classList.toggle('active', val > 0.1);
-    if(val > 0.5) {
-      dot.style.background = REGIONS.find(x=>x.id===r.id).color;
-      dot.style.boxShadow  = `0 0 6px ${REGIONS.find(x=>x.id===r.id).color}`;
-    } else {
-      const c = REGIONS.find(x=>x.id===r.id).color;
-      dot.style.background = c+'22';
-      dot.style.boxShadow  = 'none';
-    }
-  });
-}
-
-// ═══════════════════════════════════════════════════════════
-//  BRAIN CANVAS
-// ═══════════════════════════════════════════════════════════
-const BC = {
-  canvas:null, ctx:null, W:0, H:0,
-  nodes:[], edges:[], sparks:[],
-  time:0, regionMap:{},
-};
-
-const BRAIN_REGIONS = [
-  {id:'optic',      label:'OPTIC CORTEX',   cx:.5,  cy:.95, r:.05, color:'#00f5ff', n:10},
-  {id:'auditory',   label:'AUDITORY',       cx:.15, cy:.82, r:.045,color:'#00ff88', n:8 },
-  {id:'thalamus',   label:'THALAMUS',       cx:.5,  cy:.78, r:.055,color:'#ffdd00', n:10},
-  {id:'col0',       label:'',               cx:.2,  cy:.60, r:.035,color:'#bf5fff', n:6 },
-  {id:'col1',       label:'',               cx:.35, cy:.54, r:.035,color:'#bf5fff', n:6 },
-  {id:'col2',       label:'CORTEX',         cx:.5,  cy:.52, r:.035,color:'#bf5fff', n:6 },
-  {id:'col3',       label:'',               cx:.65, cy:.54, r:.035,color:'#bf5fff', n:6 },
-  {id:'col4',       label:'',               cx:.8,  cy:.60, r:.035,color:'#bf5fff', n:6 },
-  {id:'hippocampus',label:'HIPPOCAMPUS',    cx:.22, cy:.36, r:.06, color:'#ff8800', n:12},
-  {id:'language',   label:'LANGUAGE',       cx:.72, cy:.36, r:.055,color:'#00f5ff', n:10},
-  {id:'prefrontal', label:'PREFRONTAL',     cx:.5,  cy:.18, r:.075,color:'#00ff88', n:16},
-  {id:'dopamine',   label:'VTA',            cx:.78, cy:.55, r:.04, color:'#ff3355', n:7 },
-  {id:'memory',     label:'MEMORY',         cx:.22, cy:.18, r:.05, color:'#bf5fff', n:8 },
-  {id:'speech',     label:'SPEECH',         cx:.78, cy:.18, r:.05, color:'#00ff88', n:8 },
-];
-
-const BRAIN_EDGES = [
-  ['optic','thalamus'],['auditory','thalamus'],
-  ['thalamus','col0'],['thalamus','col1'],['thalamus','col2'],['thalamus','col3'],['thalamus','col4'],
-  ['col0','hippocampus'],['col1','hippocampus'],['col2','hippocampus'],['col2','language'],
-  ['col3','language'],['col4','language'],
-  ['hippocampus','prefrontal'],['language','prefrontal'],
-  ['hippocampus','memory'],['memory','prefrontal'],
-  ['dopamine','prefrontal'],['dopamine','hippocampus'],
-  ['prefrontal','speech'],['prefrontal','dopamine'],
-  ['language','speech'],
-];
-
-function initBrain() {
-  const cv = document.getElementById('brain-canvas');
-  BC.canvas = cv; BC.ctx = cv.getContext('2d');
-  resizeBrain();
-  window.addEventListener('resize', resizeBrain);
-  buildBrainGraph();
-  animateBrain();
-}
-
-function resizeBrain() {
-  const bv = document.getElementById('brain-view');
-  BC.W = bv.clientWidth; BC.H = bv.clientHeight;
-  BC.canvas.width = BC.W; BC.canvas.height = BC.H;
-  buildBrainGraph();
-}
-
-function buildBrainGraph() {
-  BC.nodes=[]; BC.edges=[]; BC.regionMap={};
-  const W=BC.W, H=BC.H;
-  if(!W||!H) return;
-
-  BRAIN_REGIONS.forEach(rd => {
-    const rx=rd.cx*W, ry=rd.cy*H, rr=rd.r*Math.min(W,H)*0.9;
-    const nodes=[];
-    for(let i=0;i<rd.n;i++) {
-      const angle=(i/rd.n)*Math.PI*2 + Math.random()*.5;
-      const dist=rr*(0.25+0.75*Math.random());
-      nodes.push({
-        id:`${rd.id}_${i}`, region:rd.id,
-        x:rx+Math.cos(angle)*dist, y:ry+Math.sin(angle)*dist,
-        bx:rx+Math.cos(angle)*dist, by:ry+Math.sin(angle)*dist,
-        color:rd.color, activation:0, firing:0,
-        phase:Math.random()*Math.PI*2, radius:2+Math.random()*2.5,
+function initNeurons() {
+  const W = nCanvas.offsetWidth, H = nCanvas.offsetHeight;
+  nCanvas.width  = W; nCanvas.height = H;
+  neuronNodes = [];
+  const REGIONS = {
+    prefrontal_cortex:    {x:.15,y:.15,color:'#00d4ff'},
+    temporal_lobe:        {x:.35,y:.25,color:'#a855f7'},
+    limbic_system:        {x:.50,y:.50,color:'#ff6b35'},
+    parietal_lobe:        {x:.65,y:.20,color:'#00ff88'},
+    occipital_lobe:       {x:.80,y:.30,color:'#ffcc00'},
+    cingulate_cortex:     {x:.50,y:.35,color:'#ff006e'},
+    basal_ganglia:        {x:.40,y:.60,color:'#ff4060'},
+    cerebellum:           {x:.70,y:.65,color:'#7ec8e3'},
+    insula:               {x:.30,y:.55,color:'#c084fc'},
+    default_mode_network: {x:.50,y:.70,color:'#4ade80'},
+    association_cortex:   {x:.65,y:.45,color:'#fb923c'},
+    thalamus:             {x:.50,y:.55,color:'#f9a8d4'},
+  };
+  for (const [region, props] of Object.entries(REGIONS)) {
+    const cx = props.x * W, cy = props.y * H;
+    for (let i = 0; i < 12; i++) {
+      const angle = (i/12)*Math.PI*2;
+      const r = 20 + Math.random()*25;
+      neuronNodes.push({
+        x: cx + Math.cos(angle)*r + (Math.random()-.5)*15,
+        y: cy + Math.sin(angle)*r + (Math.random()-.5)*15,
+        region, color: props.color, activation: 0,
+        baseR: 2 + Math.random()*2,
       });
     }
-    nodes.forEach(n=>BC.nodes.push(n));
-    BC.regionMap[rd.id]={def:rd, nodes, cx:rx, cy:ry};
-  });
-
-  BRAIN_EDGES.forEach(([f,t]) => {
-    const fr=BC.regionMap[f], tr=BC.regionMap[t];
-    if(!fr||!tr) return;
-    const cnt=Math.min(fr.nodes.length,tr.nodes.length,5);
-    for(let i=0;i<cnt;i++) {
-      BC.edges.push({
-        from:fr.nodes[i%fr.nodes.length],
-        to:  tr.nodes[i%tr.nodes.length],
-        fromR:f, toR:t, color:fr.def.color, strength:0,
-      });
-    }
-  });
+  }
 }
 
-function animateBrain() {
-  requestAnimationFrame(animateBrain);
-  const ctx=BC.ctx, W=BC.W, H=BC.H;
-  if(!W||!H) return;
-  BC.time+=0.016;
+function drawNeural() {
+  const W = nCanvas.width, H = nCanvas.height;
+  nCtx.fillStyle = 'rgba(2,2,5,0.25)';
+  nCtx.fillRect(0,0,W,H);
 
-  ctx.fillStyle='rgba(2,4,8,0.2)';
-  ctx.fillRect(0,0,W,H);
+  if (!neuralState) { requestAnimationFrame(drawNeural); return; }
 
-  // Draw edges
-  BC.edges.forEach(e=>{
-    if(e.strength<0.01) return;
-    const grd=ctx.createLinearGradient(e.from.x,e.from.y,e.to.x,e.to.y);
-    grd.addColorStop(0,rgba(e.color,e.strength*.4));
-    grd.addColorStop(1,rgba(e.color,e.strength*.1));
-    ctx.beginPath();
-    ctx.moveTo(e.from.x,e.from.y);
-    const mx=(e.from.x+e.to.x)/2+(Math.random()-.5)*15;
-    const my=(e.from.y+e.to.y)/2+(Math.random()-.5)*15;
-    ctx.quadraticCurveTo(mx,my,e.to.x,e.to.y);
-    ctx.strokeStyle=grd;
-    ctx.lineWidth=.5+e.strength*2;
-    ctx.stroke();
-    e.strength*=0.93;
+  const actMap = {};
+  const regionMap = neuralState.regions || {};
+  neuronNodes.forEach(n => {
+    const a = regionMap[n.region] || 0;
+    n.activation += (a - n.activation) * 0.08;
+    n.activation  = Math.max(0, Math.min(1, n.activation + (Math.random()-.5)*0.01));
   });
 
-  // Draw sparks
-  BC.sparks=BC.sparks.filter(s=>s.life>0.01);
-  BC.sparks.forEach(s=>{
-    s.t+=s.speed; s.life-=s.speed*.8;
-    const t=Math.min(s.t,1), mt=1-t;
-    const x=mt*mt*s.x0+2*mt*t*s.mx+t*t*s.x1;
-    const y=mt*mt*s.y0+2*mt*t*s.my+t*t*s.y1;
-    ctx.beginPath();
-    ctx.arc(x,y,1.5+s.size*.8,0,Math.PI*2);
-    ctx.fillStyle=rgba(s.color,s.life*.9);
-    ctx.shadowBlur=10; ctx.shadowColor=s.color;
-    ctx.fill();
-    ctx.shadowBlur=0;
-    if(s.t>=1&&s.onArrive){s.onArrive();s.onArrive=null;}
-  });
+  // Draw connections between active neurons
+  for (let i = 0; i < neuronNodes.length; i++) {
+    for (let j = i+1; j < neuronNodes.length; j++) {
+      const a = neuronNodes[i], b = neuronNodes[j];
+      if (a.region === b.region && (a.activation + b.activation) > 0.3) {
+        const alpha = (a.activation * b.activation * 0.4).toFixed(3);
+        nCtx.beginPath();
+        nCtx.moveTo(a.x, a.y);
+        nCtx.lineTo(b.x, b.y);
+        nCtx.strokeStyle = a.color + Math.round(alpha*255).toString(16).padStart(2,'0');
+        nCtx.lineWidth = 0.5;
+        nCtx.stroke();
+      }
+    }
+  }
 
   // Draw neurons
-  BC.nodes.forEach(n=>{
-    n.x=n.bx+Math.sin(BC.time*.4+n.phase)*1.5;
-    n.y=n.by+Math.cos(BC.time*.35+n.phase)*1.5;
-    const a=n.activation;
-    if(a>0.05){
-      const gr=ctx.createRadialGradient(n.x,n.y,0,n.x,n.y,n.radius*(3+a*5));
-      gr.addColorStop(0,rgba(n.color,a*.7));
-      gr.addColorStop(1,rgba(n.color,0));
-      ctx.beginPath(); ctx.arc(n.x,n.y,n.radius*(3+a*5),0,Math.PI*2);
-      ctx.fillStyle=gr; ctx.fill();
+  neuronNodes.forEach(n => {
+    const r   = n.baseR + n.activation * 5;
+    const grd = nCtx.createRadialGradient(n.x,n.y,0, n.x,n.y,r*2.5);
+    const alpha = Math.round(40 + n.activation*215).toString(16).padStart(2,'0');
+    grd.addColorStop(0, n.color + 'ff');
+    grd.addColorStop(1, n.color + '00');
+    nCtx.beginPath();
+    nCtx.arc(n.x, n.y, r, 0, Math.PI*2);
+    nCtx.fillStyle = grd;
+    nCtx.fill();
+    // Spike ring
+    if (n.activation > 0.5) {
+      nCtx.beginPath();
+      nCtx.arc(n.x, n.y, r + n.activation*8, 0, Math.PI*2);
+      nCtx.strokeStyle = n.color + '44';
+      nCtx.lineWidth = 1;
+      nCtx.stroke();
     }
-    ctx.beginPath(); ctx.arc(n.x,n.y,n.radius,0,Math.PI*2);
-    ctx.fillStyle=rgba(n.color,.12+a*.88);
-    if(a>.6){ctx.shadowBlur=15;ctx.shadowColor=n.color;}
-    ctx.fill(); ctx.shadowBlur=0;
-    if(n.firing>0){
-      ctx.beginPath(); ctx.arc(n.x,n.y,n.radius+n.firing*20,0,Math.PI*2);
-      ctx.strokeStyle=rgba(n.color,n.firing*.7);
-      ctx.lineWidth=1; ctx.stroke();
-      n.firing*=.80;
-    }
-    n.activation*=0.96;
   });
 
-  // Region labels
-  BRAIN_REGIONS.forEach(rd=>{
-    if(!rd.label) return;
-    const rm=BC.regionMap[rd.id];
-    if(!rm) return;
-    const avgA=rm.nodes.reduce((s,n)=>s+n.activation,0)/rm.nodes.length;
-    ctx.font=`${avgA>.2?'700':'400'} 7px Orbitron,monospace`;
-    ctx.fillStyle=avgA>.15?rgba(rd.color,.8):'rgba(255,255,255,0.06)';
-    ctx.textAlign='center';
-    ctx.fillText(rd.label, rm.cx, rm.cy+rd.r*Math.min(BC.W,BC.H)*0.9+14);
-  });
+  requestAnimationFrame(drawNeural);
 }
 
-function fireRegion(regionId, strengths) {
-  const rm=BC.regionMap[regionId];
-  if(!rm) return;
-  rm.nodes.forEach((n,i)=>{
-    const s=Array.isArray(strengths)?strengths[i%strengths.length]:strengths;
-    if((s||0)<0.05) return;
-    setTimeout(()=>{
-      n.activation=Math.min(1,n.activation+(s||0));
-      n.firing=1;
-      BC.edges.forEach(e=>{
-        if(e.from!==n) return;
-        e.strength=Math.max(e.strength,s*.8);
-        if(Math.random()<s*.6){
-          const mx=(n.x+e.to.x)/2+(Math.random()-.5)*30;
-          const my=(n.y+e.to.y)/2+(Math.random()-.5)*30;
-          BC.sparks.push({
-            x0:n.x,y0:n.y,mx,my,x1:e.to.x,y1:e.to.y,
-            t:0,life:1,speed:.03+Math.random()*.025,
-            color:e.color,size:Math.random()*1.5,
-            onArrive:()=>{e.to.activation=Math.min(1,e.to.activation+s*.5);e.to.firing=.7;}
-          });
-        }
-      });
-    }, Math.random()*80);
-  });
+// ── Vision canvas ─────────────────────────────────────────────
+const vCanvas = document.getElementById('vision-canvas');
+const vCtx    = vCanvas.getContext('2d');
+function drawVision(pixels, edges, W=64, H=48) {
+  vCanvas.width  = W; vCanvas.height = H;
+  const img = vCtx.createImageData(W, H);
+  for (let i=0; i<W*H; i++) {
+    const row = Math.floor(i/W), col = i%W;
+    const pr  = Math.floor(row * pixels.length / H);
+    const pc  = Math.floor(col * (pixels[0]||[]).length / W);
+    const v   = pixels[pr] ? (pixels[pr][pc]||0) : 0;
+    const e   = edges[pr]  ? (edges[pr][pc]||0)  : 0;
+    img.data[i*4]   = Math.min(255, v*200 + e*55);
+    img.data[i*4+1] = Math.min(255, v*180);
+    img.data[i*4+2] = Math.min(255, v*160 + e*80);
+    img.data[i*4+3] = 255;
+  }
+  vCtx.putImageData(img, 0, 0);
 }
 
-function ingestNeuronState(state) {
-  if(!state) return;
-  const map={
-    optic:'optic', auditory:'auditory', thalamus:'thalamus',
-    hippocampus:'hippocampus', prefrontal:'prefrontal',
-    dopamine:'dopamine', language:'language', memory:'memory', speech:'speech',
+// ── Bar helpers ───────────────────────────────────────────────
+function makeBar(label, val, cls='', color='') {
+  const pct = Math.round(val*100);
+  const fill = color ? `background:${color}` : '';
+  return `<div class="bar-row ${cls}">
+    <div class="bar-label">${label}</div>
+    <div class="bar-track"><div class="bar-fill" style="width:${pct}%;${fill}"></div></div>
+    <div class="bar-val">${pct}%</div>
+  </div>`;
+}
+
+const NM_COLORS = {
+  dopamine:'#ffcc00', serotonin:'#00ff88', norepinephrine:'#ff6b35',
+  acetylcholine:'#00d4ff', gaba:'#ff006e', glutamate:'#ff4060'
+};
+
+function updateNeuralPanel(state) {
+  // Neuromod
+  let nm = '';
+  for (const [k,v] of Object.entries(state.neuromod||{})) {
+    nm += makeBar(k, v, `nm-${k}`, NM_COLORS[k]||'');
+  }
+  document.getElementById('nm-bars').innerHTML = nm;
+
+  // Traits
+  let traits = '';
+  for (const [k,v] of Object.entries(state.personality||{})) {
+    traits += makeBar(k.replace('_',' '), v, 'trait-bar');
+  }
+  document.getElementById('trait-bars').innerHTML = traits;
+
+  // Top clusters
+  let clusters = '';
+  (state.top_clusters||[]).slice(0,12).forEach(c => {
+    const hot = c.activation > 0.5 ? 'hot' : '';
+    clusters += makeBar(c.name.replace(/_/g,' '), c.activation, `cluster-bar ${hot}`);
+  });
+  document.getElementById('cluster-bars').innerHTML = clusters;
+
+  // Regions
+  let regions = '';
+  const regionColors = {
+    prefrontal_cortex:'#00d4ff', temporal_lobe:'#a855f7',
+    limbic_system:'#ff6b35', parietal_lobe:'#00ff88',
+    occipital_lobe:'#ffcc00', cingulate_cortex:'#ff006e',
+    basal_ganglia:'#ff4060', cerebellum:'#7ec8e3',
+    insula:'#c084fc', default_mode_network:'#4ade80',
+    association_cortex:'#fb923c', thalamus:'#f9a8d4',
   };
-  Object.entries(map).forEach(([k,rid])=>{
-    const v=state[k]||0;
-    if(v>0.05) fireRegion(rid, v);
-  });
-  // Columns
-  const cols=state.columns||[];
-  cols.forEach((v,i)=>{ if(v>0.05) fireRegion('col'+i, v); });
-}
-
-// Idle ambient
-setInterval(()=>{
-  const rd=BRAIN_REGIONS[Math.floor(Math.random()*BRAIN_REGIONS.length)];
-  const rm=BC.regionMap[rd.id];
-  if(rm&&rm.nodes.length){
-    const n=rm.nodes[Math.floor(Math.random()*rm.nodes.length)];
-    n.activation=Math.min(1,n.activation+.08+Math.random()*.1);
-    n.firing=.4;
+  for (const [r,v] of Object.entries(state.regions||{})) {
+    regions += makeBar(r.replace(/_/g,' '), v, '', regionColors[r]||'');
   }
-},200);
+  document.getElementById('region-bars').innerHTML = regions;
 
-// ═══════════════════════════════════════════════════════════
-//  OPTIC CANVAS — pixel neuron display
-// ═══════════════════════════════════════════════════════════
-const OC={canvas:null, ctx:null};
-function initOptic(){
-  OC.canvas=document.getElementById('optic-canvas');
-  OC.ctx=OC.canvas.getContext('2d');
-  OC.canvas.width=128; OC.canvas.height=96;
-}
-function drawOptic(pixels,edges){
-  if(!pixels||!OC.ctx) return;
-  const ctx=OC.ctx;
-  const W=128,H=96,PW=W/64,PH=H/48;
-  ctx.clearRect(0,0,W,H);
-  // Pixel neurons
-  pixels.forEach((row,ri)=>row.forEach((v,ci)=>{
-    const brightness=v;
-    ctx.fillStyle=`rgba(0,${Math.round(brightness*200)},${Math.round(brightness*255)},${0.1+brightness*.7})`;
-    ctx.fillRect(ci*PW,ri*PH,PW-0.5,PH-0.5);
-  }));
-  // Edge overlay
-  if(edges){
-    const EW=W/32,EH=H/24;
-    edges.forEach((row,ri)=>row.forEach((v,ci)=>{
-      if(v>0.2){
-        ctx.fillStyle=`rgba(0,255,136,${v*.5})`;
-        ctx.fillRect(ci*EW,ri*EH,EW,EH);
-      }
-    }));
-  }
+  // Emotion
+  const emo = state.emotion || {};
+  const eName = emo.emotion || 'neutral';
+  const eColors = {
+    joy:'#ffcc00', curiosity:'#00d4ff', calm:'#00ff88',
+    melancholy:'#a855f7', anxiety:'#ff4060', awe:'#ff6b35',
+    frustration:'#ff006e', contentment:'#4ade80', excitement:'#ffcc00',
+    confusion:'#c084fc', empathy:'#f9a8d4', wonder:'#7ec8e3',
+  };
+  const eColor = eColors[eName] || '#a855f7';
+  document.getElementById('e-circle').style.borderColor = eColor;
+  document.getElementById('e-circle').style.boxShadow = `0 0 20px ${eColor}44`;
+  document.getElementById('e-name').textContent = eName;
+  document.getElementById('e-label').style.color = eColor;
+  document.getElementById('e-label').textContent = eName;
+  document.getElementById('e-coords').textContent =
+    `v:${emo.valence} a:${emo.arousal} i:${emo.intensity}`;
+  document.getElementById('emotion-pill').textContent = eName;
+  document.getElementById('emotion-pill').style.borderColor = eColor;
+  document.getElementById('emotion-pill').style.color = eColor;
+
+  // Counts
+  document.getElementById('neuron-count').textContent =
+    (state.total_neurons||0).toLocaleString();
+  document.getElementById('conn-count').textContent =
+    (state.total_connections||0).toLocaleString();
 }
 
-// ═══════════════════════════════════════════════════════════
-//  WAVEFORM CANVAS
-// ═══════════════════════════════════════════════════════════
-const WC={canvas:null, ctx:null};
-function initWave(){
-  WC.canvas=document.getElementById('wave-canvas');
-  WC.ctx=WC.canvas.getContext('2d');
+// ── Chat ──────────────────────────────────────────────────────
+function sendChat() {
+  const inp = document.getElementById('chat-in');
+  const txt = inp.value.trim();
+  if (!txt) return;
+  addMsg(txt, 'user');
+  socket.emit('chat', {text: txt});
+  inp.value = '';
 }
-function drawWave(){
-  if(!WC.ctx) return;
-  const W=WC.canvas.offsetWidth, H=WC.canvas.offsetHeight;
-  WC.canvas.width=W; WC.canvas.height=H;
-  const ctx=WC.ctx;
-  ctx.fillStyle='#020408'; ctx.fillRect(0,0,W,H);
-  const n=volumeHistory.length, barW=W/n;
-  volumeHistory.forEach((db,i)=>{
-    const norm=Math.max(0,(db+70)/50);
-    const bH=norm*H*.9;
-    const g=ctx.createLinearGradient(0,H,0,H-bH);
-    g.addColorStop(0,'#00ff8844'); g.addColorStop(1,'#00f5ff88');
-    ctx.fillStyle=g;
-    ctx.fillRect(i*barW,H-bH,barW-1,bH);
-  });
-  requestAnimationFrame(drawWave);
+function addMsg(text, role, thinking=false) {
+  const div = document.createElement('div');
+  div.className = `msg ${role}${thinking?' thinking':''}`;
+  div.textContent = text;
+  const msgs = document.getElementById('chat-messages');
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+  return div;
 }
+let thinkingEl = null;
 
-// ═══════════════════════════════════════════════════════════
-//  MEMORY GRAPH
-// ═══════════════════════════════════════════════════════════
-const MC={canvas:null, ctx:null, nodes:[], edges:[]};
-function initMemGraph(){
-  MC.canvas=document.getElementById('mem-canvas');
-  MC.ctx=MC.canvas.getContext('2d');
-}
-function updateMemGraph(connections){
-  if(!MC.ctx||!connections) return;
-  const W=MC.canvas.offsetWidth, H=MC.canvas.offsetHeight;
-  MC.canvas.width=W; MC.canvas.height=H;
-  const ctx=MC.ctx;
-  ctx.fillStyle='rgba(2,4,8,0.3)'; ctx.fillRect(0,0,W,H);
-  if(!connections.length) return;
-  const nodes={};
-  connections.forEach(c=>{
-    if(!nodes[c.a]) nodes[c.a]={x:Math.random()*W*.8+W*.1,y:Math.random()*H*.8+H*.1};
-    if(!nodes[c.b]) nodes[c.b]={x:Math.random()*W*.8+W*.1,y:Math.random()*H*.8+H*.1};
-  });
-  connections.forEach(c=>{
-    const na=nodes[c.a], nb=nodes[c.b];
-    if(!na||!nb) return;
-    ctx.beginPath(); ctx.moveTo(na.x,na.y); ctx.lineTo(nb.x,nb.y);
-    ctx.strokeStyle=rgba('#bf5fff',c.weight*.7); ctx.lineWidth=c.weight*2; ctx.stroke();
-  });
-  Object.entries(nodes).forEach(([id,n])=>{
-    ctx.beginPath(); ctx.arc(n.x,n.y,3,0,Math.PI*2);
-    ctx.fillStyle='#bf5fff'; ctx.fill();
-    ctx.fillStyle='rgba(191,95,255,.5)'; ctx.font='7px monospace'; ctx.textAlign='center';
-    ctx.fillText(id.split('_').pop().slice(0,6), n.x, n.y-5);
-  });
+// ── System log ────────────────────────────────────────────────
+function sysLog(msg, err=false) {
+  const log = document.getElementById('sys-log');
+  const d   = document.createElement('div');
+  d.className = 'log-entry' + (err?' err':'');
+  d.textContent = new Date().toLocaleTimeString('en',{hour12:false}) + ' ' + msg;
+  log.appendChild(d);
+  log.scrollTop = log.scrollHeight;
+  if (log.children.length > 200) log.removeChild(log.firstChild);
 }
 
-// ═══════════════════════════════════════════════════════════
-//  SOCKET EVENTS
-// ═══════════════════════════════════════════════════════════
-let _startTs = null;
-setInterval(()=>{
-  if(_startTs) document.getElementById('h-uptime').textContent=fmtDur(Date.now()-_startTs);
-},1000);
-
-socket.on('neuron_state', d=>{
-  ingestNeuronState(d.state);
-  updateRegions(d.state);
-  // Status dots
-  document.getElementById('dot-alive').className='status-dot active';
-  document.getElementById('lbl-status').textContent=d.thinking?'THINKING':d.speaking?'SPEAKING':d.listening?'LISTENING':'ONLINE';
-  document.getElementById('dot-listen').className='status-dot'+(d.listening?' active':'');
-  document.getElementById('dot-think').className='status-dot'+(d.thinking?' thinking':'');
-  document.getElementById('dot-speak').className='status-dot'+(d.speaking?' speaking':'');
-  document.getElementById('h-emotion').textContent=(d.emotion||'?').toUpperCase();
-  document.getElementById('h-episodes').textContent=d.memory?.episodes||0;
-  document.getElementById('m-eps').textContent=d.memory?.episodes||0;
-  // Memory connections
-  const conns=d.memory?.connections||[];
-  document.getElementById('m-conn').textContent=conns.length;
-  const mc=document.getElementById('m-conns');
-  mc.innerHTML=conns.map(c=>`<div class="mem-conn ${c.weight>.4?'strong':''}">${c.a.slice(0,8)}↔${c.b.slice(0,8)} [${(c.weight*100).toFixed(0)}%]</div>`).join('');
-  updateMemGraph(conns);
-});
-
-socket.on('optic_frame', d=>{
-  drawOptic(d.pixels, d.edges);
-});
-
-socket.on('face_detected', d=>{
-  fireRegion('optic', .9);
-  fireRegion('hippocampus', .5);
-});
-
-socket.on('speech_heard', d=>{
-  addMsg('user', d.text);
-  setThought(d.text, 'thinking');
-  fireRegion('auditory', .95);
-  fireRegion('thalamus', .9);
-  volumeHistory.push(-10); volumeHistory.shift();
-});
-
-socket.on('axon_response', d=>{
-  addMsg('axon', d.text);
-  setThought(d.text, 'speaking');
-});
-
-socket.on('speaking_start', d=>{setThought(d.text,'speaking');});
-socket.on('speaking_done',  ()=>{setThought('Listening...','');});
-socket.on('thinking_start', d=>{setThought('Thinking: "'+d.text+'"','thinking');});
-
-socket.on('log', d=>{
-  sysLog(d.msg);
-  if(d.msg.includes('online')||d.msg.includes('AXON')) _startTs=_startTs||Date.now();
-});
-
-socket.on('connect', ()=>sysLog('Socket connected.'));
-socket.on('lm_status', d=>{
-  const s=document.getElementById('llm-status');
-  if(d.lm_studio){
-    s.style.color='var(--green)';
-    s.textContent='⬡ LM Studio: '+d.lm_model;
-  } else {
-    s.style.color='var(--muted)';
-    s.textContent=d.claude?'◇ Claude fallback active':'⚠ No LLM connected';
-  }
-});
-
-// Volume
-socket.on('neuron_state', d=>{
-  if(d.volume_db!==undefined){ volumeHistory.push(d.volume_db); volumeHistory.shift(); }
-});
-
-// ═══════════════════════════════════════════════════════════
-//  UI HELPERS
-// ═══════════════════════════════════════════════════════════
-function addMsg(role, text) {
-  const c=document.getElementById('conversation');
-  const d=document.createElement('div');
-  d.className='msg msg-'+role;
-  d.innerHTML=`<div class="msg-label" style="color:${role==='axon'?'var(--purple)':'var(--cyan)'}">${role.toUpperCase()}</div>${text}`;
-  c.appendChild(d); c.scrollTop=c.scrollHeight;
-}
-function sysLog(msg) {
-  const c=document.getElementById('console-out');
-  const s=document.createElement('span');
-  const cls=msg.includes('Heard')?'heard':msg.includes('AXON:')?'said':msg.includes('Error')||msg.includes('❌')?'err':'info';
-  s.className=cls; s.textContent='▸ '+msg;
-  c.appendChild(s); c.scrollTop=c.scrollHeight;
-  if(c.children.length>200) c.removeChild(c.firstChild);
-}
-function setThought(text, state) {
-  const tb=document.getElementById('thought-bubble');
-  tb.textContent=text;
-  tb.className='thought-bubble'+(state?' '+state:'');
-}
-function sendText() {
-  const inp=document.getElementById('text-input');
-  const t=inp.value.trim();
-  if(!t) return;
-  socket.emit('user_text',{text:t});
-  inp.value='';
-}
-document.getElementById('text-input').addEventListener('keydown',e=>{
-  if(e.key==='Enter') sendText();
-});
+// ── Engine control ────────────────────────────────────────────
 function startAxon() {
-  const cfg = {
+  socket.emit('start_engine', {
     api_key:      document.getElementById('cfg-api').value,
     lm_url:       document.getElementById('cfg-lmurl').value || 'http://localhost:1234',
     lm_model:     document.getElementById('cfg-lmmodel').value || null,
     prefer_local: document.getElementById('cfg-local').checked,
+    voice:        document.getElementById('cfg-voice').checked,
     camera:       document.getElementById('cfg-cam').checked,
-    camera_index: parseInt(document.getElementById('cfg-camidx').value) || -1,
     mic:          document.getElementById('cfg-mic').checked,
-  };
-  socket.emit('start_engine', cfg);
-  sysLog('Starting AXON...');
+    camera_index: parseInt(document.getElementById('cfg-camidx').value) || -1,
+  });
+  sysLog('Activating AXON...');
 }
-function stopAxon() { socket.emit('stop_engine'); }
-function reprobe() {
-  socket.emit('reprobe_lm');
-  sysLog('Re-probing LM Studio...');
+function stopAxon()  { socket.emit('stop_engine'); }
+function reprobe()   { socket.emit('reprobe_lm'); sysLog('Re-probing LM Studio...'); }
+
+// ── Socket events ─────────────────────────────────────────────
+socket.on('connect', () => sysLog('Socket connected.'));
+
+socket.on('lm_status', d => {
+  const s = document.getElementById('llm-status');
+  if (d.lm_studio) {
+    s.style.color = 'var(--green)';
+    s.textContent = '⬡ LM Studio: ' + d.lm_model;
+  } else {
+    s.style.color = 'var(--muted)';
+    s.textContent = d.claude ? '◇ Claude fallback' : '⚠ No LLM';
+  }
+});
+
+socket.on('log', d => {
+  sysLog(d.msg);
+  if (d.msg.includes('online') || d.msg.includes('ACTIVATE')) {
+    document.getElementById('pill-engine').className = 'status-pill on';
+    document.getElementById('pill-engine').textContent = 'ONLINE';
+  }
+  if (d.msg.includes('Optic'))    setPill('pill-cam', true);
+  if (d.msg.includes('Auditory')) setPill('pill-mic', true);
+});
+
+function setPill(id, on) {
+  const p = document.getElementById(id);
+  p.className = 'status-pill ' + (on ? 'on' : 'off');
 }
 
-function rgba(hex,a){
-  const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
-  return `rgba(${r},${g},${b},${Math.max(0,Math.min(1,a)).toFixed(3)})`;
-}
-function fmtDur(ms){
-  const s=Math.floor(ms/1000), m=Math.floor(s/60), h=Math.floor(m/60);
-  return h?`${h}h${m%60}m`:`${m}m${s%60}s`;
-}
+socket.on('frame', d => {
+  if (d.pixels) drawVision(d.pixels, d.edges||[]);
+  setPill('pill-cam', true);
+});
 
-// ═══════════════════════════════════════════════════════════
-//  BOOT
-// ═══════════════════════════════════════════════════════════
-window.addEventListener('load',()=>{
-  initBrain(); initOptic(); initWave(); initMemGraph(); drawWave();
+socket.on('transcript', d => {
+  sysLog('🎤 ' + d.text);
+  addMsg(d.text, 'user');
+});
+
+socket.on('thinking', d => {
+  if (d.state) {
+    thinkingEl = addMsg('thinking...', 'axon', true);
+  } else if (thinkingEl) {
+    thinkingEl.remove();
+    thinkingEl = null;
+  }
+});
+
+socket.on('response', d => {
+  if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; }
+  addMsg(d.text, 'axon');
+});
+
+socket.on('thought', d => {
+  document.getElementById('thought-bar').textContent = d.text || '';
+});
+
+socket.on('neural_state', d => {
+  neuralState = d;
+  updateNeuralPanel(d);
+});
+
+socket.on('voice_speaking', d => {
+  const dot = document.getElementById('voice-dot');
+  const lbl = document.getElementById('voice-label');
+  if (d.speaking) {
+    dot.className = 'voice-indicator speaking';
+    lbl.textContent = 'speaking';
+  } else {
+    dot.className = 'voice-indicator';
+    lbl.textContent = 'voice';
+  }
+});
+
+// ── Init ──────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  initNeurons();
+  const vc = document.getElementById('vision-canvas');
+  vc.width  = vc.offsetWidth;
+  vc.height = vc.offsetHeight;
+});
+window.addEventListener('load', () => {
+  initNeurons();
+  drawNeural();
 });
 </script>
 </body>
