@@ -170,27 +170,33 @@ class MemorySystem:
         }
 
     def build_context_string(self) -> str:
-        """Build a natural language memory context for the LLM."""
-        facts   = self.all_facts()
-        recent  = self.recall_recent(8)
-        lines   = ["[AXON MEMORY]"]
+        """Build memory context for the LLM.
+        IMPORTANT: Only includes USER speech/visual events — NOT Axon's own responses.
+        Injecting Axon's own output causes topic-looping and self-answering."""
+        import datetime
+        facts  = self.all_facts()
+        recent = self.recall_recent(12)
+        lines  = ["[AXON MEMORY]"]
         if facts:
             lines.append("Known facts:")
-            for k,v in list(facts.items())[:12]:
+            for k, v in list(facts.items())[:10]:
                 lines.append(f"  {k}: {v}")
-        if recent:
-            lines.append("Recent experiences:")
-            for ep in recent[:5]:
-                import datetime
-                ts = datetime.datetime.fromtimestamp(ep['time']).strftime('%H:%M:%S')
+        # Filter: skip Axon's own language output (modality='language')
+        user_eps = [ep for ep in recent if ep.get('modality') != 'language']
+        if user_eps:
+            lines.append("Recent user context:")
+            for ep in user_eps[:4]:
+                ts = datetime.datetime.fromtimestamp(ep['time']).strftime('%H:%M')
                 c  = ep['content']
-                em = f" [{ep['emotion']}]" if ep['emotion'] else ""
+                em = f" [{ep['emotion']}]" if ep.get('emotion') else ""
                 if ep['modality'] == 'auditory':
-                    lines.append(f"  {ts} heard: \"{c.get('text','')}\" {em}")
+                    txt = c.get('text', '').strip()
+                    if txt:
+                        lines.append(f"  {ts} user said: \"{txt}\"{em}")
                 elif ep['modality'] == 'visual':
-                    lines.append(f"  {ts} saw: {c.get('description','')} {em}")
-                elif ep['modality'] == 'language':
-                    lines.append(f"  {ts} said: \"{c.get('text','')}\"")
+                    desc = c.get('description', '').strip()
+                    if desc:
+                        lines.append(f"  {ts} saw: {desc}")
         return "\n".join(lines)
 
     def close(self):

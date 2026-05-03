@@ -62,6 +62,7 @@ class VoiceOutput:
         print(f"  [Voice] edge-tts={EDGE_TTS_OK}, playback={PLAYBACK}, enabled={self.enabled}")
 
     def speak(self, text: str, interrupt: bool = False):
+        """Queue text and BLOCK until it has finished playing."""
         if not self.enabled:
             return
         text = text.strip()
@@ -71,21 +72,26 @@ class VoiceOutput:
             while not self._queue.empty():
                 try: self._queue.get_nowait()
                 except: break
-        self._queue.put(text)
+        done_event = threading.Event()
+        self._queue.put((text, done_event))
+        done_event.wait()   # ← caller blocks here until audio finishes
 
     def _worker(self):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         while True:
-            text = self._queue.get()
-            if text is None:
+            item = self._queue.get()
+            if item is None:
                 break
+            text, done_event = item
             self.speaking = True
             try:
                 loop.run_until_complete(self._synthesize(text))
             except Exception as e:
                 print(f"  [Voice] TTS error: {e}")
-            self.speaking = False
+            finally:
+                self.speaking = False
+                done_event.set()   # ← unblocks the caller
 
     async def _synthesize(self, text: str):
         if not EDGE_TTS_OK:
