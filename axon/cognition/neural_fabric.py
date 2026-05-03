@@ -567,14 +567,14 @@ class NeuralFabric:
         # weight_mat is [N,N] float16; spike is float32 → cast for matmul
         wm = self.weight_mat.float()
         delta = wm @ spike                   # [N] weighted input from all sources
-        delta = delta * 0.08                 # scale — keep signal local
+        delta = delta * 0.15                 # scale — local propagation
         delta = delta * (0.5 + ach)          # acetylcholine boosts learning
 
         # Noise
         noise = torch.randn_like(act) * 0.002 * (0.5 + ne * 0.3)
 
         # Decay (serotonin stabilises)
-        decay = 0.75 - ser * 0.08
+        decay = 0.88 - ser * 0.06
         new_act = act * decay + delta + noise
         new_act = torch.clamp(new_act, 0.0, 1.0)
 
@@ -647,7 +647,7 @@ class NeuralFabric:
             idxs = [self._name_to_idx[n] for n in group if n in self._name_to_idx]
             if idxs:
                 t = torch.tensor(idxs, device=DEVICE)
-                noise = torch.rand(len(idxs), device=DEVICE) * 0.018 + 0.005
+                noise = torch.rand(len(idxs), device=DEVICE) * 0.035 + 0.015
                 with self._lock:
                     self.activation[t] = torch.clamp(self.activation[t] + noise, 0.0, 1.0)
         # Random spontaneous burst

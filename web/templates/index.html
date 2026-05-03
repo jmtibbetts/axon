@@ -516,13 +516,14 @@ function drawNeural() {
 
   const regionMap = (neuralState && neuralState.regions) ? neuralState.regions : {};
 
-  // ── Contrast curve — sharpen region values so low=dark, high=bright ─
-  // Apply power curve: regionMap values are often 0.1-0.4 even when "active"
-  // We want: <0.15 = basically 0, 0.3 = dim, 0.6+ = bright
+  // ── Contrast curve — cut ambient floor, linearly remap the rest ──────
+  // regionMap values: ~0.05 idle, ~0.15 background, ~0.35+ active, ~0.60 spiking
+  // Floor cut at 0.08, then remap [0.08..0.70] → [0..1], mild power for contrast
   const sharpenedRegion = {};
   for (const [k, v] of Object.entries(regionMap)) {
-    const shifted = Math.max(0, v - 0.12);          // cut floor
-    sharpenedRegion[k] = Math.min(1, shifted * shifted * 6.0); // power curve
+    const shifted = Math.max(0, v - 0.08);            // cut idle floor only
+    const remapped = Math.min(1, shifted / 0.62);     // remap 0→0.62 to 0→1
+    sharpenedRegion[k] = Math.pow(remapped, 1.4);     // mild power for contrast
   }
 
   // ── Receive new state and schedule spike waves ──────────────────────
@@ -558,17 +559,17 @@ function drawNeural() {
   neuronNodes.forEach(n => {
     const regionAct = sharpenedRegion[n.region] || 0;
     // Hard snap to dark when region is quiet
-    if (regionAct < 0.05) {
-      n.activation *= 0.88;   // fast decay to black
+    if (regionAct < 0.015) {
+      n.activation *= 0.94;   // gentle decay when region truly idle
       n.phase += n.speed;
       return;
     }
-    // Drift toward sharpened region activity
-    n.activation += (regionAct - n.activation) * 0.04;
+    // Drift toward sharpened region activity — faster response
+    n.activation += (regionAct - n.activation) * 0.06;
     n.phase      += n.speed;
-    // Gentle flicker — doesn't add much light, just texture
+    // Gentle flicker for texture
     const flicker = (Math.sin(n.phase) * 0.5 + 0.5) * regionAct * 0.5;
-    n.activation  = Math.max(0.0, Math.min(1.0, n.activation + flicker * 0.008 - 0.005));
+    n.activation  = Math.max(0.0, Math.min(1.0, n.activation + flicker * 0.012 - 0.003));
   });
 
   // ── Process spike queue ─────────────────────────────────────────────
@@ -762,7 +763,7 @@ function drawNeural() {
 
   // ── Draw neurons ────────────────────────────────────────────────────────────
   neuronNodes.forEach(n => {
-    if (n.activation < 0.04) return;
+    if (n.activation < 0.015) return;
     const r     = n.baseR + n.activation * 1.6;
     const alpha = Math.round(40 + n.activation * 140).toString(16).padStart(2,'0');
 
