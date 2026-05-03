@@ -2,6 +2,11 @@
 AXON — Flask + SocketIO UI server
 """
 import os, sys, threading
+try:
+    import torch as _torch
+    _CUDA_NAME = _torch.cuda.get_device_name(0) if _torch.cuda.is_available() else None
+except ImportError:
+    _CUDA_NAME = None
 from pathlib import Path
 from flask import Flask, render_template, jsonify
 from flask_socketio import SocketIO, emit

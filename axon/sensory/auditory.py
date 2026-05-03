@@ -30,6 +30,7 @@ class AuditorySystem:
         self._audio_q   = queue.Queue()
         self.listening  = False
         self.volume_db  = -60.0
+        self._device    = "cpu"  # updated once Whisper loads
 
     @staticmethod
     def list_devices() -> list:
@@ -52,10 +53,20 @@ class AuditorySystem:
             return []
 
     def _load_whisper(self):
-        import whisper
-        print("  [Auditory] Loading Whisper tiny.en model...")
-        self._whisper = whisper.load_model("tiny.en")
-        print("  [Auditory] Whisper ready.")
+        import whisper, torch
+        # Prefer CUDA (RTX 5090), fall back to CPU
+        if torch.cuda.is_available():
+            self._device = "cuda"
+            gpu_name = torch.cuda.get_device_name(0)
+            # Use medium.en on GPU — much more accurate, still fast
+            model_name = "medium.en"
+            print(f"  [Auditory] CUDA detected ({gpu_name}) — loading Whisper {model_name} on GPU...")
+        else:
+            self._device = "cpu"
+            model_name = "tiny.en"
+            print(f"  [Auditory] No CUDA — loading Whisper {model_name} on CPU...")
+        self._whisper = whisper.load_model(model_name, device=self._device)
+        print(f"  [Auditory] Whisper {model_name} ready on {self._device.upper()}.")
 
     def start(self):
         threading.Thread(target=self._load_whisper, daemon=True).start()
@@ -132,7 +143,8 @@ class AuditorySystem:
             return
         audio = np.concatenate(chunks).astype(np.float32) / 32768.0
         try:
-            result = self._whisper.transcribe(audio, language='en', fp16=False)
+            use_fp16 = getattr(self, '_device', 'cpu') == 'cuda'
+            result = self._whisper.transcribe(audio, language='en', fp16=use_fp16)
             text   = result['text'].strip()
             if text and len(text) > 2:
                 self.on_speech(text, 0.9)
