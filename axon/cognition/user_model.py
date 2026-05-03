@@ -123,7 +123,32 @@ class UserModel:
         }
 
     def _save_profile(self):
-        self.memory.learn(self.PROFILE_KEY, json.dumps(self._profile))
+        """Save full profile blob + individual semantic keys for context retrieval."""
+        self.memory.learn(self.PROFILE_KEY, json.dumps(self._profile), source="profile_blob")
+        p = self._profile
+        # Write individual facts so build_context_string can surface them cleanly
+        ident = p.get("identity", {})
+        if ident.get("name"):
+            self.memory.learn("user_name", ident["name"], source="user_model")
+        if ident.get("age"):
+            self.memory.learn("user_age", str(ident["age"]), source="user_model")
+        work = p.get("work", {})
+        if work.get("job_title"):
+            self.memory.learn("user_job", work["job_title"], source="user_model")
+        if work.get("employer"):
+            self.memory.learn("user_employer", work["employer"], source="user_model")
+        loc = p.get("location", {})
+        if loc.get("city"):
+            self.memory.learn("user_location", loc["city"], source="user_model")
+        interests = p.get("interests", [])
+        if interests:
+            self.memory.learn("user_interests", ", ".join(interests[:6]), source="user_model")
+        projects = p.get("projects", [])
+        if projects:
+            self.memory.learn("user_projects", ", ".join(projects[:4]), source="user_model")
+        goals = p.get("goals", [])
+        if goals:
+            self.memory.learn("user_goals", ", ".join(goals[:3]), source="user_model")
 
     # ── Extraction ─────────────────────────────────────────────
 
@@ -164,8 +189,8 @@ class UserModel:
         # Time-of-day habit tracking
         self._track_activity_time()
 
-        # Save every 5 turns
-        if self._turn_count % 5 == 0:
+        # Save every 3 turns (keep profile fresh)
+        if self._turn_count % 3 == 0:
             self._save_profile()
 
     def _route_field(self, field: str):

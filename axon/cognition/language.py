@@ -279,38 +279,51 @@ If {emo['emotion']} — lean into that authentically. Don't announce it unless n
         except Exception as e:
             text = f"Processing disrupted: {str(e)[:80]}"
 
-        # 6. Store to memory
+        # 6. Store ONLY user input to episodic memory (never Axon's output)
         self._history.append({"role": "assistant", "content": text})
-        self.memory.store_episode("language", {"text": text, "role": "axon",
-                                               "searched": bool(search_result)})
-        self.memory.store_episode("auditory",  {"text": user_input, "role": "user"},
-                                  emotion=visual_context.get("emotion") if visual_context else None)
+        detected_topics = self._extract_topics(user_input)
+        emotion_tag = visual_context.get("emotion") if visual_context else None
+        # Importance: higher if emotionally charged or question-bearing
+        importance = 0.5
+        if emotion_tag and emotion_tag not in ("neutral", "calm"):
+            importance = 0.75
+        if "?" in user_input:
+            importance = max(importance, 0.6)
+        self.memory.store_episode(
+            "auditory",
+            {"text": user_input, "role": "user"},
+            emotion=emotion_tag,
+            importance=importance,
+            topics=detected_topics,
+        )
 
-        # 7. Learn about the user
+        # 7. Learn from user input — one authoritative pipeline
         self.user_model.ingest(user_input)
-        self._extract_facts(user_input)
 
-        # 8. Hebbian co-activation
-        self.memory.coactivate("language_core", "episodic_memory")
-        self.memory.coactivate("auditory_cortex", "language_core")
+        # 8. Real Hebbian pathway formation from actual topics mentioned
+        for topic in detected_topics:
+            self.memory.record_topic(topic)   # fires region co-activations
+        # Baseline cognitive co-activations (real, not fake hardcoded strings)
+        self.memory.coactivate("auditory_cortex", "working_memory")
+        self.memory.coactivate("working_memory",  "prefrontal_cortex")
         if search_result:
-            self.memory.coactivate("language_core", "web_search")
+            self.memory.coactivate("prefrontal_cortex", "hippocampus")
+            self.memory.coactivate("working_memory", "semantic_memory")
+        if "?" in user_input:
+            self.memory.coactivate("prefrontal_cortex", "working_memory")
+            self.memory.coactivate("thalamus", "prefrontal_cortex")
 
         return text
 
-    def _extract_facts(self, text: str):
-        low = text.lower()
-        for phrase in ["my name is", "i'm called", "call me", "i am"]:
-            if phrase in low:
-                idx  = low.find(phrase) + len(phrase)
-                name = text[idx:].strip().split()[0].strip('.,!?').title()
-                if 1 < len(name) < 20:
-                    self.memory.learn("user_name", name)
-                    self.memory.coactivate("language_core", f"semantic_name_{name}")
-        if "i like" in low or "i love" in low:
-            self.memory.learn("user_interest_last", text[:80])
-        if "i'm from" in low or "i live in" in low:
-            self.memory.learn("user_location_hint", text[:80])
+    def _extract_topics(self, text: str) -> list:
+        """Extract topics from user text — used for Hebbian pathway formation."""
+        from axon.cognition.memory import TOPIC_CONCEPTS
+        low     = text.lower()
+        found   = []
+        for topic in TOPIC_CONCEPTS:
+            if topic in low:
+                found.append(topic)
+        return found
 
     def get_status(self) -> dict:
         lm_ok = self._lm_studio_available()
