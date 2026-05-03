@@ -578,8 +578,8 @@ class NeuralFabric:
         noise = torch.randn_like(act) * 0.002 * (0.5 + ne * 0.3)
 
         # Decay (serotonin stabilises) — floor keeps neurons from going fully dark
-        decay = 0.97 - ser * 0.03
-        new_act = torch.clamp(act * decay + delta + noise, min=0.03)
+        decay = 0.95 - ser * 0.03
+        new_act = torch.clamp(act * decay + delta + noise, min=0.01)
         new_act = torch.clamp(new_act, 0.0, 1.0)
 
         # Hebbian: EWMA trace
@@ -645,18 +645,18 @@ class NeuralFabric:
 
     # Minimum resting activation per region — a human brain is NEVER quiet
     _BASELINE = {
-        "prefrontal":    0.30,   # planning, working memory — always on
-        "default_mode":  0.40,   # mind-wandering — strongest at rest
-        "thalamus":      0.35,   # relay — always gating signals
-        "hippocampus":   0.25,   # consolidating — persistent background
-        "amygdala":      0.20,   # vigilance — constant low-level watch
-        "visual":        0.15,   # eyes are always open
-        "auditory":      0.15,   # ears are always listening
-        "language":      0.20,   # inner voice — constant
-        "association":   0.25,   # cross-modal binding
-        "social":        0.18,   # social awareness
-        "cerebellum":    0.22,   # balance / timing
-        "metacognition": 0.28,   # self-monitoring — always running
+        "prefrontal":    0.12,   # planning, working memory
+        "default_mode":  0.18,   # mind-wandering — strongest at rest
+        "thalamus":      0.14,   # relay
+        "hippocampus":   0.10,   # memory consolidation
+        "amygdala":      0.08,   # vigilance
+        "visual":        0.06,   # eyes open
+        "auditory":      0.06,   # listening
+        "language":      0.09,   # inner voice
+        "association":   0.10,   # cross-modal binding
+        "social":        0.07,   # social awareness
+        "cerebellum":    0.09,   # timing
+        "metacognition": 0.12,   # self-monitoring
     }
 
     def _ambient_fire(self):
@@ -677,12 +677,12 @@ class NeuralFabric:
                 deficit = torch.clamp(baseline - cur, min=0.0)
                 # Add a little noise so they don't all lock in sync
                 jitter = torch.rand(len(idxs), device=DEVICE) * 0.04
-                self.activation[t] = torch.clamp(cur + deficit * 0.5 + jitter * deficit.clamp(min=0.05), 0.0, 1.0)
+                self.activation[t] = torch.clamp(cur + deficit * 0.25 + jitter * 0.02, 0.0, 1.0)
 
         # ── Spontaneous burst: random cluster fires strongly (inner monologue)
-        if random.random() < 0.40:
+        if random.random() < 0.15:
             lucky = random.randint(0, len(self._cluster_names)-1)
-            burst = random.uniform(0.08, 0.22)
+            burst = random.uniform(0.04, 0.12)
             with self._lock:
                 self.activation[lucky] = torch.clamp(self.activation[lucky] + burst, 0.0, 1.0)
 
@@ -763,7 +763,7 @@ class NeuralFabric:
         for name, cluster in self.clusters.items():
             act_val = spike_dict.get(name, 0.0)
             region_act[cluster.region].append(act_val)
-        regions = {r: round(min(1.0, sum(v)/max(len(v),1) * 1.4), 4)
+        regions = {r: round(min(1.0, sum(v)/max(len(v),1)), 4)
                    for r, v in region_act.items()}
         # Drain the new synapse buffer
         new_syn = self._new_synapses[:]

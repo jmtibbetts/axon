@@ -511,7 +511,7 @@ function drawNeural() {
   const W = nCanvas.width, H = nCanvas.height;
 
   // Trail fade — slower = longer trails
-  nCtx.fillStyle = 'rgba(2,2,6,0.08)';
+  nCtx.fillStyle = 'rgba(2,2,6,0.22)';
   nCtx.fillRect(0, 0, W, H);
 
   const regionMap = (neuralState && neuralState.regions) ? neuralState.regions : {};
@@ -523,11 +523,11 @@ function drawNeural() {
   }
 
   // ── Receive new state and schedule spike waves ──────────────────────
-  if (neuralState && neuralState.top_clusters && axonFrame % 3 === 0) {
+  if (neuralState && neuralState.top_clusters && axonFrame % 8 === 0) {
     const newTop = (neuralState.top_clusters || []).slice(0, 8);
     newTop.forEach(c => {
       const sharpAct = sharpenedRegion[c.region || regionForCluster(c.name)] || 0;
-      if (sharpAct > 0.02) {
+      if (sharpAct > 0.12) {
         scheduleSpikeWave(c.region || regionForCluster(c.name), sharpAct);
       }
     });
@@ -561,11 +561,11 @@ function drawNeural() {
       return;
     }
     // Drift toward sharpened region activity — faster response
-    n.activation += (regionAct - n.activation) * 0.12;
+    n.activation += (regionAct - n.activation) * 0.05;
     n.phase      += n.speed;
     // Gentle flicker for texture
     const flicker = (Math.sin(n.phase) * 0.5 + 0.5) * regionAct * 0.5;
-    n.activation  = Math.max(0.06, Math.min(1.0, n.activation + flicker * 0.030 - 0.001));
+    n.activation  = Math.max(0.02, Math.min(1.0, n.activation + flicker * 0.015 - 0.003));
   });
 
   // ── Process spike queue ─────────────────────────────────────────────
@@ -770,7 +770,7 @@ function drawNeural() {
     nCtx.fill();
 
     // Glow halo
-    if (n.activation > 0.35) {
+    if (n.activation > 0.65) {
       const grd = nCtx.createRadialGradient(n.x,n.y,r,n.x,n.y,r*3.5);
       grd.addColorStop(0, n.color + '50');
       grd.addColorStop(1, n.color + '00');
