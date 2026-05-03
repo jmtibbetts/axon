@@ -64,6 +64,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);
 
 /* -- NEURAL CANVAS -- */
 #neural-canvas{width:100%;height:100%;display:block;}
+#region-legend .rl{display:flex;align-items:center;gap:5px;font-size:9px;color:rgba(255,255,255,0.75);letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;}
+#region-legend .rl .dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;box-shadow:0 0 4px currentColor;}
 
 /* -- CHAT -- */
 .chat-area{display:flex;flex-direction:column;height:100%;}
@@ -208,8 +210,13 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);
   <!-- COL 2: Neural Canvas (top) + Chat (bottom) -->
   <div class="panel" style="grid-row:1;grid-column:2;">
     <div class="panel-title">? Neural Activity -- <span id="neuron-count">0</span> virtual neurons | <span id="conn-count">0</span> connections</div>
-    <div class="panel-body" style="padding:0;background:#020205;">
+    <div class="panel-body" style="padding:0;background:#020205;position:relative;">
       <canvas id="neural-canvas"></canvas>
+      <div id="region-legend" style="
+        position:absolute;top:8px;right:8px;
+        display:flex;flex-direction:column;gap:3px;
+        pointer-events:none;
+      "></div>
     </div>
   </div>
 
@@ -337,6 +344,28 @@ function initNeurons() {
     const pool = BY_REGION[n.region].filter(j => j !== i);
     n.neighbors = pool.sort(() => Math.random()-.5).slice(0,4);
   });
+}
+
+function buildLegend() {
+  const leg = document.getElementById('region-legend');
+  if (!leg) return;
+  const LABELS = {
+    prefrontal_cortex:    ['#00d4ff', 'Prefrontal Cortex'],
+    temporal_lobe:        ['#a855f7', 'Temporal Lobe'],
+    limbic_system:        ['#ff6b35', 'Limbic System'],
+    parietal_lobe:        ['#00ff88', 'Parietal Lobe'],
+    occipital_lobe:       ['#ffcc00', 'Occipital Lobe'],
+    cingulate_cortex:     ['#ff006e', 'Cingulate Cortex'],
+    basal_ganglia:        ['#ff4060', 'Basal Ganglia'],
+    cerebellum:           ['#7ec8e3', 'Cerebellum'],
+    insula:               ['#c084fc', 'Insula'],
+    default_mode_network: ['#4ade80', 'Default Mode Network'],
+    association_cortex:   ['#fb923c', 'Association Cortex'],
+    thalamus:             ['#f9a8d4', 'Thalamus'],
+  };
+  leg.innerHTML = Object.entries(LABELS).map(([,v]) =>
+    `<div class="rl"><span class="dot" style="background:${v[0]};box-shadow:0 0 5px ${v[0]};"></span>${v[1]}</div>`
+  ).join('');
 }
 
 function gaussRand() {
@@ -682,6 +711,7 @@ window.addEventListener('resize', () => {
 });
 window.addEventListener('load', () => {
   initNeurons();
+  buildLegend();
   drawNeural();
 });
 </script>
