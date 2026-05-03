@@ -68,9 +68,7 @@ class MemorySystem:
         CREATE TABLE IF NOT EXISTS semantic (
             key        TEXT PRIMARY KEY,
             value      TEXT NOT NULL,
-            confidence REAL DEFAULT 1.0,
-            updated    REAL NOT NULL,
-            source     TEXT DEFAULT 'inferred'
+            updated    REAL NOT NULL
         );
         CREATE TABLE IF NOT EXISTS hebbian (
             neuron_a   TEXT NOT NULL,
@@ -90,6 +88,23 @@ class MemorySystem:
         CREATE INDEX IF NOT EXISTS ep_mod  ON episodic(modality);
         CREATE INDEX IF NOT EXISTS ep_imp  ON episodic(importance);
         """)
+        self.conn.commit()
+        self._migrate()
+
+    def _migrate(self):
+        """Add new columns to existing DBs without breaking old installs."""
+        cur = self.conn.execute("PRAGMA table_info(semantic)")
+        cols = {row[1] for row in cur.fetchall()}
+        if "confidence" not in cols:
+            self.conn.execute("ALTER TABLE semantic ADD COLUMN confidence REAL DEFAULT 1.0")
+        if "source" not in cols:
+            self.conn.execute("ALTER TABLE semantic ADD COLUMN source TEXT DEFAULT 'inferred'")
+
+        cur2 = self.conn.execute("PRAGMA table_info(episodic)")
+        ep_cols = {row[1] for row in cur2.fetchall()}
+        if "topics" not in ep_cols:
+            self.conn.execute("ALTER TABLE episodic ADD COLUMN topics TEXT DEFAULT '[]'")
+
         self.conn.commit()
 
     # ── Episodic memory ──────────────────────────────────────────────────────
