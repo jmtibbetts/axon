@@ -437,7 +437,7 @@ function initNeurons() {
         region,
         color:      props.color,
         activation: Math.random() * 0.04,
-        baseR:      0.5 + Math.random() * 0.6,
+        baseR:      1.2 + Math.random() * 1.4,
         phase:      Math.random() * Math.PI * 2,
         speed:      0.015 + Math.random() * 0.035,
         neighbors:  [],       // filled below
@@ -511,27 +511,23 @@ function drawNeural() {
   const W = nCanvas.width, H = nCanvas.height;
 
   // Trail fade — slower = longer trails
-  nCtx.fillStyle = 'rgba(2,2,6,0.32)';
+  nCtx.fillStyle = 'rgba(2,2,6,0.14)';
   nCtx.fillRect(0, 0, W, H);
 
   const regionMap = (neuralState && neuralState.regions) ? neuralState.regions : {};
 
-  // ── Contrast curve — cut ambient floor, linearly remap the rest ──────
-  // regionMap values: ~0.05 idle, ~0.15 background, ~0.35+ active, ~0.60 spiking
-  // Floor cut at 0.08, then remap [0.08..0.70] → [0..1], mild power for contrast
+  // ── Region visibility — just subtract a tiny idle floor, keep values high
   const sharpenedRegion = {};
   for (const [k, v] of Object.entries(regionMap)) {
-    const shifted = Math.max(0, v - 0.08);            // cut idle floor only
-    const remapped = Math.min(1, shifted / 0.62);     // remap 0→0.62 to 0→1
-    sharpenedRegion[k] = Math.pow(remapped, 1.4);     // mild power for contrast
+    sharpenedRegion[k] = Math.max(0, v - 0.04);  // cut only the dead-silent floor
   }
 
   // ── Receive new state and schedule spike waves ──────────────────────
-  if (neuralState && neuralState.top_clusters && axonFrame % 10 === 0) {
+  if (neuralState && neuralState.top_clusters && axonFrame % 6 === 0) {
     const newTop = (neuralState.top_clusters || []).slice(0, 8);
     newTop.forEach(c => {
       const sharpAct = sharpenedRegion[c.region || regionForCluster(c.name)] || 0;
-      if (sharpAct > 0.15) {
+      if (sharpAct > 0.06) {
         scheduleSpikeWave(c.region || regionForCluster(c.name), sharpAct);
       }
     });
@@ -560,7 +556,7 @@ function drawNeural() {
     const regionAct = sharpenedRegion[n.region] || 0;
     // Hard snap to dark when region is quiet
     if (regionAct < 0.015) {
-      n.activation *= 0.94;   // gentle decay when region truly idle
+      n.activation *= 0.97;   // very slow decay so neurons stay barely visible
       n.phase += n.speed;
       return;
     }
@@ -569,7 +565,7 @@ function drawNeural() {
     n.phase      += n.speed;
     // Gentle flicker for texture
     const flicker = (Math.sin(n.phase) * 0.5 + 0.5) * regionAct * 0.5;
-    n.activation  = Math.max(0.0, Math.min(1.0, n.activation + flicker * 0.012 - 0.003));
+    n.activation  = Math.max(0.02, Math.min(1.0, n.activation + flicker * 0.025 - 0.002));
   });
 
   // ── Process spike queue ─────────────────────────────────────────────
@@ -604,12 +600,12 @@ function drawNeural() {
   // ── Draw within-region synaptic connections ─────────────────────────
   nCtx.lineWidth = 0.35;
   neuronNodes.forEach(n => {
-    if (n.activation < 0.18) return;
+    if (n.activation < 0.08) return;
     n.neighbors.forEach(j => {
       const m   = neuronNodes[j];
       const sig = n.activation * m.activation;
       if (sig < 0.005) return;
-      const alpha = Math.min(80,  Math.round(sig * 90));
+      const alpha = Math.min(160, Math.round(sig * 180));
       nCtx.beginPath();
       nCtx.moveTo(n.x, n.y);
       nCtx.lineTo(m.x, m.y);
@@ -628,7 +624,7 @@ function drawNeural() {
       const da = regionMap[dst] || 0;
       const combined = Math.max(sa, da);
       if (combined < 0.05) return;
-      const alpha = Math.round(combined * w * 14).toString(16).padStart(2,'0');
+      const alpha = Math.round(combined * w * 28).toString(16).padStart(2,'0');
       const mx = (d1.x*W + d2.x*W)/2;
       const my = (d1.y*H + d2.y*H)/2 - 25 - Math.random()*10;
       nCtx.beginPath();
@@ -763,9 +759,9 @@ function drawNeural() {
 
   // ── Draw neurons ────────────────────────────────────────────────────────────
   neuronNodes.forEach(n => {
-    if (n.activation < 0.015) return;
-    const r     = n.baseR + n.activation * 1.6;
-    const alpha = Math.round(40 + n.activation * 140).toString(16).padStart(2,'0');
+    if (n.activation < 0.008) return;
+    const r     = n.baseR + n.activation * 3.5;
+    const alpha = Math.round(60 + n.activation * 175).toString(16).padStart(2,'0');
 
     // Core
     nCtx.beginPath();
@@ -774,12 +770,12 @@ function drawNeural() {
     nCtx.fill();
 
     // Glow halo
-    if (n.activation > 0.85) {
-      const grd = nCtx.createRadialGradient(n.x,n.y,r,n.x,n.y,r*2.5);
-      grd.addColorStop(0, n.color + '28');
+    if (n.activation > 0.55) {
+      const grd = nCtx.createRadialGradient(n.x,n.y,r,n.x,n.y,r*3.5);
+      grd.addColorStop(0, n.color + '50');
       grd.addColorStop(1, n.color + '00');
       nCtx.beginPath();
-      nCtx.arc(n.x,n.y,r*2.5,0,Math.PI*2);
+      nCtx.arc(n.x,n.y,r*3.5,0,Math.PI*2);
       nCtx.fillStyle = grd;
       nCtx.fill();
     }
