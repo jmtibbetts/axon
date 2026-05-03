@@ -478,7 +478,7 @@ class NeuralFabric:
     # ── Public stimulation API (thread-safe, GPU-side) ───────────────────────
 
     # Hard ceiling — no external stimulation can push above this
-    _STIM_CEILING = 0.70
+    _STIM_CEILING = 0.90  # let stimulation push regions bright
 
     def stimulate_region(self, cluster_name: str, amount: float = 0.5):
         if cluster_name in self._name_to_idx:
