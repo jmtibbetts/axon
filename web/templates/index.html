@@ -207,6 +207,9 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
         <input id="cfg-lmmodel" placeholder="auto-detect"/>
         <label style="margin-top:4px;">Anthropic API Key (fallback)</label>
         <input id="cfg-api" type="password" placeholder="sk-ant-... (optional if using LM Studio)"/>
+        <label style="margin-top:4px;">Camera Index (-1 = auto-detect)</label>
+        <input id="cfg-camidx" value="-1" placeholder="-1 = auto" style="width:80px;display:inline"/>
+        <span style="font-size:8px;color:var(--muted);margin-left:6px;">try 0,1,2... if wrong cam</span>
         <div class="settings-row" style="margin-top:4px;">
           <label class="toggle"><input type="checkbox" id="cfg-local" checked/> Prefer Local LLM</label>
           <label class="toggle"><input type="checkbox" id="cfg-cam" checked/> Cam</label>
@@ -718,6 +721,7 @@ function startAxon() {
     lm_model:     document.getElementById('cfg-lmmodel').value || null,
     prefer_local: document.getElementById('cfg-local').checked,
     camera:       document.getElementById('cfg-cam').checked,
+    camera_index: parseInt(document.getElementById('cfg-camidx').value) || -1,
     mic:          document.getElementById('cfg-mic').checked,
   };
   socket.emit('start_engine', cfg);

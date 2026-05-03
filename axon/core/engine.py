@@ -70,13 +70,13 @@ class AxonEngine:
         # Background emitter
         self._emit_thread = threading.Thread(target=self._emit_loop, daemon=True)
 
-    def start(self, enable_camera: bool = True, enable_mic: bool = True):
+    def start(self, enable_camera: bool = True, enable_mic: bool = True, camera_index: int = -1):
         self.running = True
         self._emit_thread.start()
 
         if enable_camera:
             try:
-                self.optic.start()
+                self.optic.start(camera_index=camera_index)
                 self._emit("log", {"msg": "👁 Optic system online."})
             except Exception as e:
                 self._emit("log", {"msg": f"⚠ Camera unavailable: {e}"})

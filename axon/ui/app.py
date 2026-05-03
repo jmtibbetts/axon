@@ -53,6 +53,7 @@ def on_start(config):
     _engine.start(
         enable_camera=config.get("camera", True),
         enable_mic=config.get("mic", True),
+        camera_index=config.get("camera_index", -1),
     )
 
 @socketio.on("stop_engine")

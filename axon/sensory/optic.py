@@ -1,7 +1,8 @@
 """
-AXON — Optic System
-Webcam → frame capture → face detection → expression → visual neurons.
+AXON -- Optic System
+Webcam -> frame capture -> face detection -> expression -> visual neurons.
 Runs in its own thread, emits events via callback.
+Auto-detects physical webcam (skips virtual/phone cameras).
 """
 
 import cv2
@@ -16,25 +17,18 @@ EMOTIONS = ['neutral','happy','sad','angry','surprised','fearful','disgusted','t
 
 class OpticSystem:
     def __init__(self, on_frame: Callable, on_face: Callable,
-                 camera_index: int = 0, fps: int = 8):
-        self.on_frame  = on_frame   # callback(frame_data: dict)
-        self.on_face   = on_face    # callback(face_data: dict)
-        self.camera_idx= camera_index
-        self.fps       = fps
-        self.running   = False
-        self._thread   = None
-        self._cap      = None
+                 camera_index: int = -1, fps: int = 8):
+        self.on_frame   = on_frame
+        self.on_face    = on_face
+        self.camera_idx = camera_index  # -1 = auto-detect
+        self.fps        = fps
+        self.running    = False
+        self._thread    = None
+        self._cap       = None
 
-        # Load face cascade (no extra deps, pure OpenCV)
-        self._face_cascade = cv2.CascadeClassifier(
-            cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-        )
-        self._smile_cascade = cv2.CascadeClassifier(
-            cv2.data.haarcascades + 'haarcascade_smile.xml'
-        )
-        self._eye_cascade = cv2.CascadeClassifier(
-            cv2.data.haarcascades + 'haarcascade_eye.xml'
-        )
+        self._face_cascade  = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        self._smile_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_smile.xml')
+        self._eye_cascade   = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
 
         self.last_emotion   = 'neutral'
         self.face_present   = False
@@ -42,13 +36,72 @@ class OpticSystem:
         self._prev_gray     = None
         self.frame_count    = 0
 
-    def start(self):
-        self._cap = cv2.VideoCapture(self.camera_index, cv2.CAP_DSHOW)
+    def _find_webcam(self) -> int:
+        """
+        Scan indices 0-9 via DirectShow.
+        Returns the index of the best physical camera found.
+        Strategy:
+          - Must open AND return a valid frame
+          - Prefer index with highest native resolution (phone cams
+            often report very high or very low res)
+          - Skip indices that only work via a virtual driver
+        Falls back to 0 if nothing else found.
+        """
+        print("  [Optic] Scanning cameras...")
+        candidates = []
+        for idx in range(10):
+            cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
+            if not cap.isOpened():
+                cap.release()
+                continue
+            ok, frame = cap.read()
+            if not ok or frame is None:
+                cap.release()
+                continue
+            w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            cap.release()
+            print(f"  [Optic]   [{idx}] {w}x{h} - OK")
+            candidates.append((idx, w, h))
+
+        if not candidates:
+            print("  [Optic] No cameras found, defaulting to 0")
+            return 0
+
+        # Pick the one closest to a standard webcam resolution.
+        # Phone/virtual cams often show up at idx 0 on Windows when
+        # using apps like iPhone Continuity Camera or EpocCam.
+        # Prefer the LAST index with a sane resolution (640-1920w).
+        sane = [c for c in candidates if 320 <= c[1] <= 1920]
+        if not sane:
+            sane = candidates
+
+        # If idx 0 is the only option, use it.
+        # Otherwise prefer higher indices (physical webcam usually > 0
+        # when a phone cam is also connected).
+        if len(sane) == 1:
+            chosen = sane[0][0]
+        else:
+            # Sort by index descending -- take highest non-phone index
+            chosen = sorted(sane, key=lambda c: c[0])[-1][0]
+
+        print(f"  [Optic] Selected camera index: {chosen}")
+        return chosen
+
+    def start(self, camera_index: int = None):
+        if camera_index is not None:
+            self.camera_idx = camera_index
+
+        if self.camera_idx < 0:
+            self.camera_idx = self._find_webcam()
+
+        self._cap = cv2.VideoCapture(self.camera_idx, cv2.CAP_DSHOW)
         if not self._cap.isOpened():
-            self._cap = cv2.VideoCapture(self.camera_index)
+            self._cap = cv2.VideoCapture(self.camera_idx)
         self._cap.set(cv2.CAP_PROP_FRAME_WIDTH,  320)
         self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
         self._cap.set(cv2.CAP_PROP_FPS, self.fps)
+        print(f"  [Optic] Opened camera {self.camera_idx}")
         self.running = True
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
@@ -68,10 +121,10 @@ class OpticSystem:
                 continue
 
             self.frame_count += 1
-            gray   = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            small  = cv2.resize(gray, (64, 48))  # pixel neuron grid
+            gray  = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            small = cv2.resize(gray, (64, 48))
 
-            # Motion detection
+            # Motion
             if self._prev_gray is not None:
                 diff = cv2.absdiff(gray, self._prev_gray)
                 self.motion_level = float(diff.mean()) / 255.0
@@ -83,41 +136,32 @@ class OpticSystem:
 
             face_data = None
             if self.face_present:
-                fx,fy,fw,fh = faces[0]
-                face_roi    = gray[fy:fy+fh, fx:fx+fw]
-
-                # Smile detection → happiness signal
-                smiles = self._smile_cascade.detectMultiScale(face_roi, 1.7, 20)
-                # Eye detection → open/closed
-                eyes   = self._eye_cascade.detectMultiScale(face_roi, 1.1, 3)
-
-                # Derive simple emotion from geometry
-                emotion = self._infer_emotion(face_roi, len(smiles), len(eyes))
+                fx, fy, fw, fh = faces[0]
+                face_roi = gray[fy:fy+fh, fx:fx+fw]
+                smiles   = self._smile_cascade.detectMultiScale(face_roi, 1.7, 20)
+                eyes     = self._eye_cascade.detectMultiScale(face_roi, 1.1, 3)
+                emotion  = self._infer_emotion(face_roi, len(smiles), len(eyes))
                 self.last_emotion = emotion
-
                 face_data = {
                     "x": int(fx/frame.shape[1]*100),
                     "y": int(fy/frame.shape[0]*100),
                     "w": int(fw/frame.shape[1]*100),
                     "h": int(fh/frame.shape[0]*100),
-                    "emotion": emotion,
-                    "eyes_open": len(eyes) >= 2,
-                    "smiling":   len(smiles) > 0,
+                    "emotion":         emotion,
+                    "eyes_open":       len(eyes) >= 2,
+                    "smiling":         len(smiles) > 0,
                     "face_brightness": float(face_roi.mean()) / 255.0,
                 }
                 self.on_face(face_data)
 
-            # Build pixel neuron grid (64x48 normalized)
-            pixel_neurons = (small / 255.0).tolist()  # 48 rows of 64 values
-
-            # Edge map (visual cortex — simple gradient)
-            edges   = cv2.Canny(gray, 50, 150)
-            edge_small = cv2.resize(edges, (32, 24))
-            edge_neurons = (edge_small / 255.0).tolist()
+            pixel_neurons = (small / 255.0).tolist()
+            edges         = cv2.Canny(gray, 50, 150)
+            edge_small    = cv2.resize(edges, (32, 24))
+            edge_neurons  = (edge_small / 255.0).tolist()
 
             frame_data = {
-                "pixels":       pixel_neurons,  # 48×64 grayscale
-                "edges":        edge_neurons,    # 24×32 edge map
+                "pixels":       pixel_neurons,
+                "edges":        edge_neurons,
                 "motion":       round(self.motion_level, 3),
                 "face_present": self.face_present,
                 "emotion":      self.last_emotion,
@@ -126,37 +170,27 @@ class OpticSystem:
             self.on_frame(frame_data)
 
             elapsed = time.time() - t0
-            sleep   = max(0, interval - elapsed)
-            time.sleep(sleep)
+            time.sleep(max(0, interval - elapsed))
 
     def _infer_emotion(self, face_gray, smile_count, eye_count) -> str:
-        """
-        Heuristic emotion from cascade detections + brightness.
-        In future: swap for a real expression classifier.
-        """
         brightness = face_gray.mean() / 255.0
-        # Variance in upper vs lower face
         h = face_gray.shape[0]
         upper_var = float(face_gray[:h//2].std())
         lower_var = float(face_gray[h//2:].std())
-
         if smile_count > 0:
             return 'happy'
         if eye_count == 0 and h > 60:
-            return 'neutral'  # eyes not detected = looking away
+            return 'neutral'
         if lower_var > upper_var * 1.4:
             return 'surprised'
         if brightness < 0.3:
             return 'thinking'
         return 'neutral'
 
-    @property
-    def camera_index(self):
-        return self.camera_idx
-
     def get_status(self) -> dict:
         return {
             "running":      self.running,
+            "camera_index": self.camera_idx,
             "face_present": self.face_present,
             "emotion":      self.last_emotion,
             "motion":       round(self.motion_level, 3),
