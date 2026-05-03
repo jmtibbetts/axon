@@ -756,13 +756,15 @@ class NeuralFabric:
 
     def _make_snapshot(self, spike_dict: dict) -> dict:
         top = sorted(spike_dict.items(), key=lambda x: x[1], reverse=True)[:15]
-        # attach region to each top cluster so UI can route spikes correctly
-        # Regions: weighted combo of activation level + spike activity
-        # This ensures regions show their resting state, not just spike moments
+        # ── Use ACTIVATION (not spikes) for region values ─────────────────────
+        # spike_dict is thresholded — clusters below threshold = 0 spike even if
+        # they have real activation. Read the live activation tensor directly.
+        with self._lock:
+            act_cpu = self.activation.cpu().numpy()
+        act_by_name = {n: float(act_cpu[i]) for i, n in enumerate(self._cluster_names)}
         region_act: Dict[str, list] = defaultdict(list)
         for name, cluster in self.clusters.items():
-            act_val = spike_dict.get(name, 0.0)
-            region_act[cluster.region].append(act_val)
+            region_act[cluster.region].append(act_by_name.get(name, 0.0))
         regions = {r: round(min(1.0, sum(v)/max(len(v),1)), 4)
                    for r, v in region_act.items()}
         # Drain the new synapse buffer
@@ -788,7 +790,7 @@ class NeuralFabric:
             with self._lock:
                 act_cpu = self.activation.cpu().numpy()
             spikes = {n: float(act_cpu[i]) for i, n in enumerate(self._cluster_names)}
-        return self._make_snapshot(spikes)
+        return self._make_snapshot(spikes)  # _make_snapshot reads activation directly
 
     # ── Legacy compat shims ──────────────────────────────────────────────────
     def get_personality_description(self) -> str:
