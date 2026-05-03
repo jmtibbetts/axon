@@ -8,6 +8,7 @@ import time
 import os
 from typing import Optional
 
+from pathlib import Path
 from axon.sensory.optic    import OpticSystem
 from axon.sensory.auditory import AuditorySystem
 from axon.cognition.language    import LanguageCore
@@ -30,7 +31,7 @@ class AxonEngine:
         os.makedirs(data_dir, exist_ok=True)
 
         print("  [Engine] Initializing memory...")
-        self.memory   = MemorySystem(db_path=os.path.join(data_dir, "memory", "axon.db"))
+        self.memory   = MemorySystem(db_path=Path(data_dir) / "memory" / "axon.db")
 
         print("  [Engine] Initializing neural fabric...")
         self.fabric   = NeuralFabric(data_dir=os.path.join(data_dir, "neural"))
