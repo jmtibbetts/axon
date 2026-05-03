@@ -1,6 +1,6 @@
 """
 AXON — Neural Fabric (CUDA-accelerated)
-1.48 billion virtual neurons organized into functional clusters.
+2.342 billion virtual neurons organized into 64 functional clusters.
 The tick loop runs on GPU via PyTorch tensors — all cluster activations,
 spike propagation, and Hebbian learning are batched as matrix ops on CUDA.
 
