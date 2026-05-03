@@ -17,13 +17,21 @@ from axon.output.speech      import SpeechSystem
 
 
 class AxonEngine:
-    def __init__(self, socketio=None, api_key: str = None):
+    def __init__(self, socketio=None, api_key: str = None, lm_studio_url: str = 'http://localhost:1234', lm_studio_model: str = None, prefer_local: bool = True):
         self.socketio = socketio
-        self.running  = False
+        self.running         = False
+        self.lm_studio_url   = lm_studio_url
+        self.lm_studio_model = lm_studio_model
 
         # Systems
         self.memory   = MemorySystem()
-        self.language = LanguageCore(self.memory, api_key=api_key)
+        self.language = LanguageCore(
+            self.memory,
+            api_key=api_key,
+            lm_studio_url=lm_studio_url,
+            lm_studio_model=lm_studio_model,
+            prefer_local=prefer_local,
+        )
         self.speech   = SpeechSystem(
             on_speaking = self._on_speaking,
             on_done     = self._on_speech_done,

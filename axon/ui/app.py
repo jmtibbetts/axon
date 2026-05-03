@@ -39,8 +39,17 @@ def on_start(config):
     global _engine
     if _engine and _engine.running:
         emit("log", {"msg": "Already running."}); return
-    api_key = config.get("api_key") or os.getenv("ANTHROPIC_API_KEY","")
-    _engine = AxonEngine(socketio=socketio, api_key=api_key)
+    api_key        = config.get("api_key")        or os.getenv("ANTHROPIC_API_KEY","")
+    lm_url         = config.get("lm_url",         "http://localhost:1234")
+    lm_model       = config.get("lm_model",       None) or None
+    prefer_local   = config.get("prefer_local",   True)
+    _engine = AxonEngine(
+        socketio=socketio,
+        api_key=api_key,
+        lm_studio_url=lm_url,
+        lm_studio_model=lm_model,
+        prefer_local=prefer_local,
+    )
     _engine.start(
         enable_camera=config.get("camera", True),
         enable_mic=config.get("mic", True),
@@ -63,7 +72,9 @@ if __name__ == "__main__":
     api_key = args.api_key or os.getenv("ANTHROPIC_API_KEY","")
     print("\n  AXON — Emerging Intelligence\n  Open: http://localhost:7777\n")
 
-    _engine = AxonEngine(socketio=socketio, api_key=api_key)
+    _engine = AxonEngine(socketio=socketio, api_key=api_key,
+                          lm_studio_url="http://localhost:1234",
+                          prefer_local=True)
     threading.Thread(
         target=lambda: _engine.start(
             enable_camera=not args.no_camera,
