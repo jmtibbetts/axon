@@ -129,12 +129,32 @@ class AxonEngine:
 
     def _on_face(self, face_data: dict):
         self._emit("face", face_data)
-        self.fabric.stimulate_for_input("face", 0.25)
         emotion = face_data.get("emotion", "neutral")
-        if emotion in ("happy", "surprised"):
-            self.fabric.neuromod.reward(0.05)
-        elif emotion in ("angry", "fearful"):
-            self.fabric.neuromod.stress(0.05)
+        probs   = face_data.get("emotion_probs", {})
+        conf    = face_data.get("confidence", 0.5)
+
+        # Always stimulate social/face recognition areas
+        self.fabric.stimulate_for_input("face", 0.25)
+
+        # Emotion → neural mapping (import inline to avoid circular)
+        from axon.sensory.optic import EMOTION_NEURAL_MAP
+        mapping = EMOTION_NEURAL_MAP.get(emotion, EMOTION_NEURAL_MAP["neutral"])
+
+        # Scale stimulation by emotion probability (confidence in the emotion)
+        emo_conf = probs.get(emotion, conf) if probs else conf
+        scale    = max(0.3, min(1.0, emo_conf * 1.5))   # boost weak signals
+
+        for cluster, amount in mapping.get("stimulate", []):
+            self.fabric.stimulate_region(cluster, amount * scale)
+
+        if mapping.get("reward", 0) > 0:
+            self.fabric.neuromod.reward(mapping["reward"] * scale)
+        if mapping.get("stress", 0) > 0:
+            self.fabric.neuromod.stress(mapping["stress"] * scale)
+
+        # Log significant emotion changes
+        if emotion != "neutral" and emo_conf > 0.45:
+            self._emit("log", {"msg": f"😶 Emotion: {face_data.get('emoji','')} {emotion} ({int(emo_conf*100)}%)"})
 
     def _on_transcript(self, text: str):
         if not text.strip():

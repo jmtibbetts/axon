@@ -38,6 +38,8 @@ if (-not $isNightly) {
     & $venvPip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
     Write-Host "[setup] Installing ultralytics (YOLOv8)..." -ForegroundColor Cyan
     & $venvPip install ultralytics --quiet
+    Write-Host "[setup] Installing fer (FER2013 emotion detection)..." -ForegroundColor Cyan
+    & $venvPip install fer tensorflow --quiet
 } else {
     Write-Host "  [SKIP] PyTorch nightly ok ($tv)" -ForegroundColor DarkGray
 }

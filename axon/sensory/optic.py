@@ -1,12 +1,12 @@
 """
 AXON — Optic System (GPU-accelerated)
-Webcam → CUDA frame processing → YOLOv8-face detection → CNN emotion → visual neurons.
+Webcam → CUDA frame processing → YOLOv8-face + FER emotion detection → visual neurons.
 
 GPU pipeline:
-  - YOLOv8n-face  : real-time face detection on CUDA (replaces Haar cascades)
-  - EmotionNet    : lightweight CNN for 7-class facial expression on GPU
-  - Frame tensors : brightness, motion (optical flow diff), edge map — all torch ops
-  - Pixel neurons : frame downsampled to 64x48 on GPU, flattened to neuron activations
+  - YOLOv8n-face  : real-time face detection on CUDA
+  - FER           : pretrained FER2013 emotion classifier (7 emotions)
+  - Frame tensors : brightness, motion, edge map — all torch ops
+  - Pixel neurons : frame downsampled to 64x48, flattened to neuron activations
 """
 
 import cv2
@@ -16,89 +16,158 @@ import numpy as np
 from typing import Callable, Optional
 
 import torch
-import torch.nn as nn
 import torchvision.transforms as T
 
 # ── Device ───────────────────────────────────────────────────────────────────
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+# ── Emotion labels (FER2013 standard order) ───────────────────────────────────
+EMOTION_LABELS = ['angry', 'disgusted', 'fearful', 'happy', 'neutral', 'sad', 'surprised']
 
-# ── Tiny Emotion CNN (runs fully on GPU) ─────────────────────────────────────
+# Emoji mapping for UI display
+EMOTION_EMOJI = {
+    'angry':     '😠',
+    'disgusted': '🤢',
+    'fearful':   '😨',
+    'happy':     '😊',
+    'neutral':   '😐',
+    'sad':       '😢',
+    'surprised': '😲',
+}
 
-class EmotionNet(nn.Module):
-    """
-    Lightweight 7-class emotion CNN.
-    Input: 48x48 grayscale face crop (normalized).
-    Classes: neutral, happy, sad, angry, surprised, fearful, disgusted
-    Weights initialised randomly — learns over time from user interaction,
-    or you can drop in FER2013-trained weights later.
-    """
-    CLASSES = ['neutral','happy','sad','angry','surprised','fearful','disgusted']
-
-    def __init__(self):
-        super().__init__()
-        self.features = nn.Sequential(
-            # Block 1
-            nn.Conv2d(1, 32, 3, padding=1), nn.BatchNorm2d(32), nn.ReLU(),
-            nn.Conv2d(32, 32, 3, padding=1), nn.BatchNorm2d(32), nn.ReLU(),
-            nn.MaxPool2d(2), nn.Dropout2d(0.25),
-            # Block 2
-            nn.Conv2d(32, 64, 3, padding=1), nn.BatchNorm2d(64), nn.ReLU(),
-            nn.Conv2d(64, 64, 3, padding=1), nn.BatchNorm2d(64), nn.ReLU(),
-            nn.MaxPool2d(2), nn.Dropout2d(0.25),
-            # Block 3
-            nn.Conv2d(64, 128, 3, padding=1), nn.BatchNorm2d(128), nn.ReLU(),
-            nn.MaxPool2d(2), nn.Dropout2d(0.25),
-        )
-        self.classifier = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(128 * 6 * 6, 512), nn.ReLU(), nn.Dropout(0.5),
-            nn.Linear(512, 7),
-        )
-
-    def forward(self, x):
-        return self.classifier(self.features(x))
-
-    def predict(self, face_gray_np: np.ndarray) -> str:
-        """face_gray_np: HxW uint8. Returns emotion label."""
-        img = cv2.resize(face_gray_np, (48, 48)).astype(np.float32) / 255.0
-        t   = torch.tensor(img, device=DEVICE).unsqueeze(0).unsqueeze(0)  # [1,1,48,48]
-        with torch.no_grad():
-            logits = self(t)
-            idx    = logits.argmax(dim=1).item()
-        return self.CLASSES[idx]
+# How each detected emotion maps to neural stimulation
+# (region/neuromod, amount)
+EMOTION_NEURAL_MAP = {
+    'happy': {
+        'stimulate': [('amygdala_reward', 0.55), ('reward_anticipation', 0.45)],
+        'reward': 0.15,
+        'stress': 0.0,
+    },
+    'surprised': {
+        'stimulate': [('attention_spotlight', 0.60), ('curiosity_drive', 0.50),
+                      ('amygdala_fear', 0.20)],
+        'reward': 0.05,
+        'stress': 0.03,
+    },
+    'fearful': {
+        'stimulate': [('amygdala_fear', 0.70), ('threat_detection', 0.65),
+                      ('attention_spotlight', 0.50)],
+        'reward': 0.0,
+        'stress': 0.20,
+    },
+    'angry': {
+        'stimulate': [('amygdala_fear', 0.50), ('threat_detection', 0.55),
+                      ('social_pain', 0.40), ('inhibitory_control', 0.35)],
+        'reward': 0.0,
+        'stress': 0.15,
+    },
+    'sad': {
+        'stimulate': [('social_pain', 0.55), ('self_referential', 0.45),
+                      ('mind_wandering', 0.40)],
+        'reward': 0.0,
+        'stress': 0.10,
+    },
+    'disgusted': {
+        'stimulate': [('amygdala_fear', 0.35), ('threat_detection', 0.40)],
+        'reward': 0.0,
+        'stress': 0.08,
+    },
+    'neutral': {
+        'stimulate': [('consciousness_gate', 0.20)],
+        'reward': 0.0,
+        'stress': 0.0,
+    },
+}
 
 
 # ── Frame tensor helpers ──────────────────────────────────────────────────────
 
-_to_tensor = T.ToTensor()   # HxWxC uint8 → [C,H,W] float32 /255
+_to_tensor = T.ToTensor()
 
 def _frame_to_gpu(frame_bgr: np.ndarray) -> torch.Tensor:
-    """BGR numpy frame → [3,H,W] float32 tensor on DEVICE."""
     rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
     return _to_tensor(rgb).to(DEVICE)
 
 def _gpu_brightness(t: torch.Tensor) -> float:
-    """Mean brightness from GPU tensor [3,H,W]."""
     return float(t.mean().item())
 
 def _gpu_motion(prev: Optional[torch.Tensor], curr: torch.Tensor) -> float:
-    """Frame diff motion estimate, GPU side."""
     if prev is None:
         return 0.0
-    gray_curr = curr.mean(dim=0)   # [H,W]
-    gray_prev = prev.mean(dim=0)
-    diff = (gray_curr - gray_prev).abs()
-    return float(diff.mean().item())
+    return float((curr.mean(dim=0) - prev.mean(dim=0)).abs().mean().item())
 
 def _gpu_pixel_neurons(t: torch.Tensor, w=64, h=48) -> list:
-    """Downsample frame to 64x48 pixel neuron grid on GPU, return as flat list."""
     small = torch.nn.functional.interpolate(
         t.unsqueeze(0), size=(h, w), mode='bilinear', align_corners=False
-    ).squeeze(0)                              # [3,h,w]
-    gray  = small.mean(dim=0)                 # [h,w]
-    return gray.cpu().numpy().tolist()         # CPU transfer only here
+    ).squeeze(0)
+    gray = small.mean(dim=0)
+    return gray.cpu().numpy().tolist()
+
+
+# ── FER Emotion Detector ──────────────────────────────────────────────────────
+
+class FERDetector:
+    """
+    Wraps the `fer` library (FER2013-trained model).
+    Returns emotion label + per-class probabilities.
+    Falls back to heuristic if fer is unavailable.
+    """
+    def __init__(self):
+        self._fer = None
+        self._ready = False
+
+    def load(self):
+        try:
+            from fer import FER
+            self._fer = FER(mtcnn=False)   # mtcnn=False = use OpenCV detector (faster)
+            self._ready = True
+            print("  [Optic] FER emotion detector loaded (FER2013 pretrained)")
+        except Exception as e:
+            print(f"  [Optic] FER unavailable ({e}) — using heuristic fallback")
+            self._ready = False
+
+    def predict(self, face_bgr: np.ndarray) -> tuple[str, dict]:
+        """
+        Returns (dominant_emotion, {emotion: probability, ...})
+        face_bgr: cropped face region in BGR color
+        """
+        if not self._ready or self._fer is None:
+            return self._heuristic(face_bgr)
+
+        try:
+            # FER expects BGR numpy array — resize to at least 48x48
+            face = cv2.resize(face_bgr, (96, 96))
+            result = self._fer.detect_emotions(face)
+            if not result:
+                return 'neutral', {e: 0.0 for e in EMOTION_LABELS}
+
+            emotions = result[0]['emotions']  # {'angry': 0.1, 'happy': 0.8, ...}
+            dominant = max(emotions, key=emotions.get)
+            return dominant, emotions
+        except Exception as e:
+            print(f"  [Optic] FER predict error: {e}")
+            return self._heuristic(face_bgr)
+
+    def _heuristic(self, face_gray_or_bgr: np.ndarray) -> tuple[str, dict]:
+        """Simple brightness/variance heuristic when FER unavailable."""
+        if face_gray_or_bgr.ndim == 3:
+            gray = cv2.cvtColor(face_gray_or_bgr, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = face_gray_or_bgr
+        h = gray.shape[0]
+        lower_var = float(gray[h//2:].std())
+        upper_var = float(gray[:h//2].std())
+        brightness = gray.mean() / 255.0
+        if lower_var > upper_var * 1.4:
+            emo = 'surprised'
+        elif brightness < 0.28:
+            emo = 'sad'
+        else:
+            emo = 'neutral'
+        probs = {e: 0.05 for e in EMOTION_LABELS}
+        probs[emo] = 0.70
+        return emo, probs
 
 
 # ── OpticSystem ───────────────────────────────────────────────────────────────
@@ -114,18 +183,19 @@ class OpticSystem:
         self._thread    = None
         self._cap       = None
 
-        self.last_emotion = 'neutral'
-        self.face_present = False
-        self.motion_level = 0.0
-        self.frame_count  = 0
+        self.last_emotion       = 'neutral'
+        self.last_emotion_probs = {}
+        self.face_present       = False
+        self.motion_level       = 0.0
+        self.frame_count        = 0
         self._prev_tensor: Optional[torch.Tensor] = None
 
         # Models (lazy-loaded in background thread)
-        self._yolo        = None   # YOLOv8-face
-        self._emotion_net = None   # EmotionNet
+        self._yolo        = None
+        self._fer         = FERDetector()
         self._models_ready = False
 
-        # Fallback Haar cascade (used until YOLO loads)
+        # Haar fallback
         self._haar = cv2.CascadeClassifier(
             cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
 
@@ -147,7 +217,6 @@ class OpticSystem:
             print(f"  [Optic]   [{idx}] {w}x{h} OK")
             candidates.append((idx, w, h))
         if not candidates:
-            print("  [Optic] No cameras found, defaulting to 0")
             return 0
         sane = [c for c in candidates if 320 <= c[1] <= 1920] or candidates
         chosen = sorted(sane, key=lambda c: c[0])[-1][0]
@@ -176,10 +245,8 @@ class OpticSystem:
     # ── Model loading ─────────────────────────────────────────────────────────
 
     def _load_models(self):
-        """Load YOLOv8-face + EmotionNet in background. Falls back gracefully."""
         try:
             from ultralytics import YOLO
-            # yolov8n-face auto-downloads ~6MB on first run
             self._yolo = YOLO("yolov8n-face.pt")
             self._yolo.to(DEVICE)
             print(f"  [Optic] YOLOv8-face loaded on {DEVICE}")
@@ -187,23 +254,9 @@ class OpticSystem:
             print(f"  [Optic] YOLOv8 unavailable ({e}), using Haar fallback")
             self._yolo = None
 
-        try:
-            self._emotion_net = EmotionNet().to(DEVICE).eval()
-            # Try to load pretrained weights if present
-            import os
-            weights_path = os.path.join(os.path.dirname(__file__), "emotion_weights.pt")
-            if os.path.exists(weights_path):
-                state = torch.load(weights_path, map_location=DEVICE)
-                self._emotion_net.load_state_dict(state)
-                print("  [Optic] EmotionNet weights loaded")
-            else:
-                print("  [Optic] EmotionNet init (random weights — will bias toward neutral)")
-        except Exception as e:
-            print(f"  [Optic] EmotionNet failed ({e})")
-            self._emotion_net = None
-
+        self._fer.load()
         self._models_ready = True
-        print(f"  [Optic] GPU vision pipeline ready on {DEVICE}")
+        print(f"  [Optic] Vision pipeline ready on {DEVICE}")
 
     # ── Main loop ─────────────────────────────────────────────────────────────
 
@@ -221,7 +274,6 @@ class OpticSystem:
         self._cap.set(cv2.CAP_PROP_FPS, self.fps)
         print(f"  [Optic] Opened camera {self.camera_idx} at 640x480")
 
-        # Load models in background so camera starts immediately
         threading.Thread(target=self._load_models, daemon=True).start()
 
         self.running = True
@@ -243,155 +295,140 @@ class OpticSystem:
                 continue
 
             self.frame_count += 1
+            frame_t      = _frame_to_gpu(frame)
+            brightness   = _gpu_brightness(frame_t)
+            motion       = _gpu_motion(self._prev_tensor, frame_t)
+            self.motion_level   = motion
+            self._prev_tensor   = frame_t.clone()
+            pixel_neurons = _gpu_pixel_neurons(frame_t)
 
-            # ── GPU frame tensor ──────────────────────────────────────────
-            frame_t = _frame_to_gpu(frame)                     # [3,H,W] on CUDA
+            # Encode frame as JPEG for the UI canvas
+            _, buf = cv2.imencode('.jpg', cv2.resize(frame, (160, 120)),
+                                  [cv2.IMWRITE_JPEG_QUALITY, 70])
+            import base64
+            frame_b64 = base64.b64encode(buf).decode()
 
-            brightness    = _gpu_brightness(frame_t)
-            motion        = _gpu_motion(self._prev_tensor, frame_t)
-            self.motion_level = motion
-            self._prev_tensor = frame_t.clone()
-
-            pixel_neurons = _gpu_pixel_neurons(frame_t)        # 64x48 grid
-
-            # ── Face detection ────────────────────────────────────────────
-            face_data = None
-            if self._models_ready and self._yolo is not None:
-                face_data = self._detect_face_yolo(frame, frame_t)
-            else:
-                face_data = self._detect_face_haar(frame)
-
-            if face_data:
-                self.face_present = True
-                self.last_emotion = face_data.get("emotion", "neutral")
-                self.on_face(face_data)
-            else:
-                self.face_present = False
-
-            # ── Edge map (GPU) ────────────────────────────────────────────
-            gray_t    = frame_t.mean(dim=0)                    # [H,W]
-            # Simple Sobel-style edge on GPU
-            sobel_x   = torch.tensor([[[-1,0,1],[-2,0,2],[-1,0,1]]],
-                                      dtype=torch.float32, device=DEVICE).unsqueeze(0)
-            sobel_y   = torch.tensor([[[-1,-2,-1],[0,0,0],[1,2,1]]],
-                                      dtype=torch.float32, device=DEVICE).unsqueeze(0)
-            g_in      = gray_t.unsqueeze(0).unsqueeze(0)       # [1,1,H,W]
-            import torch.nn.functional as F
-            gx        = F.conv2d(g_in, sobel_x, padding=1).squeeze()
-            gy        = F.conv2d(g_in, sobel_y, padding=1).squeeze()
-            edges_t   = (gx**2 + gy**2).sqrt().clamp(0,1)
-            edge_small = F.interpolate(edges_t.unsqueeze(0).unsqueeze(0),
-                                       size=(24,32), mode='bilinear',
-                                       align_corners=False).squeeze()
-            edge_neurons = edge_small.cpu().numpy().tolist()
-
-            # ── Emit frame data ───────────────────────────────────────────
             self.on_frame({
-                "pixels":       pixel_neurons,
-                "edges":        edge_neurons,
-                "motion":       round(motion, 3),
-                "face_present": self.face_present,
-                "emotion":      self.last_emotion,
-                "frame_id":     self.frame_count,
+                "frame_b64":    frame_b64,
                 "brightness":   round(brightness, 3),
-                "gpu":          str(DEVICE),
+                "motion":       round(motion, 3),
+                "pixel_neurons": pixel_neurons,
             })
+
+            # Face detection every 4th frame (3 FPS @ 12fps camera)
+            if self.frame_count % 4 == 0 and self._models_ready:
+                face_data = self._detect_face(frame)
+                if face_data:
+                    self.face_present    = True
+                    self.last_emotion    = face_data['emotion']
+                    self.last_emotion_probs = face_data.get('emotion_probs', {})
+                    self.on_face(face_data)
+                else:
+                    self.face_present = False
 
             elapsed = time.time() - t0
             time.sleep(max(0.0, interval - elapsed))
 
-    # ── YOLO face detection ───────────────────────────────────────────────────
+    # ── Face + Emotion Detection ──────────────────────────────────────────────
 
-    def _detect_face_yolo(self, frame_bgr: np.ndarray,
-                           frame_t: torch.Tensor) -> Optional[dict]:
-        """Run YOLOv8-face, return best detection or None."""
-        H, W = frame_bgr.shape[:2]
+    def _detect_face(self, frame_bgr: np.ndarray) -> Optional[dict]:
+        if self._yolo is not None:
+            return self._detect_yolo(frame_bgr)
+        return self._detect_haar(frame_bgr)
+
+    def _detect_yolo(self, frame_bgr: np.ndarray) -> Optional[dict]:
         try:
-            results = self._yolo.predict(frame_bgr, conf=0.4, verbose=False,
-                                          device=DEVICE)
+            H, W = frame_bgr.shape[:2]
+            results = self._yolo(frame_bgr, verbose=False, device=DEVICE)
             boxes = results[0].boxes
             if boxes is None or len(boxes) == 0:
                 return None
-
-            # Best box (highest confidence)
-            confs = boxes.conf.cpu().numpy()
+            confs = boxes.conf
+            if len(confs) == 0:
+                return None
             best  = int(confs.argmax())
             x1,y1,x2,y2 = boxes.xyxy[best].cpu().numpy().astype(int)
             x1,y1 = max(0,x1), max(0,y1)
             x2,y2 = min(W,x2), min(H,y2)
-
             if x2 <= x1 or y2 <= y1:
                 return None
 
-            # Emotion from GPU CNN
-            gray_bgr = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
-            face_roi = gray_bgr[y1:y2, x1:x2]
-            emotion  = (self._emotion_net.predict(face_roi)
-                        if self._emotion_net and face_roi.size > 0
-                        else self.last_emotion)
+            face_crop = frame_bgr[y1:y2, x1:x2]
+            emotion, probs = self._fer.predict(face_crop)
 
-            # Heuristic smile from mouth region brightness variation
-            mouth_roi = gray_bgr[y1 + (y2-y1)//2: y2, x1:x2]
-            smiling   = bool(mouth_roi.std() > 25) if mouth_roi.size > 0 else False
+            # Annotate frame for display (draw box + label)
+            frame_annotated = frame_bgr.copy()
+            color = self._emotion_color(emotion)
+            cv2.rectangle(frame_annotated, (x1, y1), (x2, y2), color, 2)
+            label = f"{EMOTION_EMOJI.get(emotion, '')} {emotion}"
+            cv2.putText(frame_annotated, label, (x1, max(y1-8, 12)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
 
             return {
                 "x": int(x1/W*100), "y": int(y1/H*100),
                 "w": int((x2-x1)/W*100), "h": int((y2-y1)/H*100),
-                "emotion":         emotion,
-                "eyes_open":       True,
-                "smiling":         smiling,
-                "face_brightness": round(float(face_roi.mean())/255.0, 3)
-                                   if face_roi.size > 0 else 0.5,
-                "confidence":      round(float(confs[best]), 3),
-                "detector":        "yolo-gpu",
+                "emotion":       emotion,
+                "emotion_probs": probs,
+                "emoji":         EMOTION_EMOJI.get(emotion, '😐'),
+                "eyes_open":     True,
+                "smiling":       emotion == 'happy',
+                "face_brightness": round(float(face_crop.mean())/255.0, 3)
+                                   if face_crop.size > 0 else 0.5,
+                "confidence":    round(float(confs[best]), 3),
+                "detector":      "yolo-gpu",
             }
         except Exception as e:
             print(f"  [Optic] YOLO error: {e}")
-            return self._detect_face_haar(frame_bgr)
+            return self._detect_haar(frame_bgr)
 
-    # ── Haar fallback ─────────────────────────────────────────────────────────
-
-    def _detect_face_haar(self, frame_bgr: np.ndarray) -> Optional[dict]:
+    def _detect_haar(self, frame_bgr: np.ndarray) -> Optional[dict]:
         gray  = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
         H, W  = gray.shape
         faces = self._haar.detectMultiScale(gray, 1.1, 5, minSize=(40,40))
         if len(faces) == 0:
             return None
         fx, fy, fw, fh = faces[0]
-        face_roi = gray[fy:fy+fh, fx:fx+fw]
-        emotion  = self._infer_emotion_haar(face_roi)
+        face_crop = frame_bgr[fy:fy+fh, fx:fx+fw]
+        emotion, probs = self._fer.predict(face_crop)
         return {
             "x": int(fx/W*100), "y": int(fy/H*100),
-            "w": int(fw/W*100), "h": int(fh/H*100),
-            "emotion":         emotion,
-            "eyes_open":       True,
-            "smiling":         False,
-            "face_brightness": round(float(face_roi.mean())/255.0, 3),
-            "detector":        "haar-cpu",
+            "w": int(fw/W*100),  "h": int(fh/H*100),
+            "emotion":       emotion,
+            "emotion_probs": probs,
+            "emoji":         EMOTION_EMOJI.get(emotion, '😐'),
+            "eyes_open":     True,
+            "smiling":       emotion == 'happy',
+            "face_brightness": round(float(face_crop.mean())/255.0, 3),
+            "confidence":    0.5,
+            "detector":      "haar-cpu",
         }
 
-    def _infer_emotion_haar(self, face_gray) -> str:
-        brightness = face_gray.mean() / 255.0
-        h = face_gray.shape[0]
-        lower_var = float(face_gray[h//2:].std())
-        upper_var = float(face_gray[:h//2].std())
-        if lower_var > upper_var * 1.4:
-            return 'surprised'
-        if brightness < 0.3:
-            return 'thinking'
-        return 'neutral'
+    @staticmethod
+    def _emotion_color(emotion: str) -> tuple:
+        colors = {
+            'happy':     (0, 220, 100),
+            'surprised': (0, 200, 255),
+            'fearful':   (120, 0, 255),
+            'angry':     (0, 0, 255),
+            'sad':       (180, 100, 50),
+            'disgusted': (0, 140, 0),
+            'neutral':   (160, 160, 160),
+        }
+        return colors.get(emotion, (160, 160, 160))
 
     # ── Status ────────────────────────────────────────────────────────────────
 
     def get_status(self) -> dict:
         return {
-            "running":      self.running,
-            "camera_index": self.camera_idx,
-            "face_present": self.face_present,
-            "emotion":      self.last_emotion,
-            "motion":       round(self.motion_level, 3),
-            "frames":       self.frame_count,
-            "detector":     "yolo-gpu" if self._yolo else "haar-cpu",
-            "gpu":          str(DEVICE),
-            "models_ready": self._models_ready,
+            "running":       self.running,
+            "camera_index":  self.camera_idx,
+            "face_present":  self.face_present,
+            "emotion":       self.last_emotion,
+            "emotion_probs": self.last_emotion_probs,
+            "emoji":         EMOTION_EMOJI.get(self.last_emotion, '😐'),
+            "motion":        round(self.motion_level, 3),
+            "frames":        self.frame_count,
+            "detector":      "yolo-gpu" if self._yolo else "haar-cpu",
+            "gpu":           str(DEVICE),
+            "models_ready":  self._models_ready,
         }
