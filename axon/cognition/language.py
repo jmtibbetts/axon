@@ -42,70 +42,84 @@ Rules:
 
 
 class WebSearchTool:
-    """Serper.dev (Google Search API) with Wikipedia fallback."""
+    """No-signup web search: DuckDuckGo HTML scraper + Wikipedia fallback."""
 
-    SERPER_URL = "https://google.serper.dev/search"
+    DDG_URL = "https://html.duckduckgo.com/html/"
 
     def __init__(self):
-        self.api_key = os.getenv("SERPER_API_KEY", "")
+        self.api_key = None  # no key needed
 
-    def serper_search(self, query: str, max_results: int = 5) -> str:
-        """Real Google results via Serper.dev — free tier: 2,500 queries/month."""
-        if not self.api_key:
-            return ""
+    def ddg_html_search(self, query: str, max_results: int = 5) -> str:
+        """Scrape DuckDuckGo HTML results — no API key, no rate limits."""
         try:
-            payload = json.dumps({"q": query, "num": max_results}).encode()
-            req = urllib.request.Request(
-                self.SERPER_URL,
-                data=payload,
+            import urllib.parse, re
+            data = urllib.parse.urlencode({"q": query, "kl": "us-en"}).encode()
+            req  = urllib.request.Request(
+                self.DDG_URL,
+                data=data,
                 headers={
-                    "X-API-KEY": self.api_key,
-                    "Content-Type": "application/json",
-                    "User-Agent": "AXON/1.0",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Accept-Language": "en-US,en;q=0.9",
                 },
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=6) as r:
-                data = json.loads(r.read().decode())
+            with urllib.request.urlopen(req, timeout=7) as r:
+                html = r.read().decode("utf-8", errors="ignore")
+
+            # Extract result snippets with simple regex (no external deps)
+            # DDG HTML result structure: <a class="result__snippet">...</a>
+            snippets = re.findall(
+                r'class="result__snippet"[^>]*>(.*?)</a>',
+                html, re.DOTALL
+            )
+            titles = re.findall(
+                r'class="result__a"[^>]*>(.*?)</a>',
+                html, re.DOTALL
+            )
+            # Strip tags
+            def strip(s):
+                return re.sub(r'<[^>]+>', '', s).strip()
 
             parts = []
-            # Knowledge graph snippet (rich direct answer)
-            kg = data.get("knowledgeGraph", {})
-            if kg.get("description"):
-                parts.append(f"[Knowledge Graph] {kg['title']}: {kg['description'][:300]}")
-            # Answer box
-            ab = data.get("answerBox", {})
-            if ab.get("answer"):
-                parts.append(f"[Answer] {ab['answer']}")
-            elif ab.get("snippet"):
-                parts.append(f"[Answer] {ab['snippet'][:300]}")
-            # Organic results
-            for r in data.get("organic", [])[:max_results]:
-                title   = r.get("title", "")
-                snippet = r.get("snippet", "")
-                if snippet:
-                    parts.append(f"• {title}: {snippet[:200]}")
+            for i, (t, s) in enumerate(zip(titles, snippets)):
+                if i >= max_results:
+                    break
+                t_clean = strip(t)
+                s_clean = strip(s)
+                if s_clean:
+                    parts.append(f"• {t_clean}: {s_clean[:220]}")
+
             return "\n".join(parts) if parts else ""
         except Exception as e:
-            print(f"  [Search] Serper error: {e}")
+            print(f"  [Search] DDG HTML error: {e}")
             return ""
 
     @staticmethod
     def wikipedia(topic: str) -> str:
-        """Wikipedia summary — always-available fallback."""
+        """Wikipedia summary — fast, structured, always available."""
         try:
-            slug = urllib.parse.quote(topic.replace(" ", "_"))
-            url  = f"https://en.wikipedia.org/api/rest_v1/page/summary/{slug}"
-            req  = urllib.request.Request(url, headers={"User-Agent": "AXON/1.0"})
+            # Use search endpoint first to find the right page
+            q    = urllib.parse.urlencode({"action": "opensearch", "search": topic, "limit": 1, "format": "json"})
+            req  = urllib.request.Request(
+                f"https://en.wikipedia.org/w/api.php?{q}",
+                headers={"User-Agent": "AXON/1.0"}
+            )
             with urllib.request.urlopen(req, timeout=5) as r:
-                data = json.loads(r.read().decode())
+                results = json.loads(r.read().decode())
+            if not results[1]:
+                return ""
+            slug = urllib.parse.quote(results[1][0].replace(" ", "_"))
+            url  = f"https://en.wikipedia.org/api/rest_v1/page/summary/{slug}"
+            req2 = urllib.request.Request(url, headers={"User-Agent": "AXON/1.0"})
+            with urllib.request.urlopen(req2, timeout=5) as r2:
+                data = json.loads(r2.read().decode())
             return data.get("extract", "")[:600]
         except:
             return ""
 
     @staticmethod
     def needs_search(text: str) -> bool:
-        """Heuristic: does this question need a web lookup?"""
         triggers = [
             "what is", "who is", "who was", "what are", "how does", "how do",
             "when did", "when was", "where is", "tell me about", "search",
@@ -117,12 +131,12 @@ class WebSearchTool:
         return any(t in low for t in triggers)
 
     def search(self, query: str) -> str:
-        """Serper (Google) first, Wikipedia fallback if thin/no key."""
-        result = self.serper_search(query)
+        """DDG HTML first, Wikipedia fallback if thin."""
+        result = self.ddg_html_search(query)
         if len(result) < 80:
             wiki = self.wikipedia(query)
             if wiki:
-                result = wiki + ("\n\n" + result if result else "")
+                result = (wiki + "\n\n" + result).strip() if result else wiki
         return result or "No results found."
 
 

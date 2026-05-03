@@ -46,20 +46,6 @@ Write-Host "  [3/5] Core deps..." -ForegroundColor Yellow
 Write-Host "  [4/5] Creating data dirs..." -ForegroundColor Yellow
 New-Item -ItemType Directory -Force -Path "data\memory" | Out-Null
 
-# Load SERPER_API_KEY from axon.env if it exists
-$envFile = Join-Path $projectRoot "axon.env"
-if (Test-Path $envFile) {
-    Get-Content $envFile | ForEach-Object {
-        if ($_ -match "^([^#][^=]+)=(.+)$") {
-            [System.Environment]::SetEnvironmentVariable($matches[1].Trim(), $matches[2].Trim(), "Process")
-        }
-    }
-    Write-Host "  [ENV] Loaded axon.env" -ForegroundColor DarkGray
-} else {
-    Write-Host "  [ENV] No axon.env found — web search uses Wikipedia fallback" -ForegroundColor DarkYellow
-    Write-Host "        Create axon.env with SERPER_API_KEY=your_key for Google Search" -ForegroundColor DarkYellow
-}
-
 Write-Host "  [5/5] Launching AXON..." -ForegroundColor Green
 Write-Host ""
 Write-Host "  Open: http://localhost:7777" -ForegroundColor Cyan
