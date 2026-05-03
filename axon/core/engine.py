@@ -187,7 +187,10 @@ class AxonEngine:
                     "enabled":  self.voice.enabled,
                     "playback": self.voice.get_status().get("playback","none")
                 })
+                # Lock mic while Axon speaks — prevents self-hearing
+                self.auditory.set_speaking(True)
                 self.voice.speak(response)
+                self.auditory.set_speaking(False)
                 self._emit("voice_speaking", {
                     "speaking": False,
                     "enabled":  self.voice.enabled,

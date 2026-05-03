@@ -1,28 +1,48 @@
 """
 AXON — Auditory System
-Microphone → VAD → Whisper STT → phoneme/word neurons.
-Uses sounddevice for capture, openai-whisper for transcription.
+Microphone → VAD → Whisper STT → on_speech callback.
+
+Key fixes:
+  - Speaking lockout: mic ignores audio while Axon is talking (prevents self-hearing)
+  - Whisper hallucination filter: rejects low-avg-logprob or known phantom phrases
+  - Conservative VAD: -28 dBFS threshold, 1.5s silence window, 1.0s min speech
 """
 
 import threading
 import time
 import queue
+import re
 import numpy as np
 from typing import Callable
 
 
-SAMPLE_RATE  = 16000
-CHUNK        = 1024
-SILENCE_DB   = -35       # dBFS threshold for voice activity
-MIN_DURATION = 0.5       # seconds of speech before transcribing
-MAX_DURATION = 15.0      # max recording length
+SAMPLE_RATE   = 16000
+CHUNK         = 1024
+SILENCE_DB    = -28        # raised from -35: ignore quieter background noise
+MIN_DURATION  = 1.0        # must speak for ≥1s before transcribing (was 0.5)
+MAX_DURATION  = 20.0
+SILENCE_AFTER = 1.5        # silence gap to end utterance (was 0.8)
+LOCKOUT_PAD   = 0.6        # extra seconds to stay locked after voice stops
+
+# Whisper sometimes hallucinates these on near-silence or room noise
+HALLUCINATION_PATTERNS = re.compile(
+    r'^\s*(thank\s+you\.?|thanks\.?|you\.?|okay\.?|ok\.?|'
+    r'bye\.?|bye[-\s]bye\.?|'
+    r'[\.\,\!\?\s\-]+|'          # only punctuation
+    r'\[.*?\]|'                   # [BLANK_AUDIO] etc.
+    r'\.{2,})\s*$',
+    re.IGNORECASE
+)
+
+MIN_WORD_COUNT = 2    # must have at least 2 real words
+MIN_AVG_LOGPROB = -1.2   # Whisper confidence gate (below = hallucination)
 
 
 class AuditorySystem:
     def __init__(self, on_speech: Callable, on_volume: Callable,
                  device_index: int = None):
-        self.on_speech  = on_speech    # callback(text: str, confidence: float)
-        self.on_volume  = on_volume    # callback(db: float)
+        self.on_speech  = on_speech
+        self.on_volume  = on_volume
         self.device_idx = device_index
         self.running    = False
         self._thread    = None
@@ -30,11 +50,31 @@ class AuditorySystem:
         self._audio_q   = queue.Queue()
         self.listening  = False
         self.volume_db  = -60.0
-        self._device    = "cpu"  # updated once Whisper loads
+        self._device    = "cpu"
+
+        # Speaking lockout — set True while Axon's voice is playing
+        self._speaking_lockout = False
+        self._lockout_until    = 0.0   # timestamp when lockout expires
+
+    # ── Public: called by engine when voice starts/stops ──────────────────────
+
+    def set_speaking(self, is_speaking: bool):
+        """Call this when Axon starts/stops talking so the mic ignores its voice."""
+        self._speaking_lockout = is_speaking
+        if not is_speaking:
+            # Keep lockout active for LOCKOUT_PAD seconds after voice ends
+            self._lockout_until = time.time() + LOCKOUT_PAD
+
+    @property
+    def _is_locked_out(self) -> bool:
+        if self._speaking_lockout:
+            return True
+        return time.time() < self._lockout_until
+
+    # ── Device listing ─────────────────────────────────────────────────────────
 
     @staticmethod
     def list_devices() -> list:
-        """Return all input audio devices available on this system."""
         try:
             import sounddevice as sd
             devices = sd.query_devices()
@@ -52,21 +92,23 @@ class AuditorySystem:
             print(f"  [Auditory] list_devices error: {e}")
             return []
 
+    # ── Model loading ──────────────────────────────────────────────────────────
+
     def _load_whisper(self):
         import whisper, torch
-        # Prefer CUDA (RTX 5090), fall back to CPU
         if torch.cuda.is_available():
             self._device = "cuda"
             gpu_name = torch.cuda.get_device_name(0)
-            # Use medium.en on GPU — much more accurate, still fast
             model_name = "medium.en"
-            print(f"  [Auditory] CUDA detected ({gpu_name}) — loading Whisper {model_name} on GPU...")
+            print(f"  [Auditory] CUDA ({gpu_name}) — loading Whisper {model_name} on GPU...")
         else:
             self._device = "cpu"
             model_name = "tiny.en"
-            print(f"  [Auditory] No CUDA — loading Whisper {model_name} on CPU...")
+            print(f"  [Auditory] CPU — loading Whisper {model_name}...")
         self._whisper = whisper.load_model(model_name, device=self._device)
         print(f"  [Auditory] Whisper {model_name} ready on {self._device.upper()}.")
+
+    # ── Lifecycle ──────────────────────────────────────────────────────────────
 
     def start(self):
         threading.Thread(target=self._load_whisper, daemon=True).start()
@@ -76,6 +118,8 @@ class AuditorySystem:
 
     def stop(self):
         self.running = False
+
+    # ── Audio loop ─────────────────────────────────────────────────────────────
 
     def _rms_to_db(self, samples: np.ndarray) -> float:
         rms = np.sqrt(np.mean(samples.astype(np.float32)**2))
@@ -113,6 +157,15 @@ class AuditorySystem:
                     self.volume_db = db
                     self.on_volume(db)
 
+                    # ── Speaking lockout: drop audio while Axon is talking ─────
+                    if self._is_locked_out:
+                        # Reset any partial recording so it doesn't get confused
+                        if recording:
+                            recording = False
+                            buffer    = []
+                            self.listening = False
+                        continue
+
                     is_voice = db > SILENCE_DB
                     now      = time.time()
 
@@ -122,34 +175,74 @@ class AuditorySystem:
                         buffer    = [samples]
                         silence_t = now
                         self.listening = True
+
                     elif is_voice and recording:
                         buffer.append(samples)
                         silence_t = now
+
                     elif not is_voice and recording:
                         buffer.append(samples)
                         silent_for = now - silence_t
                         rec_dur    = now - rec_start
-                        if silent_for > 0.8 or rec_dur > MAX_DURATION:
+
+                        if silent_for > SILENCE_AFTER or rec_dur > MAX_DURATION:
                             if rec_dur >= MIN_DURATION:
                                 self._transcribe(buffer)
                             recording = False
                             buffer    = []
                             self.listening = False
+
         except Exception as e:
             print(f"  [Auditory] Error: {e}")
+
+    # ── Transcription + hallucination filter ───────────────────────────────────
 
     def _transcribe(self, chunks: list):
         if self._whisper is None:
             return
+
         audio = np.concatenate(chunks).astype(np.float32) / 32768.0
         try:
-            use_fp16 = getattr(self, '_device', 'cpu') == 'cuda'
-            result = self._whisper.transcribe(audio, language='en', fp16=use_fp16)
-            text   = result['text'].strip()
-            if text and len(text) > 2:
-                self.on_speech(text, 0.9)
+            use_fp16 = (self._device == "cuda")
+            result = self._whisper.transcribe(
+                audio,
+                language='en',
+                fp16=use_fp16,
+                condition_on_previous_text=False,   # prevents "thank you" looping
+                no_speech_threshold=0.6,             # discard if probably silence
+                logprob_threshold=-1.0,              # discard low-confidence segments
+            )
+
+            text = result.get('text', '').strip()
+            if not text:
+                return
+
+            # ── Hallucination filter 1: known phantom phrases ─────────────────
+            if HALLUCINATION_PATTERNS.match(text):
+                print(f"  [Auditory] Filtered hallucination: {repr(text)}")
+                return
+
+            # ── Hallucination filter 2: word count ────────────────────────────
+            words = [w for w in re.split(r'\s+', text) if re.search(r'[a-zA-Z]', w)]
+            if len(words) < MIN_WORD_COUNT:
+                print(f"  [Auditory] Too short ({len(words)} words): {repr(text)}")
+                return
+
+            # ── Hallucination filter 3: Whisper avg logprob ───────────────────
+            segments = result.get('segments', [])
+            if segments:
+                avg_logprob = sum(s.get('avg_logprob', 0) for s in segments) / len(segments)
+                if avg_logprob < MIN_AVG_LOGPROB:
+                    print(f"  [Auditory] Low confidence (logprob={avg_logprob:.2f}): {repr(text)}")
+                    return
+
+            print(f"  [Auditory] Heard: {text}")
+            self.on_speech(text, 0.9)
+
         except Exception as e:
             print(f"  [Auditory] Transcription error: {e}")
+
+    # ── Status ─────────────────────────────────────────────────────────────────
 
     def get_status(self) -> dict:
         return {
@@ -157,4 +250,5 @@ class AuditorySystem:
             "listening": self.listening,
             "volume_db": round(self.volume_db, 1),
             "whisper":   self._whisper is not None,
+            "locked_out": self._is_locked_out,
         }

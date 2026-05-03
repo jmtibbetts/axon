@@ -725,7 +725,7 @@ class NeuralFabric:
 
                 self.emotions.update(spike_dict)
 
-                if self._tick % 20 == 0:
+                if self._tick % 200 == 0:   # every ~10s — was every 1s
                     active = sorted(spike_dict.keys(),
                                     key=lambda k: spike_dict[k], reverse=True)[:5]
                     self.thoughts.generate(active, self.emotions.current)
