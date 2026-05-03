@@ -36,6 +36,8 @@ $isNightly = $tv -match "dev"
 if (-not $isNightly) {
     & $venvPip uninstall torch torchvision torchaudio -y --quiet 2>$null
     & $venvPip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
+    Write-Host "[setup] Installing ultralytics (YOLOv8)..." -ForegroundColor Cyan
+    & $venvPip install ultralytics --quiet
 } else {
     Write-Host "  [SKIP] PyTorch nightly ok ($tv)" -ForegroundColor DarkGray
 }

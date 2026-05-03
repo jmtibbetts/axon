@@ -10,3 +10,4 @@ edge-tts
 pygame
 numpy
 scipy
+ultralytics
