@@ -511,7 +511,7 @@ function drawNeural() {
   const W = nCanvas.width, H = nCanvas.height;
 
   // Trail fade — slower = longer trails
-  nCtx.fillStyle = 'rgba(2,2,6,0.14)';
+  nCtx.fillStyle = 'rgba(2,2,6,0.08)';
   nCtx.fillRect(0, 0, W, H);
 
   const regionMap = (neuralState && neuralState.regions) ? neuralState.regions : {};
@@ -523,11 +523,11 @@ function drawNeural() {
   }
 
   // ── Receive new state and schedule spike waves ──────────────────────
-  if (neuralState && neuralState.top_clusters && axonFrame % 6 === 0) {
+  if (neuralState && neuralState.top_clusters && axonFrame % 3 === 0) {
     const newTop = (neuralState.top_clusters || []).slice(0, 8);
     newTop.forEach(c => {
       const sharpAct = sharpenedRegion[c.region || regionForCluster(c.name)] || 0;
-      if (sharpAct > 0.06) {
+      if (sharpAct > 0.02) {
         scheduleSpikeWave(c.region || regionForCluster(c.name), sharpAct);
       }
     });
@@ -555,17 +555,17 @@ function drawNeural() {
   neuronNodes.forEach(n => {
     const regionAct = sharpenedRegion[n.region] || 0;
     // Hard snap to dark when region is quiet
-    if (regionAct < 0.015) {
-      n.activation *= 0.97;   // very slow decay so neurons stay barely visible
+    if (regionAct < 0.005) {
+      n.activation *= 0.995;  // barely decay — should almost never go fully dark
       n.phase += n.speed;
       return;
     }
     // Drift toward sharpened region activity — faster response
-    n.activation += (regionAct - n.activation) * 0.06;
+    n.activation += (regionAct - n.activation) * 0.12;
     n.phase      += n.speed;
     // Gentle flicker for texture
     const flicker = (Math.sin(n.phase) * 0.5 + 0.5) * regionAct * 0.5;
-    n.activation  = Math.max(0.02, Math.min(1.0, n.activation + flicker * 0.025 - 0.002));
+    n.activation  = Math.max(0.06, Math.min(1.0, n.activation + flicker * 0.030 - 0.001));
   });
 
   // ── Process spike queue ─────────────────────────────────────────────
@@ -759,7 +759,7 @@ function drawNeural() {
 
   // ── Draw neurons ────────────────────────────────────────────────────────────
   neuronNodes.forEach(n => {
-    if (n.activation < 0.008) return;
+    if (n.activation < 0.003) return;
     const r     = n.baseR + n.activation * 3.5;
     const alpha = Math.round(60 + n.activation * 175).toString(16).padStart(2,'0');
 
@@ -770,7 +770,7 @@ function drawNeural() {
     nCtx.fill();
 
     // Glow halo
-    if (n.activation > 0.55) {
+    if (n.activation > 0.35) {
       const grd = nCtx.createRadialGradient(n.x,n.y,r,n.x,n.y,r*3.5);
       grd.addColorStop(0, n.color + '50');
       grd.addColorStop(1, n.color + '00');

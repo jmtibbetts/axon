@@ -576,9 +576,9 @@ class NeuralFabric:
         # Noise
         noise = torch.randn_like(act) * 0.002 * (0.5 + ne * 0.3)
 
-        # Decay (serotonin stabilises)
-        decay = 0.92 - ser * 0.05
-        new_act = act * decay + delta + noise
+        # Decay (serotonin stabilises) — floor keeps neurons from going fully dark
+        decay = 0.97 - ser * 0.03
+        new_act = torch.clamp(act * decay + delta + noise, min=0.03)
         new_act = torch.clamp(new_act, 0.0, 1.0)
 
         # Hebbian: EWMA trace
@@ -642,23 +642,57 @@ class NeuralFabric:
 
     # ── Ambient background firing ─────────────────────────────────────────────
 
+    # Minimum resting activation per region — a human brain is NEVER quiet
+    _BASELINE = {
+        "prefrontal":    0.30,   # planning, working memory — always on
+        "default_mode":  0.40,   # mind-wandering — strongest at rest
+        "thalamus":      0.35,   # relay — always gating signals
+        "hippocampus":   0.25,   # consolidating — persistent background
+        "amygdala":      0.20,   # vigilance — constant low-level watch
+        "visual":        0.15,   # eyes are always open
+        "auditory":      0.15,   # ears are always listening
+        "language":      0.20,   # inner voice — constant
+        "association":   0.25,   # cross-modal binding
+        "social":        0.18,   # social awareness
+        "cerebellum":    0.22,   # balance / timing
+        "metacognition": 0.28,   # self-monitoring — always running
+    }
+
     def _ambient_fire(self):
-        dmn = ["mind_wandering","self_referential","daydreaming",
-               "narrative_self","identity_core"]
-        tha = ["consciousness_gate","attention_filter","sensory_relay"]
-        for group in [dmn, tha]:
-            idxs = [self._name_to_idx[n] for n in group if n in self._name_to_idx]
-            if idxs:
+        """Inject biological resting baseline + spontaneous bursts every tick."""
+        # ── Per-region floor: push any cluster below its region baseline back up
+        region_clusters: Dict[str, list] = defaultdict(list)
+        for name, cluster in self.clusters.items():
+            region_clusters[cluster.region].append(self._name_to_idx[name])
+
+        with self._lock:
+            for region, baseline in self._BASELINE.items():
+                idxs = region_clusters.get(region, [])
+                if not idxs:
+                    continue
                 t = torch.tensor(idxs, device=DEVICE)
-                noise = torch.rand(len(idxs), device=DEVICE) * 0.05 + 0.02
-                with self._lock:
-                    self.activation[t] = torch.clamp(self.activation[t] + noise, 0.0, 1.0)
-        # Random spontaneous burst
-        if random.random() < 0.25:
+                cur = self.activation[t]
+                # Only top-up neurons that have fallen below baseline
+                deficit = torch.clamp(baseline - cur, min=0.0)
+                # Add a little noise so they don't all lock in sync
+                jitter = torch.rand(len(idxs), device=DEVICE) * 0.04
+                self.activation[t] = torch.clamp(cur + deficit * 0.5 + jitter * deficit.clamp(min=0.05), 0.0, 1.0)
+
+        # ── Spontaneous burst: random cluster fires strongly (inner monologue)
+        if random.random() < 0.40:
             lucky = random.randint(0, len(self._cluster_names)-1)
+            burst = random.uniform(0.08, 0.22)
             with self._lock:
-                self.activation[lucky] = torch.clamp(
-                    self.activation[lucky] + random.uniform(0.03, 0.10), 0.0, 1.0)
+                self.activation[lucky] = torch.clamp(self.activation[lucky] + burst, 0.0, 1.0)
+
+        # ── Cross-talk: pick 2 random clusters and let them nudge each other
+        if random.random() < 0.30:
+            a = random.randint(0, len(self._cluster_names)-1)
+            b = random.randint(0, len(self._cluster_names)-1)
+            with self._lock:
+                shared = (self.activation[a] + self.activation[b]) * 0.5
+                self.activation[a] = torch.clamp(self.activation[a] * 0.8 + shared * 0.2, 0.0, 1.0)
+                self.activation[b] = torch.clamp(self.activation[b] * 0.8 + shared * 0.2, 0.0, 1.0)
 
     # ── Main loop ─────────────────────────────────────────────────────────────
 
@@ -713,7 +747,7 @@ class NeuralFabric:
                         except: pass
 
             # Ambient firing
-            if self._tick % 5 == 0:
+            if self._tick % 2 == 0:
                 self._ambient_fire()
 
             elapsed = time.time() - t0
@@ -722,10 +756,14 @@ class NeuralFabric:
     def _make_snapshot(self, spike_dict: dict) -> dict:
         top = sorted(spike_dict.items(), key=lambda x: x[1], reverse=True)[:15]
         # attach region to each top cluster so UI can route spikes correctly
+        # Regions: weighted combo of activation level + spike activity
+        # This ensures regions show their resting state, not just spike moments
         region_act: Dict[str, list] = defaultdict(list)
         for name, cluster in self.clusters.items():
-            region_act[cluster.region].append(spike_dict.get(name, 0.0))
-        regions = {r: round(sum(v)/len(v), 4) for r, v in region_act.items()}
+            act_val = spike_dict.get(name, 0.0)
+            region_act[cluster.region].append(act_val)
+        regions = {r: round(min(1.0, sum(v)/max(len(v),1) * 1.4), 4)
+                   for r, v in region_act.items()}
         # Drain the new synapse buffer
         new_syn = self._new_synapses[:]
         self._new_synapses.clear()
