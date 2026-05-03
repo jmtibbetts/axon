@@ -95,10 +95,10 @@ class AxonEngine:
         threading.Timer(2.0, self._wake_thought).start()
 
     def _wake_thought(self):
-        self.fabric.stimulate_for_input("reward", 0.3)
-        self.fabric.stimulate_region("identity_core", 0.5)
-        self.fabric.stimulate_region("consciousness_gate", 0.6)
-        self.fabric.stimulate_region("self_referential", 0.4)
+        self.fabric.stimulate_for_input("reward", 0.10)
+        self.fabric.stimulate_region("identity_core", 0.15)
+        self.fabric.stimulate_region("consciousness_gate", 0.18)
+        self.fabric.stimulate_region("self_referential", 0.12)
 
     def stop(self):
         self.running = False
@@ -113,34 +113,36 @@ class AxonEngine:
         self._last_visual_ctx = frame_data
         self._emit("frame", frame_data)
         # Always stimulate visual cortex — camera is always active
-        motion = frame_data.get("motion", 0)
-        base_visual = 0.15 + motion * 0.5
-        self.fabric.stimulate_for_input("visual", base_visual)
-        # If face detected, light up social/face clusters
-        if frame_data.get("face_present"):
-            self.fabric.stimulate_for_input("face", 0.35)
-        # Bright scene = more occipital activity
+        motion     = frame_data.get("motion", 0)
         brightness = frame_data.get("brightness", 0.5)
-        self.fabric.stimulate_region("primary_visual",  0.10 + brightness * 0.15)
-        self.fabric.stimulate_region("color_form",      0.08 + brightness * 0.10)
-        self.fabric.stimulate_region("motion_detection", 0.05 + motion * 0.30)
+        # Gate: only stimulate every 4th frame to avoid per-frame flooding
+        self._frame_tick = getattr(self, "_frame_tick", 0) + 1
+        if self._frame_tick % 4 != 0:
+            return
+        # Reduced amounts — camera is always-on so values must stay low
+        base_visual = 0.04 + motion * 0.12
+        self.fabric.stimulate_for_input("visual", base_visual)
+        if frame_data.get("face_present"):
+            self.fabric.stimulate_for_input("face", 0.08)
+        self.fabric.stimulate_region("primary_visual",   0.03 + brightness * 0.05)
+        self.fabric.stimulate_region("motion_detection", 0.02 + motion   * 0.10)
 
     def _on_face(self, face_data: dict):
         self._emit("face", face_data)
-        self.fabric.stimulate_for_input("face", 0.4)
+        self.fabric.stimulate_for_input("face", 0.10)
         emotion = face_data.get("emotion", "neutral")
         if emotion in ("happy", "surprised"):
-            self.fabric.neuromod.reward(0.1)
+            self.fabric.neuromod.reward(0.05)
         elif emotion in ("angry", "fearful"):
-            self.fabric.neuromod.stress(0.1)
+            self.fabric.neuromod.stress(0.05)
 
     def _on_transcript(self, text: str):
         if not text.strip():
             return
         self._emit("transcript", {"text": text})
         self._emit("log",        {"msg": f"🎤 Heard: {text}"})
-        self.fabric.stimulate_for_input("speech",   0.6)
-        self.fabric.stimulate_for_input("question", 0.4)
+        self.fabric.stimulate_for_input("speech",   0.25)
+        self.fabric.stimulate_for_input("question", 0.15)
         self._think(text)
 
     # ── Thinking ──────────────────────────────────────────────
@@ -169,8 +171,8 @@ class AxonEngine:
                     "playback": self.voice.get_status().get("playback","none")
                 })
                 # Stimulate language output neurons
-                self.fabric.stimulate_for_input("language_out", 0.5)
-                self.fabric.neuromod.reward(0.15)
+                self.fabric.stimulate_for_input("language_out", 0.18)
+                self.fabric.neuromod.reward(0.06)
             except Exception as e:
                 self._emit("log",      {"msg": f"⚠ Think error: {e}"})
                 self._emit("thinking", {"state": False})
@@ -182,8 +184,8 @@ class AxonEngine:
 
     def chat(self, user_input: str):
         """Called from UI text input."""
-        self.fabric.stimulate_for_input("speech",   0.6)
-        self.fabric.stimulate_for_input("question", 0.5)
+        self.fabric.stimulate_for_input("speech",   0.25)
+        self.fabric.stimulate_for_input("question", 0.15)
         self._think(user_input)
 
     # ── Neural fabric state → UI ──────────────────────────────

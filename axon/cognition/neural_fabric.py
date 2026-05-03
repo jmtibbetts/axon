@@ -473,11 +473,18 @@ class NeuralFabric:
 
     # ── Public stimulation API (thread-safe, GPU-side) ───────────────────────
 
+    # Hard ceiling — no external stimulation can push above this
+    _STIM_CEILING = 0.55
+
     def stimulate_region(self, cluster_name: str, amount: float = 0.5):
         if cluster_name in self._name_to_idx:
             i = self._name_to_idx[cluster_name]
             with self._lock:
-                self.activation[i] = torch.clamp(self.activation[i] + amount, 0.0, 1.0)
+                current = self.activation[i].item()
+                headroom = max(0.0, self._STIM_CEILING - current)
+                delta = min(amount, headroom)
+                if delta > 0:
+                    self.activation[i] = self.activation[i] + delta
 
     def stimulate_for_input(self, input_type: str, intensity: float = 0.5):
         mapping = {
@@ -499,8 +506,10 @@ class NeuralFabric:
             return
         idx_t = torch.tensor(idxs, device=DEVICE)
         with self._lock:
-            self.activation[idx_t] = torch.clamp(
-                self.activation[idx_t] + intensity, 0.0, 1.0)
+            current = self.activation[idx_t]
+            headroom = torch.clamp(self._STIM_CEILING - current, min=0.0)
+            delta    = torch.clamp(torch.full_like(headroom, intensity), max=headroom)
+            self.activation[idx_t] = current + delta
         if input_type in ("speech", "question"):
             self.neuromod.curiosity(0.1)
         if input_type == "reward":
