@@ -55,7 +55,7 @@ class AxonEngine:
             on_frame=self._on_frame,
             on_face=self._on_face,
         )
-        self.auditory = AuditorySystem(on_speech=self._on_transcript, on_volume=lambda v: None)
+        self.auditory = AuditorySystem(on_speech=lambda text, conf: self._on_transcript(text), on_volume=lambda v: None)
 
         self._last_visual_ctx = {}
 
