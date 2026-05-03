@@ -159,6 +159,8 @@ class OpticSystem:
             edge_small    = cv2.resize(edges, (32, 24))
             edge_neurons  = (edge_small / 255.0).tolist()
 
+            import numpy as np
+            brightness = round(float(gray.mean()) / 255.0, 3)
             frame_data = {
                 "pixels":       pixel_neurons,
                 "edges":        edge_neurons,
@@ -166,6 +168,7 @@ class OpticSystem:
                 "face_present": self.face_present,
                 "emotion":      self.last_emotion,
                 "frame_id":     self.frame_count,
+                "brightness":   brightness,
             }
             self.on_frame(frame_data)
 

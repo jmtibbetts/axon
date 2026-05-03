@@ -106,8 +106,18 @@ class AxonEngine:
     def _on_frame(self, frame_data: dict):
         self._last_visual_ctx = frame_data
         self._emit("frame", frame_data)
-        if frame_data.get("motion", 0) > 0.05:
-            self.fabric.stimulate_for_input("visual", frame_data["motion"] * 0.5)
+        # Always stimulate visual cortex — camera is always active
+        motion = frame_data.get("motion", 0)
+        base_visual = 0.15 + motion * 0.5
+        self.fabric.stimulate_for_input("visual", base_visual)
+        # If face detected, light up social/face clusters
+        if frame_data.get("face_present"):
+            self.fabric.stimulate_for_input("face", 0.35)
+        # Bright scene = more occipital activity
+        brightness = frame_data.get("brightness", 0.5)
+        self.fabric.stimulate_region("primary_visual",  0.10 + brightness * 0.15)
+        self.fabric.stimulate_region("color_form",      0.08 + brightness * 0.10)
+        self.fabric.stimulate_region("motion_detection", 0.05 + motion * 0.30)
 
     def _on_face(self, face_data: dict):
         self._emit("face", face_data)

@@ -613,6 +613,10 @@ class NeuralFabric:
             if self._tick % 1000 == 0:
                 self.personality.save()
 
+            # Continuous ambient firing — always-on background cognition
+            if self._tick % 5 == 0:
+                self._ambient_fire()
+
             # Callbacks
             if self._tick % 4 == 0 and self._callbacks:
                 state = self.get_state_snapshot(spikes)
@@ -622,6 +626,35 @@ class NeuralFabric:
 
             elapsed = time.time() - t0
             time.sleep(max(0, dt - elapsed))
+
+    def _ambient_fire(self):
+        """Continuous background firing — idle cognition, daydreaming, pattern scanning."""
+        # Default mode network is always humming (mind wandering, self-referential)
+        dmn = ["mind_wandering", "self_referential", "daydreaming",
+               "narrative_self", "identity_core"]
+        for name in dmn:
+            if name in self.clusters:
+                self.clusters[name].stimulate(random.uniform(0.02, 0.08))
+
+        # Thalamus keeps routing signals even at rest
+        for name in ["consciousness_gate", "attention_filter", "sensory_relay"]:
+            if name in self.clusters:
+                self.clusters[name].stimulate(random.uniform(0.03, 0.07))
+
+        # Random cluster gets a spontaneous burst (insight / free association)
+        if random.random() < 0.15:
+            lucky = random.choice(list(self.clusters.keys()))
+            self.clusters[lucky].stimulate(random.uniform(0.05, 0.20))
+
+        # Cerebellum keeps timing even at rest
+        for name in ["sequence_timing", "cognitive_timing"]:
+            if name in self.clusters:
+                self.clusters[name].stimulate(random.uniform(0.01, 0.04))
+
+        # Association cortex quietly blending concepts
+        for name in ["conceptual_blending", "meaning_construction", "analogy_formation"]:
+            if name in self.clusters:
+                self.clusters[name].stimulate(random.uniform(0.01, 0.05))
 
     def stimulate_region(self, cluster_name: str, amount: float = 0.5):
         if cluster_name in self.clusters:
