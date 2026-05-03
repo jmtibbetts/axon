@@ -347,18 +347,19 @@ function addSynapseEvent(srcRegion, dstRegion, strength, type) {
 //                language, default_mode, thalamus, cerebellum,
 //                association, social, metacognition
 const REGION_DEFS = {
-  prefrontal:   { x:.20, y:.13, color:'#00d4ff', spread:.09, count:300, label:'Prefrontal Cortex' },
-  hippocampus:  { x:.36, y:.30, color:'#a855f7', spread:.07, count:220, label:'Hippocampus' },
-  amygdala:     { x:.28, y:.52, color:'#ff6b35', spread:.06, count:180, label:'Amygdala' },
-  visual:       { x:.80, y:.28, color:'#ffcc00', spread:.07, count:240, label:'Visual Cortex' },
-  auditory:     { x:.70, y:.18, color:'#00ff88', spread:.07, count:200, label:'Auditory Cortex' },
-  language:     { x:.52, y:.24, color:'#c084fc', spread:.07, count:240, label:'Language' },
-  default_mode: { x:.50, y:.72, color:'#4ade80', spread:.09, count:240, label:'Default Mode' },
-  thalamus:     { x:.50, y:.47, color:'#f9a8d4', spread:.04, count:110, label:'Thalamus' },
-  cerebellum:   { x:.74, y:.68, color:'#7ec8e3', spread:.08, count:230, label:'Cerebellum' },
-  association:  { x:.64, y:.42, color:'#fb923c', spread:.07, count:200, label:'Association' },
-  social:       { x:.34, y:.64, color:'#ff006e', spread:.06, count:170, label:'Social / Empathy' },
-  metacognition:{ x:.62, y:.62, color:'#ff4060', spread:.06, count:160, label:'Metacognition' },
+  // Positions pulled toward center, spreads 2x larger so clusters fill canvas
+  prefrontal:   { x:.28, y:.18, color:'#00d4ff', spread:.13, count:340, label:'Prefrontal Cortex' },
+  hippocampus:  { x:.42, y:.35, color:'#a855f7', spread:.10, count:260, label:'Hippocampus' },
+  amygdala:     { x:.30, y:.55, color:'#ff6b35', spread:.09, count:210, label:'Amygdala' },
+  visual:       { x:.72, y:.30, color:'#ffcc00', spread:.11, count:280, label:'Visual Cortex' },
+  auditory:     { x:.62, y:.18, color:'#00ff88', spread:.10, count:240, label:'Auditory Cortex' },
+  language:     { x:.52, y:.28, color:'#c084fc', spread:.10, count:270, label:'Language' },
+  default_mode: { x:.50, y:.68, color:'#4ade80', spread:.12, count:280, label:'Default Mode' },
+  thalamus:     { x:.50, y:.48, color:'#f9a8d4', spread:.07, count:150, label:'Thalamus' },
+  cerebellum:   { x:.70, y:.65, color:'#7ec8e3', spread:.11, count:260, label:'Cerebellum' },
+  association:  { x:.60, y:.45, color:'#fb923c', spread:.10, count:240, label:'Association' },
+  social:       { x:.36, y:.65, color:'#ff006e', spread:.09, count:200, label:'Social / Empathy' },
+  metacognition:{ x:.60, y:.60, color:'#ff4060', spread:.09, count:190, label:'Metacognition' },
 };
 
 // Hard-wired cross-region axon paths (biological connections)
@@ -429,15 +430,16 @@ function initNeurons() {
     const sx = props.spread * W;
     const sy = props.spread * H * 0.75;
     for (let i = 0; i < props.count; i++) {
+      // Square-root radius gives uniform disk fill (avoids center clumping)
       const angle = Math.random() * Math.PI * 2;
-      const rr    = Math.abs(gaussRand()) * Math.sqrt(sx*sx + sy*sy) * 0.5;
+      const rr    = Math.sqrt(Math.random());   // uniform disk
       neuronNodes.push({
-        x:          cx + Math.cos(angle) * rr * (sx / Math.sqrt(sx*sx+sy*sy) * 2),
-        y:          cy + Math.sin(angle) * rr * (sy / Math.sqrt(sx*sx+sy*sy) * 2),
+        x:          cx + Math.cos(angle) * rr * sx,
+        y:          cy + Math.sin(angle) * rr * sy,
         region,
         color:      props.color,
         activation: Math.random() * 0.04,
-        baseR:      1.2 + Math.random() * 1.4,
+        baseR:      1.6 + Math.random() * 1.8,
         phase:      Math.random() * Math.PI * 2,
         speed:      0.015 + Math.random() * 0.035,
         neighbors:  [],       // filled below
@@ -516,10 +518,12 @@ function drawNeural() {
 
   const regionMap = (neuralState && neuralState.regions) ? neuralState.regions : {};
 
-  // ── Region visibility — just subtract a tiny idle floor, keep values high
+  // ── Region visibility — apply a gentle contrast curve
+  // Resting (~0.08-0.15) stays faintly visible; active (>0.4) pops clearly
   const sharpenedRegion = {};
   for (const [k, v] of Object.entries(regionMap)) {
-    sharpenedRegion[k] = Math.max(0, v - 0.04);  // cut only the dead-silent floor
+    // Soft power curve: dim values stay dim, bright values brighten
+    sharpenedRegion[k] = Math.pow(Math.max(0, v), 0.75);
   }
 
   // ── Receive new state and schedule spike waves ──────────────────────
@@ -544,7 +548,7 @@ function drawNeural() {
   }
 
   // ── Default-mode ambient pulses when idle ───────────────────────────
-  if (axonFrame % 100 === 0) {
+  if (axonFrame % 60 === 0) {
     const dmRoutes = AXON_ROUTES.filter(([s,d]) =>
       s==='default_mode'||d==='default_mode'||s==='thalamus'||d==='thalamus');
     const r = dmRoutes[Math.floor(Math.random()*dmRoutes.length)];
@@ -554,14 +558,14 @@ function drawNeural() {
   // ── Update neuron activations ───────────────────────────────────────
   neuronNodes.forEach(n => {
     const regionAct = sharpenedRegion[n.region] || 0;
-    // Hard snap to dark when region is quiet
-    if (regionAct < 0.005) {
-      n.activation *= 0.995;  // barely decay — should almost never go fully dark
+    // Only fully stop updating neurons in completely dead regions
+    if (regionAct < 0.001) {
+      n.activation *= 0.98;
       n.phase += n.speed;
       return;
     }
-    // Drift toward sharpened region activity — faster response
-    n.activation += (regionAct - n.activation) * 0.05;
+    // Drift toward region activity level
+    n.activation += (regionAct - n.activation) * 0.04;
     n.phase      += n.speed;
     // Gentle flicker for texture
     const flicker = (Math.sin(n.phase) * 0.5 + 0.5) * regionAct * 0.5;
@@ -760,8 +764,9 @@ function drawNeural() {
   // ── Draw neurons ────────────────────────────────────────────────────────────
   neuronNodes.forEach(n => {
     if (n.activation < 0.003) return;
-    const r     = n.baseR + n.activation * 3.5;
-    const alpha = Math.round(60 + n.activation * 175).toString(16).padStart(2,'0');
+    const r     = n.baseR + n.activation * 3.0;
+    // Base alpha 90 so even resting neurons (act~0.05) are clearly visible
+    const alpha = Math.round(90 + n.activation * 155).toString(16).padStart(2,'0');
 
     // Core
     nCtx.beginPath();
