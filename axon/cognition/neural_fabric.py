@@ -560,7 +560,7 @@ class NeuralFabric:
         # Sigmoid spike
         x     = (act - eff_thresh) * 8.0
         spike = torch.sigmoid(x) * (act > eff_thresh).float()
-        spike = spike * (0.7 + da * 0.3)
+        spike = spike * (0.8 + da * 0.2)
 
         # Fatigue: clusters that fired get tired
         fired_mask = (spike > 0.05).float()
@@ -571,8 +571,8 @@ class NeuralFabric:
         # weight_mat is [N,N] float16; spike is float32 → cast for matmul
         wm = self.weight_mat.float()
         delta = wm @ spike                   # [N] weighted input from all sources
-        delta = delta * 0.20                 # scale — local propagation
-        delta = delta * (0.5 + ach)          # acetylcholine boosts learning
+        delta = delta * 0.12                 # scale — local propagation
+        delta = delta * (0.4 + ach * 0.6)    # acetylcholine boosts learning
 
         # Noise
         noise = torch.randn_like(act) * 0.002 * (0.5 + ne * 0.3)
