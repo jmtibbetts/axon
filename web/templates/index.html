@@ -480,43 +480,59 @@ function drawNeural() {
 
   const regionMap = (neuralState && neuralState.regions) ? neuralState.regions : {};
 
+  // ── Contrast curve — sharpen region values so low=dark, high=bright ─
+  // Apply power curve: regionMap values are often 0.1-0.4 even when "active"
+  // We want: <0.15 = basically 0, 0.3 = dim, 0.6+ = bright
+  const sharpenedRegion = {};
+  for (const [k, v] of Object.entries(regionMap)) {
+    const shifted = Math.max(0, v - 0.12);          // cut floor
+    sharpenedRegion[k] = Math.min(1, shifted * shifted * 6.0); // power curve
+  }
+
   // ── Receive new state and schedule spike waves ──────────────────────
-  if (neuralState && neuralState.top_clusters && axonFrame % 12 === 0) {
+  if (neuralState && neuralState.top_clusters && axonFrame % 10 === 0) {
     const newTop = (neuralState.top_clusters || []).slice(0, 8);
     newTop.forEach(c => {
-      if (c.activation > 0.20) {
-        scheduleSpikeWave(c.region || regionForCluster(c.name), c.activation);
+      const sharpAct = sharpenedRegion[c.region || regionForCluster(c.name)] || 0;
+      if (sharpAct > 0.15) {
+        scheduleSpikeWave(c.region || regionForCluster(c.name), sharpAct);
       }
     });
 
     // Fire pulses along active axon routes
     AXON_ROUTES.forEach(([src, dst, w]) => {
-      const sa = regionMap[src] || 0;
-      const da = regionMap[dst] || 0;
+      const sa = sharpenedRegion[src] || 0;
+      const da = sharpenedRegion[dst] || 0;
       const coact = sa * da;
-      if (coact > 0.12 && Math.random() < coact * w * 0.35) {
-        addPulse(src, dst, coact * w);
+      if (coact > 0.08 && Math.random() < coact * w * 0.5) {
+        addPulse(src, dst, Math.sqrt(coact) * w);
       }
     });
   }
 
   // ── Default-mode ambient pulses when idle ───────────────────────────
-  if (axonFrame % 90 === 0) {
+  if (axonFrame % 100 === 0) {
     const dmRoutes = AXON_ROUTES.filter(([s,d]) =>
       s==='default_mode'||d==='default_mode'||s==='thalamus'||d==='thalamus');
     const r = dmRoutes[Math.floor(Math.random()*dmRoutes.length)];
-    if (r) addPulse(r[0], r[1], 0.12 + Math.random()*0.08);
+    if (r) addPulse(r[0], r[1], 0.08 + Math.random()*0.06);
   }
 
   // ── Update neuron activations ───────────────────────────────────────
   neuronNodes.forEach(n => {
-    const regionAct = regionMap[n.region] || 0;
-    // Drift toward region activity
-    n.activation += (regionAct - n.activation) * 0.025;
+    const regionAct = sharpenedRegion[n.region] || 0;
+    // Hard snap to dark when region is quiet
+    if (regionAct < 0.05) {
+      n.activation *= 0.88;   // fast decay to black
+      n.phase += n.speed;
+      return;
+    }
+    // Drift toward sharpened region activity
+    n.activation += (regionAct - n.activation) * 0.04;
     n.phase      += n.speed;
-    // Oscillatory flicker driven by region
-    const flicker = (Math.sin(n.phase) * 0.5 + 0.5) * regionAct;
-    n.activation  = Math.max(0.008, Math.min(1.0, n.activation + flicker * 0.010 - 0.006));
+    // Gentle flicker — doesn't add much light, just texture
+    const flicker = (Math.sin(n.phase) * 0.5 + 0.5) * regionAct * 0.5;
+    n.activation  = Math.max(0.0, Math.min(1.0, n.activation + flicker * 0.008 - 0.005));
   });
 
   // ── Process spike queue ─────────────────────────────────────────────

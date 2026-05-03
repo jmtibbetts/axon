@@ -141,8 +141,8 @@ class AxonEngine:
             return
         self._emit("transcript", {"text": text})
         self._emit("log",        {"msg": f"🎤 Heard: {text}"})
-        self.fabric.stimulate_for_input("speech",   0.25)
-        self.fabric.stimulate_for_input("question", 0.15)
+        self.fabric.stimulate_for_input("speech",   0.50)
+        self.fabric.stimulate_for_input("question", 0.35)
         self._think(text)
 
     # ── Thinking ──────────────────────────────────────────────
@@ -150,6 +150,9 @@ class AxonEngine:
     def _think(self, user_input: str):
         def _run():
             self._emit("thinking", {"state": True})
+            # Light up cognitive regions during LLM inference
+            self.fabric.stimulate_for_input("thinking", 0.45)
+            self.fabric.stimulate_for_input("memory",   0.30)
             visual_ctx = {
                 "face_present": self._last_visual_ctx.get("face_present", False),
                 "emotion":      self._last_visual_ctx.get("emotion", "neutral"),
@@ -171,8 +174,9 @@ class AxonEngine:
                     "playback": self.voice.get_status().get("playback","none")
                 })
                 # Stimulate language output neurons
-                self.fabric.stimulate_for_input("language_out", 0.18)
-                self.fabric.neuromod.reward(0.06)
+                self.fabric.stimulate_for_input("language_out", 0.50)
+                self.fabric.stimulate_for_input("thinking",     0.30)
+                self.fabric.neuromod.reward(0.08)
             except Exception as e:
                 self._emit("log",      {"msg": f"⚠ Think error: {e}"})
                 self._emit("thinking", {"state": False})
@@ -184,8 +188,8 @@ class AxonEngine:
 
     def chat(self, user_input: str):
         """Called from UI text input."""
-        self.fabric.stimulate_for_input("speech",   0.25)
-        self.fabric.stimulate_for_input("question", 0.15)
+        self.fabric.stimulate_for_input("speech",   0.50)
+        self.fabric.stimulate_for_input("question", 0.35)
         self._think(user_input)
 
     # ── Neural fabric state → UI ──────────────────────────────

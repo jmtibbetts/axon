@@ -474,7 +474,7 @@ class NeuralFabric:
     # ── Public stimulation API (thread-safe, GPU-side) ───────────────────────
 
     # Hard ceiling — no external stimulation can push above this
-    _STIM_CEILING = 0.55
+    _STIM_CEILING = 0.70
 
     def stimulate_region(self, cluster_name: str, amount: float = 0.5):
         if cluster_name in self._name_to_idx:
@@ -488,15 +488,33 @@ class NeuralFabric:
 
     def stimulate_for_input(self, input_type: str, intensity: float = 0.5):
         mapping = {
-            "speech":       ["auditory_processing", "language_comprehension",
+            # Hearing speech — auditory + language
+            "speech":       ["auditory_processing", "speech_perception",
+                             "phoneme_detection", "language_comprehension",
                              "working_memory", "attention_spotlight"],
-            "visual":       ["primary_visual", "pattern_recognition", "attention_spotlight"],
-            "face":         ["face_recognition", "social_cognition", "empathy"],
+            # Generating a response — language + prefrontal heavily
+            "language_out": ["meaning_construction", "semantic_memory",
+                             "syntactic_processing", "narrative_self",
+                             "executive_control", "working_memory"],
+            # Actively thinking / reasoning
+            "thinking":     ["working_memory", "executive_control",
+                             "abstract_reasoning", "creativity",
+                             "conceptual_blending", "planning",
+                             "hippocampus_retrieve", "attention_spotlight"],
+            # Seeing
+            "visual":       ["primary_visual", "color_form",
+                             "object_recognition", "pattern_recognition"],
+            # Seeing a face
+            "face":         ["face_recognition", "social_cognition",
+                             "empathy", "mentalizing"],
+            # Memory retrieval
+            "memory":       ["hippocampus_encode", "hippocampus_retrieve",
+                             "episodic_memory", "semantic_memory"],
+            # Curiosity / question
+            "question":     ["curiosity_drive", "working_memory",
+                             "abstract_reasoning", "insight_generation"],
+            # Reward / positive
             "reward":       ["amygdala_reward", "reward_anticipation"],
-            "question":     ["curiosity_drive", "working_memory", "abstract_reasoning"],
-            "memory":       ["hippocampus_encode", "episodic_memory", "semantic_memory"],
-            "language_out": ["language_comprehension", "semantic_memory",
-                             "meaning_construction", "narrative_self"],
         }
         targets = mapping.get(input_type, [])
         if not targets:
@@ -549,14 +567,14 @@ class NeuralFabric:
         # weight_mat is [N,N] float16; spike is float32 → cast for matmul
         wm = self.weight_mat.float()
         delta = wm @ spike                   # [N] weighted input from all sources
-        delta = delta * 0.3                  # scale
+        delta = delta * 0.08                 # scale — keep signal local
         delta = delta * (0.5 + ach)          # acetylcholine boosts learning
 
         # Noise
-        noise = torch.randn_like(act) * 0.005 * (0.5 + ne * 0.5)
+        noise = torch.randn_like(act) * 0.002 * (0.5 + ne * 0.3)
 
         # Decay (serotonin stabilises)
-        decay = 0.85 - ser * 0.1
+        decay = 0.75 - ser * 0.08
         new_act = act * decay + delta + noise
         new_act = torch.clamp(new_act, 0.0, 1.0)
 
@@ -599,7 +617,7 @@ class NeuralFabric:
             idxs = [self._name_to_idx[n] for n in group if n in self._name_to_idx]
             if idxs:
                 t = torch.tensor(idxs, device=DEVICE)
-                noise = torch.rand(len(idxs), device=DEVICE) * 0.06 + 0.02
+                noise = torch.rand(len(idxs), device=DEVICE) * 0.018 + 0.005
                 with self._lock:
                     self.activation[t] = torch.clamp(self.activation[t] + noise, 0.0, 1.0)
         # Random spontaneous burst
@@ -607,7 +625,7 @@ class NeuralFabric:
             lucky = random.randint(0, len(self._cluster_names)-1)
             with self._lock:
                 self.activation[lucky] = torch.clamp(
-                    self.activation[lucky] + random.uniform(0.05, 0.20), 0.0, 1.0)
+                    self.activation[lucky] + random.uniform(0.03, 0.10), 0.0, 1.0)
 
     # ── Main loop ─────────────────────────────────────────────────────────────
 
