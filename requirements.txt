@@ -1,0 +1,12 @@
+flask
+flask-socketio
+flask-cors
+eventlet
+anthropic
+openai-whisper
+sounddevice
+opencv-python
+edge-tts
+pygame
+numpy
+scipy
