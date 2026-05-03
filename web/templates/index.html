@@ -306,6 +306,42 @@ let neuronNodes  = [];
 let neuralState  = null;
 let axonFrame    = 0;
 
+// ── Live synapse formation events ──────────────────────────────────────
+// Each entry: {x0,y0, x1,y1, color, t, maxT, type, particles}
+const synapseEvents = [];
+
+function addSynapseEvent(srcRegion, dstRegion, strength, type) {
+  const d1 = REGION_DEFS[srcRegion], d2 = REGION_DEFS[dstRegion];
+  if (!d1 || !d2 || srcRegion === dstRegion) return;
+  const W = nCanvas.width, H = nCanvas.height;
+  // Pick random neurons near each centroid as endpoints
+  const srcNeurons = neuronNodes.filter(n => n.region === srcRegion);
+  const dstNeurons = neuronNodes.filter(n => n.region === dstRegion);
+  if (!srcNeurons.length || !dstNeurons.length) return;
+  const sn = srcNeurons[Math.floor(Math.random() * srcNeurons.length)];
+  const dn = dstNeurons[Math.floor(Math.random() * dstNeurons.length)];
+  const color = type === 'new' ? '#ffffff' : d1.color;
+  synapseEvents.push({
+    x0: sn.x, y0: sn.y,
+    x1: dn.x, y1: dn.y,
+    color,
+    srcColor: d1.color,
+    dstColor: d2.color,
+    t: 0,          // 0 = just born, 1 = fully drawn
+    life: 1.0,     // fades after fully drawn
+    strength,
+    type,          // 'new' | 'strengthen'
+    // Particles that shoot along the arc on formation
+    particles: Array.from({length: type==='new' ? 5 : 3}, () => ({
+      t: Math.random() * 0.3,
+      speed: 0.018 + Math.random() * 0.015,
+    })),
+  });
+  // Also briefly boost the two neurons
+  if (sn) sn.activation = Math.min(1, sn.activation + 0.35);
+  if (dn) dn.activation = Math.min(1, dn.activation + 0.25);
+}
+
 // Map backend region keys → canvas display props
 // Backend sends: prefrontal, hippocampus, amygdala, visual, auditory,
 //                language, default_mode, thalamus, cerebellum,
@@ -652,7 +688,79 @@ function drawNeural() {
   pulses.length = 0;
   pulses.push(...alivePulses);
 
-  // ── Draw neurons ────────────────────────────────────────────────────
+  // ── Draw live synapse formation events ────────────────────────────────
+  for (let i = synapseEvents.length - 1; i >= 0; i--) {
+    const s = synapseEvents[i];
+
+    // Grow the arc from src→dst
+    if (s.t < 1.0) s.t += 0.04 + s.strength * 0.02;
+    else            s.life -= 0.022;  // then fade
+
+    if (s.life <= 0) { synapseEvents.splice(i, 1); continue; }
+
+    const progress = Math.min(1, s.t);
+    const alpha    = s.life;
+
+    // Draw partial arc (quadratic bezier sampled at intervals)
+    const cx = (s.x0 + s.x1) / 2;
+    const cy = (s.y0 + s.y1) / 2 - Math.hypot(s.x1-s.x0, s.y1-s.y0) * 0.22;
+    const steps = Math.floor(progress * 24) + 1;
+    nCtx.beginPath();
+    for (let step = 0; step <= steps; step++) {
+      const tt  = (step / 24) * progress;
+      const bx  = (1-tt)*(1-tt)*s.x0 + 2*(1-tt)*tt*cx + tt*tt*s.x1;
+      const by  = (1-tt)*(1-tt)*s.y0 + 2*(1-tt)*tt*cy + tt*tt*s.y1;
+      step === 0 ? nCtx.moveTo(bx, by) : nCtx.lineTo(bx, by);
+    }
+    const baseA = Math.round(alpha * (s.type === 'new' ? 220 : 150));
+    const lineColor = s.type === 'new'
+      ? `rgba(255,255,255,${alpha * 0.85})`
+      : s.srcColor + Math.round(alpha * 140).toString(16).padStart(2,'0');
+    nCtx.strokeStyle = lineColor;
+    nCtx.lineWidth   = s.type === 'new' ? 1.2 : 0.8;
+    nCtx.stroke();
+
+    // Glow at the growing tip
+    if (s.t < 1.0) {
+      const tipT = progress;
+      const tx = (1-tipT)*(1-tipT)*s.x0 + 2*(1-tipT)*tipT*cx + tipT*tipT*s.x1;
+      const ty = (1-tipT)*(1-tipT)*s.y0 + 2*(1-tipT)*tipT*cy + tipT*tipT*s.y1;
+      const tr = s.type === 'new' ? 4 : 2.5;
+      const tg = nCtx.createRadialGradient(tx,ty,0,tx,ty,tr*2.5);
+      tg.addColorStop(0, s.color + 'cc');
+      tg.addColorStop(1, s.color + '00');
+      nCtx.beginPath();
+      nCtx.arc(tx, ty, tr*2.5, 0, Math.PI*2);
+      nCtx.fillStyle = tg;
+      nCtx.fill();
+    }
+
+    // Particles racing along the arc
+    for (const p of s.particles) {
+      p.t = Math.min(1, p.t + p.speed);
+      const pt  = p.t;
+      const px  = (1-pt)*(1-pt)*s.x0 + 2*(1-pt)*pt*cx + pt*pt*s.x1;
+      const py  = (1-pt)*(1-pt)*s.y0 + 2*(1-pt)*pt*cy + pt*pt*s.y1;
+      const pa  = Math.round(alpha * (1 - pt) * 180).toString(16).padStart(2,'0');
+      nCtx.beginPath();
+      nCtx.arc(px, py, 1.5, 0, Math.PI*2);
+      nCtx.fillStyle = s.srcColor + pa;
+      nCtx.fill();
+    }
+
+    // Endpoint flash when arc arrives
+    if (s.t >= 1.0 && s.life > 0.85) {
+      const fg = nCtx.createRadialGradient(s.x1,s.y1,0,s.x1,s.y1,8);
+      fg.addColorStop(0, s.dstColor + 'cc');
+      fg.addColorStop(1, s.dstColor + '00');
+      nCtx.beginPath();
+      nCtx.arc(s.x1, s.y1, 8, 0, Math.PI*2);
+      nCtx.fillStyle = fg;
+      nCtx.fill();
+    }
+  }
+
+  // ── Draw neurons ────────────────────────────────────────────────────────────
   neuronNodes.forEach(n => {
     if (n.activation < 0.04) return;
     const r     = n.baseR + n.activation * 1.6;
@@ -1056,6 +1164,12 @@ socket.on('thought', d => {
 socket.on('neural_state', d => {
   neuralState = d;
   updateNeuralPanel(d);
+  // Animate newly formed / strengthened synapses
+  if (d.new_synapses && d.new_synapses.length) {
+    d.new_synapses.forEach(s => {
+      addSynapseEvent(s.src_region, s.dst_region, s.strength, s.type);
+    });
+  }
 });
 
 socket.on('voice_speaking', d => {

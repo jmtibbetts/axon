@@ -591,21 +591,51 @@ class NeuralFabric:
         return spike
 
     def _hebbian_update(self, spike: torch.Tensor, ach: float):
-        """Update weight matrix for top co-active pairs via outer product."""
+        """Update weight matrix for top co-active pairs via outer product.
+        Also records newly formed / significantly strengthened synapses."""
         lr = 0.002 * (0.5 + ach)
-        # Top-20 active clusters
         topk = min(20, spike.shape[0])
         top_idx = torch.topk(spike, topk).indices
-        top_spike = spike[top_idx]                         # [K]
-        # Outer product: [K, K] co-activation matrix
-        co_act = torch.outer(top_spike, top_spike)         # GPU outer product
-        co_act.fill_diagonal_(0)                           # no self-loops
-        # Update only the top-K submatrix
+        top_spike = spike[top_idx]
+        co_act = torch.outer(top_spike, top_spike)
+        co_act.fill_diagonal_(0)
+
         with torch.no_grad():
             sub = self.weight_mat[top_idx][:, top_idx].float()
-            sub = sub + lr * co_act - 0.0001 * sub        # Hebbian + weight decay
+            before = sub.clone()
+            sub = sub + lr * co_act - 0.0001 * sub
             sub = torch.clamp(sub, -1.0, 1.0)
             self.weight_mat[top_idx.unsqueeze(1), top_idx] = sub.half()
+
+            # Detect new connections: weight crossed 0.05 threshold (was near 0)
+            newly_formed = ((before < 0.05) & (sub >= 0.05)).nonzero(as_tuple=False)
+            # Also detect significant strengthening (jumped > 0.015 in one tick)
+            strengthened  = ((sub - before) > 0.015).nonzero(as_tuple=False)
+            events = set()
+            for pair in newly_formed[:6]:   # cap per tick
+                i, j = pair[0].item(), pair[1].item()
+                si, sj = top_idx[i].item(), top_idx[j].item()
+                if si != sj:
+                    events.add((si, sj, float(sub[i,j]), "new"))
+            for pair in strengthened[:4]:
+                i, j = pair[0].item(), pair[1].item()
+                si, sj = top_idx[i].item(), top_idx[j].item()
+                if si != sj:
+                    events.add((si, sj, float(sub[i,j]), "strengthen"))
+            if events:
+                names = self._cluster_names
+                for si, sj, strength, etype in events:
+                    if si < len(names) and sj < len(names):
+                        self._new_synapses.append({
+                            "src":      names[si],
+                            "dst":      names[sj],
+                            "strength": round(strength, 3),
+                            "type":     etype,
+                            "src_region": self.clusters[names[si]].region,
+                            "dst_region": self.clusters[names[sj]].region,
+                        })
+                        if len(self._new_synapses) > 30:
+                            self._new_synapses.pop(0)
 
     # ── Ambient background firing ─────────────────────────────────────────────
 
@@ -693,6 +723,9 @@ class NeuralFabric:
         for name, cluster in self.clusters.items():
             region_act[cluster.region].append(spike_dict.get(name, 0.0))
         regions = {r: round(sum(v)/len(v), 4) for r, v in region_act.items()}
+        # Drain the new synapse buffer
+        new_syn = self._new_synapses[:]
+        self._new_synapses.clear()
         return {
             "tick":          self._tick,
             "top_clusters":  [{"name": n, "activation": round(v,4),
@@ -705,6 +738,7 @@ class NeuralFabric:
             "thoughts":      self.thoughts.recent(3),
             "total_neurons": sum(c.size for c in self.clusters.values()),
             "total_connections": int(self.weight_mat.count_nonzero().item()),
+            "new_synapses":  new_syn,
         }
 
     def get_state_snapshot(self, spikes: dict = None) -> dict:
