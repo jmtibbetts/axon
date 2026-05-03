@@ -661,13 +661,16 @@ class NeuralFabric:
 
     def _make_snapshot(self, spike_dict: dict) -> dict:
         top = sorted(spike_dict.items(), key=lambda x: x[1], reverse=True)[:15]
+        # attach region to each top cluster so UI can route spikes correctly
         region_act: Dict[str, list] = defaultdict(list)
         for name, cluster in self.clusters.items():
             region_act[cluster.region].append(spike_dict.get(name, 0.0))
         regions = {r: round(sum(v)/len(v), 4) for r, v in region_act.items()}
         return {
             "tick":          self._tick,
-            "top_clusters":  [{"name": n, "activation": round(v,4)} for n, v in top],
+            "top_clusters":  [{"name": n, "activation": round(v,4),
+                               "region": self.clusters[n].region if n in self.clusters else ""}
+                              for n, v in top],
             "regions":       regions,
             "emotion":       self.emotions.to_dict(),
             "personality":   self.personality.to_dict(),

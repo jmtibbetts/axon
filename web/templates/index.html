@@ -302,28 +302,87 @@ const socket = io();
 // -- Neural canvas ---------------------------------------------
 const nCanvas = document.getElementById('neural-canvas');
 const nCtx    = nCanvas.getContext('2d');
-let neuronNodes = [];
-let neuralState = null;
-let axonFrame = 0;
+let neuronNodes  = [];
+let neuralState  = null;
+let axonFrame    = 0;
 
+// Map backend region keys → canvas display props
+// Backend sends: prefrontal, hippocampus, amygdala, visual, auditory,
+//                language, default_mode, thalamus, cerebellum,
+//                association, social, metacognition
 const REGION_DEFS = {
-  prefrontal_cortex:    {x:.18,y:.14,color:'#00d4ff', spread:.09, count:320},
-  temporal_lobe:        {x:.35,y:.28,color:'#a855f7', spread:.08, count:280},
-  limbic_system:        {x:.50,y:.52,color:'#ff6b35', spread:.07, count:240},
-  parietal_lobe:        {x:.68,y:.18,color:'#00ff88', spread:.08, count:240},
-  occipital_lobe:       {x:.82,y:.32,color:'#ffcc00', spread:.07, count:220},
-  cingulate_cortex:     {x:.50,y:.32,color:'#ff006e', spread:.06, count:180},
-  basal_ganglia:        {x:.40,y:.62,color:'#ff4060', spread:.06, count:180},
-  cerebellum:           {x:.72,y:.68,color:'#7ec8e3', spread:.09, count:260},
-  insula:               {x:.28,y:.58,color:'#c084fc', spread:.06, count:160},
-  default_mode_network: {x:.50,y:.74,color:'#4ade80', spread:.09, count:240},
-  association_cortex:   {x:.64,y:.46,color:'#fb923c', spread:.07, count:200},
-  thalamus:             {x:.50,y:.50,color:'#f9a8d4', spread:.04, count:120},
+  prefrontal:   { x:.20, y:.13, color:'#00d4ff', spread:.09, count:300, label:'Prefrontal Cortex' },
+  hippocampus:  { x:.36, y:.30, color:'#a855f7', spread:.07, count:220, label:'Hippocampus' },
+  amygdala:     { x:.28, y:.52, color:'#ff6b35', spread:.06, count:180, label:'Amygdala' },
+  visual:       { x:.80, y:.28, color:'#ffcc00', spread:.07, count:240, label:'Visual Cortex' },
+  auditory:     { x:.70, y:.18, color:'#00ff88', spread:.07, count:200, label:'Auditory Cortex' },
+  language:     { x:.52, y:.24, color:'#c084fc', spread:.07, count:240, label:'Language' },
+  default_mode: { x:.50, y:.72, color:'#4ade80', spread:.09, count:240, label:'Default Mode' },
+  thalamus:     { x:.50, y:.47, color:'#f9a8d4', spread:.04, count:110, label:'Thalamus' },
+  cerebellum:   { x:.74, y:.68, color:'#7ec8e3', spread:.08, count:230, label:'Cerebellum' },
+  association:  { x:.64, y:.42, color:'#fb923c', spread:.07, count:200, label:'Association' },
+  social:       { x:.34, y:.64, color:'#ff006e', spread:.06, count:170, label:'Social / Empathy' },
+  metacognition:{ x:.62, y:.62, color:'#ff4060', spread:.06, count:160, label:'Metacognition' },
 };
 
+// Hard-wired cross-region axon paths (biological connections)
+// Each entry: [srcRegion, dstRegion, weight]
+const AXON_ROUTES = [
+  ['thalamus',    'prefrontal',   0.9],
+  ['thalamus',    'visual',       0.8],
+  ['thalamus',    'auditory',     0.8],
+  ['thalamus',    'language',     0.7],
+  ['thalamus',    'amygdala',     0.7],
+  ['prefrontal',  'language',     0.8],
+  ['prefrontal',  'hippocampus',  0.7],
+  ['prefrontal',  'association',  0.8],
+  ['prefrontal',  'metacognition',0.7],
+  ['prefrontal',  'thalamus',     0.6],
+  ['hippocampus', 'language',     0.7],
+  ['hippocampus', 'default_mode', 0.8],
+  ['hippocampus', 'association',  0.6],
+  ['amygdala',    'prefrontal',   0.8],
+  ['amygdala',    'social',       0.7],
+  ['amygdala',    'hippocampus',  0.6],
+  ['visual',      'association',  0.7],
+  ['visual',      'language',     0.6],
+  ['auditory',    'language',     0.9],
+  ['auditory',    'association',  0.6],
+  ['language',    'association',  0.7],
+  ['language',    'default_mode', 0.6],
+  ['social',      'prefrontal',   0.6],
+  ['social',      'amygdala',     0.7],
+  ['social',      'default_mode', 0.5],
+  ['default_mode','prefrontal',   0.6],
+  ['default_mode','metacognition',0.6],
+  ['association', 'prefrontal',   0.6],
+  ['association', 'metacognition',0.7],
+  ['metacognition','prefrontal',  0.8],
+  ['metacognition','association', 0.6],
+  ['cerebellum',  'prefrontal',   0.5],
+  ['cerebellum',  'association',  0.5],
+];
+
+// Travelling signal pulses along axon routes
+const pulses = [];   // {x0,y0,x1,y1,t,color,strength}
+
+function addPulse(r1, r2, strength) {
+  const d1 = REGION_DEFS[r1], d2 = REGION_DEFS[r2];
+  if (!d1 || !d2) return;
+  const W = nCanvas.width, H = nCanvas.height;
+  pulses.push({
+    x0: d1.x*W, y0: d1.y*H,
+    x1: d2.x*W, y1: d2.y*H,
+    t:  0,                   // 0→1 travel progress
+    color: d1.color,
+    strength: Math.min(1, strength),
+  });
+}
+
+// Per-neuron neighbor list (cross-region via AXON_ROUTES + within-region)
 function initNeurons() {
-  const W = nCanvas.offsetWidth || 600;
-  const H = nCanvas.offsetHeight || 400;
+  const W = nCanvas.offsetWidth  || 700;
+  const H = nCanvas.offsetHeight || 440;
   nCanvas.width  = W;
   nCanvas.height = H;
   neuronNodes = [];
@@ -332,98 +391,172 @@ function initNeurons() {
     const cx = props.x * W;
     const cy = props.y * H;
     const sx = props.spread * W;
-    const sy = props.spread * H * 0.7;
+    const sy = props.spread * H * 0.75;
     for (let i = 0; i < props.count; i++) {
-      // Gaussian distribution within cluster
       const angle = Math.random() * Math.PI * 2;
-      const r     = Math.abs(gaussRand()) * Math.sqrt(sx*sx + sy*sy) * 0.5;
+      const rr    = Math.abs(gaussRand()) * Math.sqrt(sx*sx + sy*sy) * 0.5;
       neuronNodes.push({
-        x:          cx + Math.cos(angle) * r * (sx/Math.sqrt(sx*sx+sy*sy)*2),
-        y:          cy + Math.sin(angle) * r * (sy/Math.sqrt(sx*sx+sy*sy)*2),
+        x:          cx + Math.cos(angle) * rr * (sx / Math.sqrt(sx*sx+sy*sy) * 2),
+        y:          cy + Math.sin(angle) * rr * (sy / Math.sqrt(sx*sx+sy*sy) * 2),
         region,
         color:      props.color,
-        activation: Math.random() * 0.08,
-        baseR:      0.8 + Math.random() * 1.2,
+        activation: Math.random() * 0.04,
+        baseR:      0.7 + Math.random() * 1.1,
         phase:      Math.random() * Math.PI * 2,
-        speed:      0.02 + Math.random() * 0.04,
-        // Pre-compute nearby indices for connection drawing (done after all nodes created)
-        neighbors:  [],
+        speed:      0.015 + Math.random() * 0.035,
+        neighbors:  [],       // filled below
+        xNeighbors: [],       // cross-region (axon targets)
       });
     }
   }
 
-  // Build neighbor lists for connections (within same region, nearby)
+  // Build within-region neighbor lists
   const BY_REGION = {};
-  neuronNodes.forEach((n,i) => {
+  neuronNodes.forEach((n, i) => {
     if (!BY_REGION[n.region]) BY_REGION[n.region] = [];
     BY_REGION[n.region].push(i);
   });
-  // Each neuron gets up to 4 random same-region neighbors
-  neuronNodes.forEach((n,i) => {
-    const pool = BY_REGION[n.region].filter(j => j !== i);
-    n.neighbors = pool.sort(() => Math.random()-.5).slice(0,4);
+  neuronNodes.forEach((n, i) => {
+    const pool = (BY_REGION[n.region] || []).filter(j => j !== i);
+    n.neighbors = pool.sort(() => Math.random() - .5).slice(0, 5);
   });
+
+  // Build cross-region axon neighbors:
+  // For each AXON_ROUTE, 10% of src neurons get a pointer to a random dst neuron
+  AXON_ROUTES.forEach(([src, dst]) => {
+    const srcPool = BY_REGION[src] || [];
+    const dstPool = BY_REGION[dst] || [];
+    if (!srcPool.length || !dstPool.length) return;
+    const count = Math.max(2, Math.floor(srcPool.length * 0.10));
+    for (let k = 0; k < count; k++) {
+      const si = srcPool[Math.floor(Math.random() * srcPool.length)];
+      const di = dstPool[Math.floor(Math.random() * dstPool.length)];
+      neuronNodes[si].xNeighbors.push(di);
+    }
+  });
+
+  buildLegend();
 }
 
 function buildLegend() {
   const leg = document.getElementById('region-legend');
   if (!leg) return;
-  const LABELS = {
-    prefrontal_cortex:    ['#00d4ff', 'Prefrontal Cortex'],
-    temporal_lobe:        ['#a855f7', 'Temporal Lobe'],
-    limbic_system:        ['#ff6b35', 'Limbic System'],
-    parietal_lobe:        ['#00ff88', 'Parietal Lobe'],
-    occipital_lobe:       ['#ffcc00', 'Occipital Lobe'],
-    cingulate_cortex:     ['#ff006e', 'Cingulate Cortex'],
-    basal_ganglia:        ['#ff4060', 'Basal Ganglia'],
-    cerebellum:           ['#7ec8e3', 'Cerebellum'],
-    insula:               ['#c084fc', 'Insula'],
-    default_mode_network: ['#4ade80', 'Default Mode Network'],
-    association_cortex:   ['#fb923c', 'Association Cortex'],
-    thalamus:             ['#f9a8d4', 'Thalamus'],
-  };
-  leg.innerHTML = Object.entries(LABELS).map(([,v]) =>
-    `<div class="rl"><span class="dot" style="background:${v[0]};box-shadow:0 0 5px ${v[0]};"></span>${v[1]}</div>`
+  leg.innerHTML = Object.entries(REGION_DEFS).map(([, p]) =>
+    `<div class="rl"><span class="dot" style="background:${p.color};box-shadow:0 0 5px ${p.color};"></span>${p.label}</div>`
   ).join('');
 }
 
 function gaussRand() {
-  let u=0,v=0;
+  let u=0, v=0;
   while(u===0) u=Math.random();
   while(v===0) v=Math.random();
   return Math.sqrt(-2*Math.log(u)) * Math.cos(2*Math.PI*v);
+}
+
+// Spike queue: neurons scheduled to fire {idx, at_frame}
+const spikeQueue = [];
+let lastTopClusters = [];
+
+function scheduleSpikeWave(regionName, intensity) {
+  const nodes = neuronNodes
+    .map((n,i)=>({n,i}))
+    .filter(({n})=> n.region === regionName);
+  if (!nodes.length) return;
+  // Fire a random subset proportional to intensity
+  const fireCount = Math.max(1, Math.floor(nodes.length * intensity * 0.35));
+  const shuffled  = nodes.sort(()=>Math.random()-.5).slice(0, fireCount);
+  shuffled.forEach(({i}, k) => {
+    spikeQueue.push({ idx: i, at: axonFrame + k });
+  });
 }
 
 function drawNeural() {
   axonFrame++;
   const W = nCanvas.width, H = nCanvas.height;
 
-  // Fade trail
-  nCtx.fillStyle = 'rgba(2,2,5,0.10)';
-  nCtx.fillRect(0,0,W,H);
+  // Trail fade — slower = longer trails
+  nCtx.fillStyle = 'rgba(2,2,6,0.08)';
+  nCtx.fillRect(0, 0, W, H);
 
   const regionMap = (neuralState && neuralState.regions) ? neuralState.regions : {};
 
-  // Update activations
+  // ── Receive new state and schedule spike waves ──────────────────────
+  if (neuralState && neuralState.top_clusters && axonFrame % 6 === 0) {
+    const newTop = (neuralState.top_clusters || []).slice(0, 8);
+    newTop.forEach(c => {
+      if (c.activation > 0.08) {
+        scheduleSpikeWave(c.region || regionForCluster(c.name), c.activation);
+      }
+    });
+
+    // Fire pulses along active axon routes
+    AXON_ROUTES.forEach(([src, dst, w]) => {
+      const sa = regionMap[src] || 0;
+      const da = regionMap[dst] || 0;
+      const coact = sa * da;
+      if (coact > 0.04 && Math.random() < coact * w * 0.8) {
+        addPulse(src, dst, coact * w);
+      }
+    });
+  }
+
+  // ── Default-mode ambient pulses when idle ───────────────────────────
+  if (axonFrame % 45 === 0) {
+    const dmRoutes = AXON_ROUTES.filter(([s,d]) =>
+      s==='default_mode'||d==='default_mode'||s==='thalamus'||d==='thalamus');
+    const r = dmRoutes[Math.floor(Math.random()*dmRoutes.length)];
+    if (r) addPulse(r[0], r[1], 0.25 + Math.random()*0.2);
+  }
+
+  // ── Update neuron activations ───────────────────────────────────────
   neuronNodes.forEach(n => {
-    const target = (regionMap[n.region] || 0);
-    // Drift toward region activation with noise
-    n.activation += (target - n.activation) * 0.06;
+    const regionAct = regionMap[n.region] || 0;
+    // Drift toward region activity
+    n.activation += (regionAct - n.activation) * 0.04;
     n.phase      += n.speed;
-    // Spontaneous flicker proportional to region activity
-    const flicker = Math.sin(n.phase) * 0.5 + 0.5;
-    n.activation  = Math.max(0.04, Math.min(1, n.activation + flicker * target * 0.06 - 0.001));
+    // Oscillatory flicker driven by region
+    const flicker = (Math.sin(n.phase) * 0.5 + 0.5) * regionAct;
+    n.activation  = Math.max(0.02, Math.min(1.0, n.activation + flicker * 0.05 - 0.0008));
   });
 
-  // Draw connections (only when active enough, batched)
-  nCtx.lineWidth = 0.4;
-  neuronNodes.forEach(n => {
-    if (n.activation < 0.04) return;
+  // ── Process spike queue ─────────────────────────────────────────────
+  const remaining = [];
+  for (const sp of spikeQueue) {
+    if (sp.at <= axonFrame) {
+      const n = neuronNodes[sp.idx];
+      if (n) n.activation = Math.min(1.0, n.activation + 0.55 + Math.random()*0.3);
+    } else {
+      remaining.push(sp);
+    }
+  }
+  spikeQueue.length = 0;
+  spikeQueue.push(...remaining);
+
+  // ── Propagate spikes to neighbors (within-region dendrites) ─────────
+  const nextActivation = neuronNodes.map(n => n.activation);
+  neuronNodes.forEach((n, i) => {
+    if (n.activation < 0.25) return;
+    const signal = n.activation * 0.18;
     n.neighbors.forEach(j => {
-      const m = neuronNodes[j];
-      const coAct = n.activation * m.activation;
-      if (coAct < 0.003) return;
-      const alpha = Math.min(255, Math.round(coAct * 180));
+      nextActivation[j] = Math.min(1.0, nextActivation[j] + signal * (0.6 + Math.random()*0.4));
+    });
+    // Cross-region axon propagation (weaker, delayed)
+    n.xNeighbors.forEach(j => {
+      const delay = 3 + Math.floor(Math.random() * 8);
+      spikeQueue.push({ idx: j, at: axonFrame + delay });
+    });
+  });
+  neuronNodes.forEach((n, i) => { n.activation = nextActivation[i]; });
+
+  // ── Draw within-region synaptic connections ─────────────────────────
+  nCtx.lineWidth = 0.35;
+  neuronNodes.forEach(n => {
+    if (n.activation < 0.08) return;
+    n.neighbors.forEach(j => {
+      const m   = neuronNodes[j];
+      const sig = n.activation * m.activation;
+      if (sig < 0.005) return;
+      const alpha = Math.min(200, Math.round(sig * 220));
       nCtx.beginPath();
       nCtx.moveTo(n.x, n.y);
       nCtx.lineTo(m.x, m.y);
@@ -432,69 +565,128 @@ function drawNeural() {
     });
   });
 
-  // Draw cross-region connections from top active clusters
-  if (neuralState && neuralState.top_clusters && axonFrame % 3 === 0) {
-    const topNames = neuralState.top_clusters.slice(0,6).map(c=>c.name.replace(/_/g,' '));
-    // Find region centroids
-    const centroids = {};
-    Object.entries(REGION_DEFS).forEach(([r,p])=>{
-      centroids[r] = {x: p.x*W, y: p.y*H, color: p.color};
+  // ── Draw cross-region axon lines (static wiring, dim) ──────────────
+  if (axonFrame % 2 === 0) {
+    nCtx.lineWidth = 0.5;
+    AXON_ROUTES.forEach(([src, dst, w]) => {
+      const d1 = REGION_DEFS[src], d2 = REGION_DEFS[dst];
+      if (!d1||!d2) return;
+      const sa = regionMap[src] || 0;
+      const da = regionMap[dst] || 0;
+      const combined = Math.max(sa, da);
+      if (combined < 0.05) return;
+      const alpha = Math.round(combined * w * 35).toString(16).padStart(2,'0');
+      const mx = (d1.x*W + d2.x*W)/2;
+      const my = (d1.y*H + d2.y*H)/2 - 25 - Math.random()*10;
+      nCtx.beginPath();
+      nCtx.moveTo(d1.x*W, d1.y*H);
+      nCtx.quadraticCurveTo(mx, my, d2.x*W, d2.y*H);
+      nCtx.strokeStyle = d1.color + alpha;
+      nCtx.stroke();
     });
-    // Draw arcs between high-activity regions
-    const activeRegions = Object.entries(regionMap)
-      .filter(([,v])=>v>0.25)
-      .sort(([,a],[,b])=>b-a)
-      .slice(0,5);
-    for (let i=0;i<activeRegions.length;i++) {
-      for (let j=i+1;j<activeRegions.length;j++) {
-        const [r1]=activeRegions[i], [r2]=activeRegions[j];
-        if (!centroids[r1]||!centroids[r2]) continue;
-        const c1=centroids[r1], c2=centroids[r2];
-        const coact = regionMap[r1]*regionMap[r2];
-        const alpha = Math.round(coact*80).toString(16).padStart(2,'0');
-        const mx = (c1.x+c2.x)/2, my = (c1.y+c2.y)/2 - 30;
-        nCtx.beginPath();
-        nCtx.moveTo(c1.x,c1.y);
-        nCtx.quadraticCurveTo(mx,my,c2.x,c2.y);
-        nCtx.strokeStyle = c1.color + alpha;
-        nCtx.lineWidth = 0.8;
-        nCtx.stroke();
-      }
-    }
   }
 
-  // Draw neurons
+  // ── Advance & draw travelling signal pulses ─────────────────────────
+  const alivePulses = [];
+  for (const p of pulses) {
+    p.t += 0.028 + p.strength * 0.018;
+    if (p.t >= 1.0) continue;  // remove on arrival
+    alivePulses.push(p);
+
+    const px = p.x0 + (p.x1 - p.x0) * p.t;
+    const py = p.y0 + (p.y1 - p.y0) * p.t;
+    const r  = 2.5 + p.strength * 3;
+
+    // Trail dots
+    for (let s = 0; s < 3; s++) {
+      const tp = Math.max(0, p.t - s*0.04);
+      const tx = p.x0 + (p.x1 - p.x0) * tp;
+      const ty = p.y0 + (p.y1 - p.y0) * tp;
+      const a  = Math.round((1 - s*0.3) * p.strength * 200).toString(16).padStart(2,'0');
+      nCtx.beginPath();
+      nCtx.arc(tx, ty, r * (1 - s*0.25), 0, Math.PI*2);
+      nCtx.fillStyle = p.color + a;
+      nCtx.fill();
+    }
+
+    // Glow at pulse head
+    const grd = nCtx.createRadialGradient(px,py,0,px,py,r*3);
+    grd.addColorStop(0, p.color + 'cc');
+    grd.addColorStop(1, p.color + '00');
+    nCtx.beginPath();
+    nCtx.arc(px, py, r*3, 0, Math.PI*2);
+    nCtx.fillStyle = grd;
+    nCtx.fill();
+
+    // When pulse arrives, burst the destination region neurons
+    if (p.t > 0.88 && p.t < 0.92) {
+      const dstDef = Object.entries(REGION_DEFS).find(([k])=>
+        REGION_DEFS[k] && REGION_DEFS[k].x===REGION_DEFS[Object.keys(REGION_DEFS).find(r=>REGION_DEFS[r].x*nCanvas.width===p.x1)]?.x
+      );
+      // Stimulate neurons near the arrival point
+      const arrivalThresh = 40 + p.strength * 30;
+      neuronNodes.forEach(n => {
+        const dx = n.x - p.x1, dy = n.y - p.y1;
+        if (dx*dx + dy*dy < arrivalThresh*arrivalThresh) {
+          n.activation = Math.min(1.0, n.activation + p.strength * 0.4);
+        }
+      });
+    }
+  }
+  pulses.length = 0;
+  pulses.push(...alivePulses);
+
+  // ── Draw neurons ────────────────────────────────────────────────────
   neuronNodes.forEach(n => {
-    if (n.activation < 0.01) return;
-    const r = n.baseR + n.activation * 4;
-    // Core dot
+    if (n.activation < 0.015) return;
+    const r     = n.baseR + n.activation * 4.5;
+    const alpha = Math.round(70 + n.activation * 185).toString(16).padStart(2,'0');
+
+    // Core
     nCtx.beginPath();
     nCtx.arc(n.x, n.y, r, 0, Math.PI*2);
-    const alpha = Math.round(80 + n.activation * 175).toString(16).padStart(2,'0');
     nCtx.fillStyle = n.color + alpha;
     nCtx.fill();
-    // Glow halo for highly active neurons
-    if (n.activation > 0.45) {
-      const grd = nCtx.createRadialGradient(n.x,n.y,r,n.x,n.y,r*4);
-      grd.addColorStop(0, n.color+'55');
-      grd.addColorStop(1, n.color+'00');
+
+    // Glow halo
+    if (n.activation > 0.40) {
+      const grd = nCtx.createRadialGradient(n.x,n.y,r,n.x,n.y,r*5);
+      grd.addColorStop(0, n.color + '55');
+      grd.addColorStop(1, n.color + '00');
       nCtx.beginPath();
-      nCtx.arc(n.x,n.y,r*4,0,Math.PI*2);
+      nCtx.arc(n.x,n.y,r*5,0,Math.PI*2);
       nCtx.fillStyle = grd;
       nCtx.fill();
     }
+
     // Spike ring burst
-    if (n.activation > 0.7) {
-      const ring = r + (axonFrame % 20) * 0.4;
+    if (n.activation > 0.65) {
+      const ring = r + (axonFrame % 22) * 0.45;
       nCtx.beginPath();
       nCtx.arc(n.x,n.y,ring,0,Math.PI*2);
-      nCtx.strokeStyle = n.color + '33';
-      nCtx.lineWidth = 0.6;
+      nCtx.strokeStyle = n.color + '44';
+      nCtx.lineWidth   = 0.6;
       nCtx.stroke();
     }
   });
 
   requestAnimationFrame(drawNeural);
+}
+
+// Helper: map cluster name → region key
+function regionForCluster(name) {
+  if (name.includes('hippocamp')||name.includes('episodic')||name.includes('spatial')||name.includes('pattern')) return 'hippocampus';
+  if (name.includes('amygdala')||name.includes('fear')||name.includes('reward_ant')||name.includes('threat')) return 'amygdala';
+  if (name.includes('visual')||name.includes('color')||name.includes('motion')||name.includes('depth')||name.includes('object')||name.includes('pattern_rec')) return 'visual';
+  if (name.includes('auditory')||name.includes('speech')||name.includes('phoneme')||name.includes('prosody')) return 'auditory';
+  if (name.includes('language')||name.includes('semantic')||name.includes('syntax')||name.includes('metaphor')||name.includes('pragmatic')||name.includes('meaning')) return 'language';
+  if (name.includes('mind_wand')||name.includes('self_ref')||name.includes('daydream')||name.includes('narrative')||name.includes('identity')||name.includes('future_sim')) return 'default_mode';
+  if (name.includes('thalamus')||name.includes('consciousness')||name.includes('attention')||name.includes('sensory_relay')) return 'thalamus';
+  if (name.includes('cerebellum')||name.includes('motor')||name.includes('timing')||name.includes('sequence')||name.includes('error_corr')||name.includes('coord')) return 'cerebellum';
+  if (name.includes('creativity')||name.includes('conceptual')||name.includes('analogy')||name.includes('abstract')||name.includes('insight')||name.includes('curiosity')) return 'association';
+  if (name.includes('social')||name.includes('empathy')||name.includes('face')||name.includes('social_pain')||name.includes('mentaliz')) return 'social';
+  if (name.includes('metacog')||name.includes('self_aware')||name.includes('conflict')||name.includes('error_det')||name.includes('uncertainty')) return 'metacognition';
+  return 'prefrontal';  // default
 }
 
 // -- Vision canvas ---------------------------------------------
