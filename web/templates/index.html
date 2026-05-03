@@ -832,7 +832,7 @@ function drawVision(pixels, edges, W=64, H=48) {
 
 // -- Bar helpers -----------------------------------------------
 function makeBar(label, val, cls='', color='') {
-  const pct = Math.round(val*100);
+  const pct = Math.round((val||0)*100);
   const fill = color ? `background:${color}` : '';
   return `<div class="bar-row ${cls}">
     <div class="bar-label">${label}</div>
@@ -872,12 +872,18 @@ function updateNeuralPanel(state) {
   // Regions
   let regions = '';
   const regionColors = {
-    prefrontal_cortex:'#00d4ff', temporal_lobe:'#a855f7',
-    limbic_system:'#ff6b35', parietal_lobe:'#00ff88',
-    occipital_lobe:'#ffcc00', cingulate_cortex:'#ff006e',
-    basal_ganglia:'#ff4060', cerebellum:'#7ec8e3',
-    insula:'#c084fc', default_mode_network:'#4ade80',
-    association_cortex:'#fb923c', thalamus:'#f9a8d4',
+    prefrontal:   '#00d4ff',
+    hippocampus:  '#a855f7',
+    amygdala:     '#ff6b35',
+    visual:       '#ffcc00',
+    auditory:     '#00ff88',
+    language:     '#ff006e',
+    default_mode: '#4ade80',
+    thalamus:     '#f9a8d4',
+    cerebellum:   '#7ec8e3',
+    association:  '#fb923c',
+    social:       '#c084fc',
+    metacognition:'#ff4060',
   };
   for (const [r,v] of Object.entries(state.regions||{})) {
     regions += makeBar(r.replace(/_/g,' '), v, '', regionColors[r]||'');

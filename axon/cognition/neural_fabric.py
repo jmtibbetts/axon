@@ -161,6 +161,9 @@ class PersonalityMatrix:
         self._lock = threading.Lock()
 
     def _load(self):
+        # Seed defaults so traits are never empty
+        defaults = {t: 0.5 for t in self.TRAITS}
+        self.traits = defaults
         if os.path.exists(self._path):
             try:
                 self.traits = json.load(open(self._path))
