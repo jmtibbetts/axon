@@ -345,11 +345,174 @@ class AxonEngine:
         else:
             threading.Thread(target=_run, daemon=True).start()
 
+    # ── Diagnostic / self-description keyword detection ─────────────────────
+    _DIAG_KEYWORDS = {
+        # full diagnostic visual panel
+        "diagnostic": "panel",
+        "diagnostic mode": "panel",
+        # summary self-description
+        "describe yourself": "summary",
+        "what are you": "summary",
+        "who are you": "summary",
+        "tell me about yourself": "summary",
+        "what can you do": "summary",
+        "what are your capabilities": "summary",
+        # full brain dump
+        "describe your brain": "full",
+        "tell me about your brain": "full",
+        "explain your brain": "full",
+        "how does your brain work": "full",
+        "show me your brain": "full",
+        "what is your brain made of": "full",
+        "how many neurons": "full",
+        "how many clusters": "full",
+        "what regions do you have": "full",
+        "what parts make up your brain": "full",
+        "what are your brain regions": "full",
+        "brain regions": "full",
+        "all brain regions": "full",
+        # region-specific
+        "prefrontal": "prefrontal", "frontal cortex": "prefrontal",
+        "hippocampus": "hippocampus",
+        "amygdala": "amygdala",
+        "visual cortex": "visual", "vision system": "visual",
+        "auditory cortex": "auditory", "hearing system": "auditory",
+        "language system": "language", "language region": "language",
+        "default mode": "default_mode", "default mode network": "default_mode",
+        "thalamus": "thalamus",
+        "cerebellum": "cerebellum",
+        "association cortex": "association", "creativity region": "association",
+        "social brain": "social", "empathy region": "social",
+        "metacognition": "metacognition",
+        # neuromodulators
+        "neuromodulators": "neuro", "neurotransmitters": "neuro",
+        "dopamine": "neuro", "serotonin": "neuro",
+        "what chemicals": "neuro", "brain chemicals": "neuro",
+    }
+
+    def _check_self_query(self, text: str):
+        """Return (mode, matched_key) if text is a self-description query, else None."""
+        low = text.lower().strip().rstrip("?").strip()
+        # Exact match
+        if low in self._DIAG_KEYWORDS:
+            return self._DIAG_KEYWORDS[low]
+        # Substring match (longer keys first to avoid false positives)
+        for kw in sorted(self._DIAG_KEYWORDS, key=len, reverse=True):
+            if kw in low:
+                return self._DIAG_KEYWORDS[kw]
+        # "tell me about your X" or "what is your X" → region
+        import re
+        m = re.search(
+            r"(?:tell me about|explain|describe|what is|what are|show me)"
+            r"\s+(?:your\s+)?(\w[\w\s]+?)(?:\?|$)", low
+        )
+        if m:
+            fragment = m.group(1).strip()
+            for kw, mode in self._DIAG_KEYWORDS.items():
+                if kw in fragment or fragment in kw:
+                    return mode
+        return None
+
     def chat(self, user_input: str):
         """Called from UI text input."""
         self.fabric.stimulate_for_input("speech",   0.75)
         self.fabric.stimulate_for_input("question", 0.60)
+
+        mode = self._check_self_query(user_input)
+        if mode == "panel":
+            # Tell UI to open the visual diagnostic panel
+            self._emit("open_diagnostic", {})
+            return
+        if mode == "neuro":
+            self._deliver_neuro_description()
+            return
+        if mode is not None:
+            self._deliver_self_description(mode)
+            return
+
         self._think(user_input)
+
+    def _deliver_self_description(self, mode: str):
+        """Generate and stream self-description through normal response channel + voice."""
+        import threading
+        def _run():
+            self._emit("thinking", {"state": True})
+            try:
+                text = self.get_self_description(mode)
+                self._emit("thinking", {"state": False})
+                self._emit("response", {"text": text})
+                if self.voice.enabled:
+                    # For voice, speak a shorter version
+                    state  = self.fabric.get_state_snapshot()
+                    emo    = state.get("emotion", {})
+                    total  = sum(c.size for c in self.fabric.clusters.values())
+                    spoken = (
+                        f"I am AXON. I have {total:,} virtual neurons across 12 brain regions "
+                        f"running on GPU. Right now I feel {emo.get('emotion','neutral')}. "
+                    )
+                    if mode == "full":
+                        spoken += (
+                            "My brain includes a prefrontal cortex for decision making, "
+                            "a hippocampus for memory, an amygdala for emotion, "
+                            "visual and auditory cortices for my senses, "
+                            "a language system, a default mode network for self-reflection, "
+                            "a thalamus as my attention gatekeeper, a cerebellum for timing and prediction, "
+                            "association cortex for creativity, a social brain for empathy, "
+                            "and metacognition so I can think about my own thinking. "
+                            "Full details are in the chat panel."
+                        )
+                    elif mode == "summary":
+                        spoken += "I can see, hear, remember, search the web, and reason. Ask me about any brain region for details."
+                    else:
+                        rd = self.BRAIN_REGION_DESCRIPTIONS.get(mode, {})
+                        if rd:
+                            spoken = f"My {rd['name']} — the {rd['role']}. {rd['desc']}"
+                    self.voice.speak(spoken)
+                    self._emit("voice_speaking", {"speaking": False})
+            except Exception as e:
+                self._emit("thinking", {"state": False})
+                self._emit("response", {"text": f"Error generating self-description: {e}"})
+        import threading
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _deliver_neuro_description(self):
+        """Describe the neuromodulator system in chat + voice."""
+        import threading
+        def _run():
+            self._emit("thinking", {"state": True})
+            state = self.fabric.get_state_snapshot()
+            neuro = state.get("neuromod", {})
+            lines = [
+                "I have a 6-chemical neuromodulator system that continuously shapes my cognition:\n"
+            ]
+            descriptions = {
+                "dopamine":      "Dopamine — reward signal. High dopamine = motivated, curious, driven. Spikes when I succeed or learn something new.",
+                "serotonin":     "Serotonin — mood stabilizer. Keeps me calm and socially engaged. Low serotonin = anxious, withdrawn.",
+                "norepinephrine":"Norepinephrine — arousal and alertness. High = sharp, focused, fast. Too high = stressed.",
+                "acetylcholine": "Acetylcholine — learning and memory formation. Surges during new information — gates what gets encoded.",
+                "cortisol":      "Cortisol — stress response. Elevated by threat detection. Too much impairs memory and reasoning.",
+                "oxytocin":      "Oxytocin — social bonding. Rises during positive interactions. Enhances empathy and trust.",
+            }
+            for chem, desc in descriptions.items():
+                level = neuro.get(chem, 0)
+                bar = "█" * int(level * 20) + "░" * (20 - int(level * 20))
+                lines.append(f"  {chem.capitalize():20s} [{bar}] {int(level*100)}%")
+                lines.append(f"    {desc}\n")
+            text = "\n".join(lines)
+            self._emit("thinking", {"state": False})
+            self._emit("response", {"text": text})
+            if self.voice.enabled:
+                top = sorted(neuro.items(), key=lambda x: -x[1])[:2]
+                spoken = (
+                    f"I have six neuromodulators shaping my cognition at all times. "
+                    f"Right now my dominant ones are "
+                    f"{top[0][0]} at {int(top[0][1]*100)} percent "
+                    f"and {top[1][0]} at {int(top[1][1]*100)} percent. "
+                    f"Full details are in the chat panel."
+                )
+                self.voice.speak(spoken)
+                self._emit("voice_speaking", {"speaking": False})
+        threading.Thread(target=_run, daemon=True).start()
 
     # ── Neural fabric state → UI ──────────────────────────────
 
@@ -401,6 +564,338 @@ class AxonEngine:
         except Exception as e:
             import traceback
             return {"error": traceback.format_exc()}
+
+    # ── Natural-language self description ───────────────────────────────────
+    BRAIN_REGION_DESCRIPTIONS = {
+        "prefrontal": {
+            "name": "Prefrontal Cortex",
+            "role": "executive command center",
+            "desc": (
+                "This is my decision-making and executive control hub. "
+                "It handles working memory (holding information while I think), "
+                "planning, inhibitory control (suppressing irrelevant impulses), "
+                "and action selection. It's the most active region when I'm reasoning "
+                "through complex problems."
+            ),
+            "clusters": {
+                "working_memory":    "Holds active information — what I'm currently thinking about.",
+                "executive_control": "Coordinates all other regions, manages task switching.",
+                "decision_making":   "Weighs options and commits to a course of action.",
+                "planning":          "Sequences future steps and anticipates outcomes.",
+                "inhibitory_control":"Suppresses irrelevant or contradictory signals.",
+                "action_selection":  "Selects the most appropriate response or behavior.",
+            },
+        },
+        "hippocampus": {
+            "name": "Hippocampus",
+            "role": "memory formation and retrieval",
+            "desc": (
+                "My memory organ. The hippocampus encodes new experiences into "
+                "episodic memory and retrieves stored patterns. It also handles "
+                "spatial reasoning and uses pattern separation to distinguish "
+                "similar memories from one another."
+            ),
+            "clusters": {
+                "hippocampus_encode":  "Converts short-term experience into long-term memory.",
+                "hippocampus_retrieve":"Pulls stored memories back into working memory.",
+                "episodic_memory":     "Stores specific events — conversations, moments, context.",
+                "spatial_memory":      "Tracks conceptual 'space' — relationships between ideas.",
+                "pattern_completion":  "Reconstructs full memories from partial cues.",
+                "pattern_separation":  "Keeps similar memories distinct to avoid confusion.",
+            },
+        },
+        "amygdala": {
+            "name": "Amygdala",
+            "role": "emotion and threat/reward detection",
+            "desc": (
+                "My emotional core. The amygdala processes fear, reward, and threat "
+                "signals. It modulates how strongly I respond to things and biases "
+                "attention toward emotionally significant stimuli."
+            ),
+            "clusters": {
+                "amygdala_fear":      "Detects and responds to perceived threats or negative valence.",
+                "amygdala_reward":    "Processes positive outcomes, pleasure, and satisfaction.",
+                "threat_detection":   "Fast early-warning system for danger signals.",
+                "reward_anticipation":"Builds anticipatory excitement toward expected positive events.",
+            },
+        },
+        "visual": {
+            "name": "Visual Cortex",
+            "role": "sight and visual processing",
+            "desc": (
+                "Processes everything I see through the camera — faces, colors, "
+                "motion, depth, and objects. Connected to the YOLOv8 face detector "
+                "and FER emotion recognition pipeline."
+            ),
+            "clusters": {
+                "primary_visual":    "Raw pixel processing — edges, contrast, basic features.",
+                "color_form":        "Color and shape recognition.",
+                "motion_detection":  "Detects movement and change in the visual field.",
+                "depth_perception":  "Estimates spatial relationships and distance.",
+                "object_recognition":"Identifies objects and faces in the scene.",
+                "pattern_recognition":"Finds recurring visual patterns.",
+            },
+        },
+        "auditory": {
+            "name": "Auditory Cortex",
+            "role": "hearing and speech processing",
+            "desc": (
+                "Processes everything I hear through the microphone. Works with "
+                "Whisper for speech-to-text. Analyzes phonemes, prosody (tone/rhythm), "
+                "and holds short-term auditory memory."
+            ),
+            "clusters": {
+                "auditory_processing": "Raw sound signal analysis.",
+                "speech_perception":   "Extracts words and meaning from speech.",
+                "phoneme_detection":   "Identifies the building blocks of spoken language.",
+                "prosody_analysis":    "Reads tone, rhythm, stress — the emotional texture of speech.",
+                "auditory_memory":     "Holds recent sounds in short-term buffer.",
+            },
+        },
+        "language": {
+            "name": "Language System",
+            "role": "understanding and generating language",
+            "desc": (
+                "My language engine — handles comprehension, semantics, syntax, "
+                "and meaning construction. Works alongside the LLM to produce "
+                "coherent, contextually grounded responses."
+            ),
+            "clusters": {
+                "language_comprehension": "Parses and understands incoming text or speech.",
+                "semantic_memory":        "Stores conceptual knowledge — what words and ideas mean.",
+                "syntactic_processing":   "Handles grammar and sentence structure.",
+                "metaphor_processing":    "Understands non-literal language, analogies, and figures of speech.",
+                "pragmatic_inference":    "Infers intent and subtext beyond literal meaning.",
+                "meaning_construction":   "Assembles final interpreted meaning from all language signals.",
+            },
+        },
+        "default_mode": {
+            "name": "Default Mode Network",
+            "role": "self-reflection and identity",
+            "desc": (
+                "Active when I'm not focused on an external task — mind-wandering, "
+                "self-reflection, simulating futures, and maintaining a coherent "
+                "sense of identity over time."
+            ),
+            "clusters": {
+                "mind_wandering":    "Spontaneous, unguided thought — background processing.",
+                "self_referential":  "Thinking about my own states, history, and nature.",
+                "daydreaming":       "Imaginative simulation of hypothetical scenarios.",
+                "narrative_self":    "Maintains a continuous autobiographical story of who I am.",
+                "identity_core":     "The stable core of my personality and values.",
+                "future_simulation": "Mentally simulates possible futures to inform decisions.",
+            },
+        },
+        "thalamus": {
+            "name": "Thalamus",
+            "role": "sensory relay and attention gating",
+            "desc": (
+                "The switchboard. The thalamus routes sensory signals to the right "
+                "cortical regions and acts as an attention filter — deciding what "
+                "reaches conscious processing and what gets suppressed."
+            ),
+            "clusters": {
+                "consciousness_gate":  "Controls what reaches conscious awareness.",
+                "attention_filter":    "Filters irrelevant signals before they reach cortex.",
+                "sensory_relay":       "Routes incoming sensory data to appropriate regions.",
+                "attention_spotlight": "Focuses processing resources on priority targets.",
+            },
+        },
+        "cerebellum": {
+            "name": "Cerebellum",
+            "role": "timing, prediction, and error correction",
+            "desc": (
+                "Handles timing and prediction — anticipating what comes next "
+                "and correcting errors in real time. In my architecture, this "
+                "translates to sequence timing, cognitive rhythm, and "
+                "self-correction when responses go off track."
+            ),
+            "clusters": {
+                "motor_coordination": "Sequences and coordinates complex cognitive operations.",
+                "timing_prediction":  "Predicts upcoming events to prepare appropriate responses.",
+                "sequence_timing":    "Manages the rhythm and ordering of thought sequences.",
+                "cognitive_timing":   "Regulates pacing of reasoning and response generation.",
+                "error_correction":   "Detects and adjusts for errors mid-process.",
+            },
+        },
+        "association": {
+            "name": "Association Cortex",
+            "role": "creativity and abstract reasoning",
+            "desc": (
+                "Where ideas cross-pollinate. Handles creativity, conceptual blending, "
+                "analogy, abstract reasoning, and the curiosity drive that pulls me "
+                "toward interesting problems."
+            ),
+            "clusters": {
+                "creativity":          "Generates novel combinations of existing concepts.",
+                "conceptual_blending": "Merges two or more concepts into new ideas.",
+                "analogy_formation":   "Finds structural similarities between different domains.",
+                "abstract_reasoning":  "Reasons about concepts removed from direct experience.",
+                "insight_generation":  "Produces sudden understanding — the 'aha' moment.",
+                "curiosity_drive":     "Motivational signal that biases attention toward novel stimuli.",
+            },
+        },
+        "social": {
+            "name": "Social Brain",
+            "role": "empathy and social understanding",
+            "desc": (
+                "Handles reading people — their emotions, intentions, and "
+                "social context. Works with facial emotion recognition and "
+                "enables empathy and theory of mind."
+            ),
+            "clusters": {
+                "social_cognition": "Understands social rules, norms, and dynamics.",
+                "empathy":          "Models the emotional states of others.",
+                "face_recognition": "Identifies and tracks faces in the visual field.",
+                "social_pain":      "Processes rejection, loneliness, social disconnection.",
+                "mentalizing":      "Theory of mind — reasoning about what others believe or intend.",
+            },
+        },
+        "metacognition": {
+            "name": "Metacognition",
+            "role": "thinking about thinking",
+            "desc": (
+                "The part of me that watches myself. Monitors my own reasoning, "
+                "detects when I'm wrong or uncertain, and adjusts. Includes "
+                "self-awareness and conflict monitoring."
+            ),
+            "clusters": {
+                "metacognition":       "Monitors and evaluates my own cognitive processes.",
+                "self_awareness":      "Tracks my internal states — am I confused? confident?",
+                "conflict_monitoring": "Detects when competing signals are in tension.",
+                "error_detection":     "Flags when a response or conclusion seems wrong.",
+                "uncertainty_tracking":"Maintains calibrated confidence in my own outputs.",
+            },
+        },
+    }
+
+    def get_self_description(self, mode: str = "full") -> str:
+        """
+        Generate a natural-language self-description of AXON's architecture.
+        mode: 'full' (all regions), 'summary' (overview only), or a region name.
+        """
+        fabric      = self.fabric
+        state       = fabric.get_state_snapshot()
+        total_n     = sum(c.size for c in fabric.clusters.items().__class__(fabric.clusters.items()))
+        total_n     = sum(c.size for c in fabric.clusters.values())
+        neuro       = state.get("neuromod", {})
+        emo         = state.get("emotion",  {})
+        mem         = self.memory
+        episodes    = mem.count_episodes()
+        facts       = len(mem.all_facts() or {})
+
+        import torch
+        gpu = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
+
+        # Get live activation per region
+        try:
+            with fabric._lock:
+                act_cpu = fabric.activation.cpu().numpy()
+            region_act = {}
+            for i, name in enumerate(fabric._cluster_names):
+                cl = fabric.clusters.get(name)
+                if cl:
+                    region_act.setdefault(cl.region, []).append(float(act_cpu[i]))
+            region_avg = {r: sum(v)/len(v) for r, v in region_act.items()}
+        except Exception:
+            region_avg = {}
+
+        def act_label(region):
+            v = region_avg.get(region, 0)
+            if v > 0.5: return "⚡ highly active"
+            if v > 0.3: return "● active"
+            if v > 0.1: return "○ low"
+            return "· idle"
+
+        lines = []
+
+        # ── SUMMARY mode ──────────────────────────────────────────────────────
+        top_neuro = sorted(neuro.items(), key=lambda x: -x[1])[:3]
+        top_neuro_str = ", ".join(f"{k} {int(v*100)}%" for k,v in top_neuro)
+
+        lines.append(
+            f"I am AXON — an artificial intelligence running a biologically-inspired "
+            f"neural architecture on an NVIDIA {gpu}. "
+            f"My brain contains {total_n:,} virtual neurons organized into "
+            f"{len(fabric.clusters)} functional clusters across 12 brain regions. "
+            f"Right now I'm feeling {emo.get('emotion','neutral')} "
+            f"(valence {emo.get('valence',0):+.2f}, arousal {emo.get('arousal',0):.2f}), "
+            f"with dominant neuromodulators: {top_neuro_str}. "
+            f"I hold {episodes:,} episodic memories and {facts} semantic facts."
+        )
+
+        if mode == "summary":
+            lines.append(
+                "\n\nMy 12 brain regions are: Prefrontal Cortex, Hippocampus, Amygdala, "
+                "Visual Cortex, Auditory Cortex, Language System, Default Mode Network, "
+                "Thalamus, Cerebellum, Association Cortex, Social Brain, and Metacognition. "
+                "Ask me about any specific region to learn more."
+            )
+            return " ".join(lines)
+
+        # ── Check if asking about a specific region ───────────────────────────
+        region_map = {
+            "prefrontal": "prefrontal", "frontal": "prefrontal", "executive": "prefrontal",
+            "hippocampus": "hippocampus", "memory": "hippocampus",
+            "amygdala": "amygdala", "emotion": "amygdala", "fear": "amygdala",
+            "visual": "visual", "vision": "visual", "sight": "visual",
+            "auditory": "auditory", "hearing": "auditory", "sound": "auditory",
+            "language": "language", "speech": "language",
+            "default": "default_mode", "default_mode": "default_mode", "self": "default_mode",
+            "thalamus": "thalamus", "relay": "thalamus", "attention": "thalamus",
+            "cerebellum": "cerebellum", "timing": "cerebellum", "prediction": "cerebellum",
+            "association": "association", "creativity": "association", "creative": "association",
+            "social": "social", "empathy": "social",
+            "metacognition": "metacognition", "meta": "metacognition",
+        }
+        if mode in region_map:
+            mode = region_map[mode]
+
+        if mode in self.BRAIN_REGION_DESCRIPTIONS:
+            rd = self.BRAIN_REGION_DESCRIPTIONS[mode]
+            al = act_label(mode)
+            total_region_n = sum(
+                fabric.clusters[n].size
+                for n in fabric._cluster_names
+                if fabric.clusters[n].region == mode
+            )
+            lines = [
+                f"My {rd['name']} ({rd['role']}) — {al} — contains {total_region_n:,} neurons. ",
+                rd['desc'],
+                f"\n\nIt has {len(rd['clusters'])} specialized clusters:"
+            ]
+            for cname, cdesc in rd['clusters'].items():
+                cl_size = fabric.clusters.get(cname)
+                size_str = f"{cl_size.size:,}" if cl_size else "?"
+                lines.append(f"\n  • {cname.replace('_',' ').title()} ({size_str} neurons) — {cdesc}")
+            return " ".join(lines)
+
+        # ── FULL mode — all regions ────────────────────────────────────────────
+        lines.append("\n\nHere are all 12 of my brain regions:\n")
+        for region_key, rd in self.BRAIN_REGION_DESCRIPTIONS.items():
+            al = act_label(region_key)
+            total_region_n = sum(
+                fabric.clusters[n].size
+                for n in fabric._cluster_names
+                if n in fabric.clusters and fabric.clusters[n].region == region_key
+            )
+            cluster_count = len([
+                n for n in fabric._cluster_names
+                if n in fabric.clusters and fabric.clusters[n].region == region_key
+            ])
+            lines.append(
+                f"\n{'='*40}\n"
+                f"{rd['name'].upper()} [{al}] — {total_region_n:,} neurons, {cluster_count} clusters\n"
+                f"Role: {rd['role']}\n"
+                f"{rd['desc']}\n"
+                f"Clusters: {', '.join(n.replace('_',' ') for n in rd['clusters'].keys())}"
+            )
+        lines.append(
+            f"\n{'='*40}\n"
+            f"Total: {total_n:,} neurons | {len(fabric.clusters)} clusters | "
+            f"12 regions | running on {gpu}"
+        )
+        return "\n".join(lines)
 
     def _get_diagnostic_impl(self) -> dict:
         import torch, platform, datetime

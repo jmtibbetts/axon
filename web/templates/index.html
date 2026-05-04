@@ -525,6 +525,10 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') closeDiagnostic();
 });
 
+socket.on('open_diagnostic', function() {
+  requestDiagnostic();
+});
+
 socket.on('diagnostic_result', function(d) {
   if (d.error) {
     document.getElementById('diag-neural').innerHTML =
