@@ -539,6 +539,9 @@ class TemporalRewardBuffer:
         reward  = raw_reward  * meta_sensitivity
         penalty = raw_penalty * meta_sensitivity
 
+        # ── Compute variance early — used by both personality block and consistency ──
+        variance = acts.var(dim=0).mean().item()
+
         # ── Personality + Belief trait biasing ────────────────────────────────
         # Traits shape what kinds of outcomes feel rewarding.
         # This is what makes the system have PREFERENCES, not just competence.
@@ -562,7 +565,6 @@ class TemporalRewardBuffer:
             penalty += b.get("conflict_penalty",0.0) * 0.05
 
         # Consistency sweet spot
-        variance = acts.var(dim=0).mean().item()
         if variance < 0.005:
             reward  += 0.02
         elif variance < 0.02:
