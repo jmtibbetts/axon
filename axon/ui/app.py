@@ -246,8 +246,9 @@ def on_add_note_to_person(data):
 def on_get_voice_config():
     global _engine
     if not _engine or not _engine.voice:
-        emit("voice_config", {"voice": "en-US-AriaNeural", "rate": "-5%",
-                               "pitch": "-3Hz", "catalogue": []})
+        from axon.cognition.voice_output import VOICE_CATALOGUE, DEFAULT_VOICE, DEFAULT_RATE, DEFAULT_PITCH
+        emit("voice_config", {"voice": DEFAULT_VOICE, "rate": DEFAULT_RATE,
+                               "pitch": DEFAULT_PITCH, "catalogue": VOICE_CATALOGUE})
         return
     emit("voice_config", _engine.voice.get_voice_config())
 

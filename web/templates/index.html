@@ -3245,11 +3245,16 @@ let _selectedVoiceId = 'en-US-AriaNeural';
 
 socket.on('voice_config', cfg => {
   _voiceCatalogue   = cfg.catalogue || [];
+  // If catalogue still empty (engine not ready yet), retry after 3s
+  if (!_voiceCatalogue.length) {
+    setTimeout(() => socket.emit('get_voice_config'), 3000);
+    return;
+  }
   _selectedVoiceId  = cfg.voice || 'en-US-AriaNeural';
-  const rate  = (cfg.rate  || '-5%').replace('%','');
-  const pitch = (cfg.pitch || '-3Hz').replace('Hz','');
-  document.getElementById('rate-slider').value  = parseInt(rate)  || -5;
-  document.getElementById('pitch-slider').value = parseInt(pitch) || -3;
+  const rate  = parseInt((cfg.rate  || '-5%').replace('%',''));
+  const pitch = parseInt((cfg.pitch || '-3Hz').replace('Hz',''));
+  document.getElementById('rate-slider').value  = rate;
+  document.getElementById('pitch-slider').value = pitch;
   document.getElementById('rate-val').textContent  = cfg.rate  || '-5%';
   document.getElementById('pitch-val').textContent = cfg.pitch || '-3Hz';
   renderVoiceList();
@@ -3322,8 +3327,8 @@ function applyVoiceModulator(andTest = false) {
   const pitchEl = document.getElementById('pitch-slider');
   const rateN   = rateEl  ? parseInt(rateEl.value)  : -5;
   const pitchN  = pitchEl ? parseInt(pitchEl.value) : -3;
-  const rate    = (rateN  > 0 ? '+' : '') + rateN  + '%';
-  const pitch   = (pitchN > 0 ? '+' : '') + pitchN + 'Hz';
+  const rate    = (rateN  >= 0 ? '+' : '') + rateN  + '%';
+  const pitch   = (pitchN >= 0 ? '+' : '') + pitchN + 'Hz';
   socket.emit('set_voice', {
     voice_id: _selectedVoiceId,
     rate, pitch,

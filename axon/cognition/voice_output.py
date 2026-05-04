@@ -88,6 +88,18 @@ class VoiceOutput:
         self._thread.start()
         print(f"  [Voice] edge-tts={EDGE_TTS_OK}, playback={PLAYBACK}, enabled={self.enabled}")
 
+    @staticmethod
+    def _norm_param(val: str, unit: str) -> str:
+        """Normalize edge-tts rate/pitch: ensure leading +/- sign. e.g. '0%' → '+0%'."""
+        if not val:
+            return val
+        val = str(val).strip()
+        # Strip the unit, get the numeric part
+        num = val.rstrip(unit).strip()
+        if num and num[0] not in ('+', '-'):
+            num = '+' + num
+        return num + unit
+
     def set_voice(self, voice_id: str = None, rate: str = None, pitch: str = None):
         """Change voice, rate, or pitch at runtime. Takes effect on next utterance."""
         if voice_id is not None:
@@ -99,9 +111,9 @@ class VoiceOutput:
             else:
                 print(f"  [Voice] Unknown voice id: {voice_id}")
         if rate is not None:
-            self.rate  = rate
+            self.rate  = self._norm_param(rate, "%")
         if pitch is not None:
-            self.pitch = pitch
+            self.pitch = self._norm_param(pitch, "Hz")
 
     def get_voice_config(self) -> dict:
         return {
