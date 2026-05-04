@@ -46,6 +46,8 @@ Write-Host "  [1/10] Upgrading pip + setuptools..." -ForegroundColor Yellow
 # --------------------------------------------------------------------------
 Write-Host "  [2/10] Removing conflicting packages (fer, facenet-pytorch)..." -ForegroundColor Yellow
 & $venvPip uninstall fer facenet-pytorch -y --quiet 2>$null
+# Also remove keras/tensorflow stubs that pull old numpy
+& $venvPip uninstall keras tensorflow tensorflow-cpu tensorflow-gpu -y --quiet 2>$null
 
 # --------------------------------------------------------------------------
 # [3/10] PyTorch cu128
@@ -63,6 +65,9 @@ if ($cudaOk -ne "True") {
     } else {
         Write-Host "  [WARN] CUDA still not available. Ensure NVIDIA driver >= 570 + CUDA 12.8." -ForegroundColor Red
     }
+    # torchvision declares numpy as a dep without a lower bound -- re-pin after torch install
+    Write-Host "  Re-pinning numpy>=2.0 after torch install..." -ForegroundColor Cyan
+    & $venvPip install "numpy>=2.0" --upgrade --quiet
 } else {
     $tv      = & $venvPy -c "import torch; print(torch.__version__)" 2>$null
     $gpuName = & $venvPy -c "import torch; print(torch.cuda.get_device_name(0))" 2>$null
@@ -109,7 +114,10 @@ $ferOk = & $venvPy -c "from fer import FER; print('ok')" 2>$null
 if ($ferOk -ne "ok") {
     Write-Host "  Installing fer..." -ForegroundColor Cyan
     & $venvPip install fer --quiet
-    # fer pulls in old numpy -- re-pin immediately
+    # fer drags in facenet-pytorch which hard-pins numpy<2 -- remove it first
+    Write-Host "  Removing facenet-pytorch (pins numpy<2)..." -ForegroundColor Cyan
+    & $venvPip uninstall facenet-pytorch -y --quiet 2>$null
+    # now re-pin numpy back to 2.x
     Write-Host "  Re-pinning numpy>=2.0 after fer install..." -ForegroundColor Cyan
     & $venvPip install "numpy>=2.0" --upgrade --quiet
 } else { Write-Host "  [SKIP] fer ok" -ForegroundColor DarkGray }
