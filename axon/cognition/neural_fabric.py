@@ -233,39 +233,84 @@ class ConflictEngine:
         self._history = torch.zeros((16, n_clusters), dtype=torch.float32)
         self._hist_ptr = 0
 
+    # ── "Use it or lose it" ticker ──────────────────────────────────────────
+    _dominance_decay_rate = 0.0003   # per compete() call (20 Hz → ~17% per 10 min)
+    _stagnation_counter   = 0        # ticks since last winner set changed
+    _last_winner_set: set = set()
+
     def compete(self, activation: torch.Tensor,
                 context_bias: torch.Tensor,
                 temperature: float = 1.2) -> torch.Tensor:
         """
         Run one competition step.
         Returns gated activation where winners are amplified, losers suppressed.
+
+        New:
+          - Continuous dominance decay ("use it or lose it")
+          - Stagnation detector → underdog rescue boost
+          - Dominance soft-cap: >0.82 triggers extra decay to prevent calcification
         """
         dev = activation.device
         dom = self.dominance.to(dev)
         conf = self.confidence.to(dev)
 
+        # ── Dominance decay: every cluster bleeds dominance unless it fires ──
+        decay = self._dominance_decay_rate
+        # Extra bleed for calcified clusters (dominance > 0.82)
+        calcified = (self.dominance > 0.82).float()
+        self.dominance = torch.clamp(
+            self.dominance - decay - calcified * decay * 2.0,
+            0.10, 0.90
+        )
+        dom = self.dominance.to(dev)
+
         # Weighted score: raw activation * dominance * confidence * context
         score = activation * (0.5 + dom * 0.5) * (0.5 + conf * 0.5) * (0.8 + context_bias * 0.4)
 
-        # Softmax competition — temperature controls sharpness
+        # Softmax competition
         weights = F.softmax(score / temperature, dim=0)
 
-        # Lateral inhibition: top 20% suppress the rest
+        # Lateral inhibition: top 20% suppress rest
         top_thresh = torch.quantile(activation, 0.80)
         winners  = (activation >= top_thresh).float()
         losers   = 1.0 - winners
-        # Winners get boosted, losers get inhibited
+
+        # ── Stagnation detector: if same clusters keep winning, boost underdogs
+        winner_set = set(torch.where(winners > 0)[0].tolist())
+        if winner_set == self._last_winner_set:
+            self._stagnation_counter += 1
+        else:
+            self._stagnation_counter = 0
+            self._last_winner_set = winner_set
+
+        # After 60 ticks of same winners (~3 sec) — inject underdog pressure
+        if self._stagnation_counter > 60:
+            underdog_boost = min(0.12, self._stagnation_counter * 0.0008)
+            loser_mask = losers
+            with torch.no_grad():
+                self.dominance = torch.clamp(
+                    self.dominance + loser_mask.cpu() * underdog_boost,
+                    0.10, 0.90
+                )
+            # Also randomly spike a non-winner to create genuine competition
+            loser_indices = torch.where(loser_mask > 0)[0]
+            if len(loser_indices) > 0:
+                lucky = loser_indices[torch.randint(len(loser_indices), (1,)).item()]
+                activation = activation.clone()
+                activation[lucky] = torch.clamp(activation[lucky] + 0.08, 0.0, 1.0)
+
         gated = activation * (1.0 + winners * 0.15) * (1.0 - losers * 0.08)
         gated = torch.clamp(gated, 0.0, 1.0)
 
-        # Update dominance: winners grow, losers decay slightly
+        # Update dominance: winners grow proportional to their activation
         lr_dom = 0.005
         self.dominance = torch.clamp(
-            self.dominance.to(dev) + lr_dom * winners.cpu() - lr_dom * 0.3 * losers.cpu(),
-            0.1, 0.9
+            self.dominance + lr_dom * winners.cpu() * activation.detach().cpu()
+                           - lr_dom * 0.2 * losers.cpu(),
+            0.10, 0.90
         )
 
-        # Record history for temporal consistency check
+        # Record history
         self._history[self._hist_ptr] = activation.detach().cpu()
         self._hist_ptr = (self._hist_ptr + 1) % 16
 
@@ -306,16 +351,22 @@ class ConflictEngine:
 
 class PredictionEngine:
     """
-    Implements a simple predictive coding loop:
-      prediction[t] = EWMA of past activations  (expected)
-      error[t]      = actual[t] - prediction[t] (surprise)
-    Error drives micro-weight updates — the system adapts continuously.
+    Predictive coding loop with structural path tracking:
+      - Node-level: prediction error per cluster (as before)
+      - Route-level: tracks co-activation pairs and their success history
+        so the system can reinforce or weaken entire pathways, not just nodes
     """
     def __init__(self, n_clusters: int):
         self.n = n_clusters
         self.prediction = torch.zeros(n_clusters, dtype=torch.float32)
         self.error      = torch.zeros(n_clusters, dtype=torch.float32)
-        self._alpha     = 0.12   # prediction update rate (how fast expectations change)
+        self._alpha     = 0.12
+
+        # Route-level tracking: success score per (src, dst) cluster pair
+        # Stored as a dense [N, N] float16 matrix on CPU (written to GPU only on update)
+        self.route_success = torch.zeros(n_clusters, n_clusters, dtype=torch.float16)
+        # Last seen top-K active pairs (for regret / path replay)
+        self._last_active_pairs: list = []   # list of (i, j) tuples
 
     def step(self, actual: torch.Tensor) -> torch.Tensor:
         """Returns error signal [N] and updates internal prediction."""
@@ -335,11 +386,9 @@ class PredictionEngine:
                        error: torch.Tensor, spike: torch.Tensor,
                        lr: float = 0.0003):
         """
-        Hebbian-error update:
-          Δw_ij ∝ spike_i * error_j
-        If error_j > 0 (more activity than expected), strengthen inputs to j.
-        If error_j < 0 (less than expected), weaken them.
-        Only touches top-K active neurons to keep it sparse.
+        Two-level weight update:
+          Node-level:  Δw_ij ∝ spike_i * error_j   (as before)
+          Route-level: track (src→dst) co-activation success; boost good routes
         """
         dev = weight_mat.device
         err = error.to(dev)
@@ -348,11 +397,54 @@ class PredictionEngine:
         top_idx = torch.topk(sp.abs(), topk).indices
         sp_top  = sp[top_idx]
         err_top = err[top_idx]
+
+        # ── Node-level error update ────────────────────────────────────────────
         delta = torch.outer(sp_top, err_top) * lr
         with torch.no_grad():
             sub = weight_mat[top_idx][:, top_idx].float()
             sub = torch.clamp(sub + delta, -1.0, 1.0)
             weight_mat[top_idx.unsqueeze(1), top_idx] = sub.half()
+
+        # ── Route-level: record active pairs ──────────────────────────────────
+        # Track which (src, dst) pairs are co-firing — this IS the path
+        pairs = []
+        ti = top_idx.tolist()
+        for ii, si in enumerate(ti):
+            for jj, sj in enumerate(ti):
+                if ii != jj and sp_top[ii] > 0.1 and sp_top[jj] > 0.1:
+                    pairs.append((si, sj))
+        self._last_active_pairs = pairs[:20]
+
+    def reinforce_routes(self, weight_mat: torch.Tensor,
+                         pairs: list, signal: float):
+        """
+        Structural reinforcement: adjust whole route weights by signal.
+        signal > 0 → strengthen, signal < 0 → weaken.
+        """
+        if not pairs or signal == 0:
+            return
+        dev = weight_mat.device
+        lr  = abs(signal) * 0.001
+        direction = 1.0 if signal > 0 else -1.0
+        src_idx = torch.tensor([p[0] for p in pairs[:12]], dtype=torch.long, device=dev)
+        dst_idx = torch.tensor([p[1] for p in pairs[:12]], dtype=torch.long, device=dev)
+        with torch.no_grad():
+            current = weight_mat[src_idx, dst_idx].float()
+            updated = torch.clamp(current + direction * lr, -1.0, 1.0)
+            weight_mat[src_idx, dst_idx] = updated.half()
+            # Update route success matrix
+            rs = self.route_success[src_idx.cpu(), dst_idx.cpu()].float()
+            self.route_success[src_idx.cpu(), dst_idx.cpu()] = torch.clamp(
+                rs + direction * 0.01, -1.0, 1.0
+            ).half()
+
+    def top_routes(self, names: list, n: int = 5) -> list:
+        """Return top-N strongest positive routes by route_success score."""
+        flat = self.route_success.float().view(-1)
+        topk = torch.topk(flat, min(n, flat.shape[0])).indices.tolist()
+        N = self.n
+        return [(names[i // N], names[i % N], round(float(flat[i]), 3))
+                for i in topk if i // N != i % N and flat[i] > 0.0]
 
 
 # ── Temporal Reward Buffer ─────────────────────────────────────────────────────
@@ -378,10 +470,37 @@ class TemporalRewardBuffer:
         if len(self._buffer) > self.horizon * 2:
             self._buffer.pop(0)
 
+    # Ring buffer of past path fingerprints for novelty scoring
+    _path_history: list = []
+    _NOVELTY_ALPHA = 0.15     # weight of novelty in reward
+    _REPETITION_PENALTY = 0.04
+
+    def _path_fingerprint(self, acts: torch.Tensor) -> torch.Tensor:
+        """Mean activation vector across the window — compact path signature."""
+        return F.normalize(acts.mean(dim=0).unsqueeze(0), dim=1).squeeze(0)
+
+    def _novelty_score(self, fingerprint: torch.Tensor) -> float:
+        """
+        1.0 = completely novel path never seen before
+        0.0 = identical to a recent path
+        Uses cosine similarity against last 20 path fingerprints.
+        """
+        if not self._path_history:
+            return 1.0
+        sims = [float(torch.dot(fingerprint, p).clamp(-1, 1))
+                for p in self._path_history[-20:]]
+        max_sim = max(sims)
+        return 1.0 - max_sim   # high sim = low novelty
+
     def evaluate(self, conflict: "ConflictEngine") -> tuple:
         """
         Called every `horizon` ticks.
         Returns (reward, penalty, dominant_clusters).
+
+        New:
+          - Novelty bonus: novel activation paths get extra reward
+          - Anti-repetition: highly repeated paths get penalised
+          - Regret signal: compare chosen path vs best-seen (hindsight)
         """
         if len(self._buffer) < self.horizon:
             return 0.0, 0.0, []
@@ -390,25 +509,52 @@ class TemporalRewardBuffer:
         acts   = torch.stack([w[0] for w in window])    # [H, N]
         vals   = [w[2] for w in window]
 
-        # Net reward signal from valence trajectory
+        # ── Base reward from valence trajectory ───────────────────────────────
         valence_change = vals[-1] - vals[0]
         valence_mean   = sum(vals) / len(vals)
         reward  = max(0.0, valence_change * 0.5 + max(0.0, valence_mean) * 0.3)
         penalty = max(0.0, -valence_change * 0.3 + max(0.0, -valence_mean) * 0.2)
 
-        # Consistency bonus: low variance across window = stable focused thinking
+        # Consistency (moderate range is ideal — not too rigid, not chaotic)
         variance = acts.var(dim=0).mean().item()
-        if variance < 0.01:
-            reward  += 0.05   # very consistent = bonus
-        elif variance > 0.08:
-            penalty += 0.03   # chaotic = mild penalty
+        if variance < 0.005:
+            reward  += 0.02
+        elif variance < 0.02:
+            reward  += 0.04   # sweet spot
+        elif variance > 0.10:
+            penalty += 0.03
 
-        # Credit assignment: who was most active across the window?
+        # ── Novelty bonus ─────────────────────────────────────────────────────
+        fp = self._path_fingerprint(acts)
+        novelty = self._novelty_score(fp)
+        reward += self._NOVELTY_ALPHA * novelty
+
+        # Anti-repetition penalty: if novelty is very low, this path is worn out
+        if novelty < 0.10:
+            penalty += self._REPETITION_PENALTY
+
+        # Store fingerprint
+        self._path_history.append(fp.detach().cpu())
+        if len(self._path_history) > 50:
+            self._path_history.pop(0)
+
+        # ── Regret signal (hindsight) ─────────────────────────────────────────
+        # Best possible outcome = max valence seen across buffer
+        best_possible_val = max(vals)
+        actual_final_val  = vals[-1]
+        regret = max(0.0, best_possible_val - actual_final_val)
+        # Regret creates extra penalty for leaving reward on the table
+        if regret > 0.2:
+            penalty += regret * 0.25
+            self._last_regret = round(regret, 3)
+        else:
+            self._last_regret = 0.0
+
+        # ── Credit assignment ─────────────────────────────────────────────────
         mean_act = acts.mean(dim=0)
         topk_idx = torch.topk(mean_act, min(5, len(mean_act))).indices.tolist()
         dominant = [conflict.names[i] for i in topk_idx]
 
-        # Apply reward/penalty to dominant clusters
         for i in topk_idx:
             if reward > 0:
                 conflict.reward_cluster(i, reward * 0.3)
@@ -421,9 +567,219 @@ class TemporalRewardBuffer:
 
     def stats(self) -> dict:
         return {
-            "total_reward":  round(self._total_reward,  3),
-            "total_penalty": round(self._total_penalty, 3),
-            "buffer_len":    len(self._buffer),
+            "total_reward":   round(self._total_reward,  3),
+            "total_penalty":  round(self._total_penalty, 3),
+            "buffer_len":     len(self._buffer),
+            "last_regret":    getattr(self, "_last_regret", 0.0),
+            "path_diversity": len(self._path_history),
+        }
+
+
+
+# ── Cognitive State ──────────────────────────────────────────────────────────
+# Global internal variables that persist and shape ALL downstream behavior.
+# Unlike emotions (fast, reactive), cognitive state is slow-moving and structural.
+
+class CognitiveState:
+    """
+    Three persistent state variables:
+      confidence  — how sure the system is about its current direction (0-1)
+      uncertainty — epistemic: how much the system doesn't know (0-1)
+      urgency     — temporal pressure, builds up when goals are unmet (0-1)
+
+    These influence:
+      exploration rate (uncertainty ↑ → more exploration)
+      competition sharpness (confidence ↑ → sharper softmax)
+      reward sensitivity (urgency ↑ → bigger swings on reward/penalty)
+    """
+    def __init__(self):
+        self.confidence  = 0.5
+        self.uncertainty = 0.5
+        self.urgency     = 0.1
+        self._history    = deque(maxlen=100)
+
+    def update(self, surprise: float, reward: float, penalty: float,
+               valence: float, novelty_rate: float):
+        """
+        Update all three state variables from recent signals.
+        Called every evaluation cycle.
+        """
+        # Confidence: rises with reward and consistent predictions,
+        #             falls with surprise and penalty
+        target_conf = 0.5 + (reward - penalty) * 0.3 - surprise * 0.4
+        self.confidence += (max(0.05, min(0.95, target_conf)) - self.confidence) * 0.08
+
+        # Uncertainty: driven by prediction surprise and novelty
+        target_unc = surprise * 0.6 + novelty_rate * 0.4
+        self.uncertainty += (max(0.05, min(0.95, target_unc)) - self.uncertainty) * 0.06
+
+        # Urgency: builds when valence is negative and no progress is made
+        if valence < -0.1:
+            self.urgency = min(0.95, self.urgency + 0.02)
+        elif valence > 0.2:
+            self.urgency = max(0.05, self.urgency - 0.03)
+        else:
+            self.urgency = max(0.05, self.urgency - 0.005)  # slow bleed
+
+        self._history.append({
+            "confidence": round(self.confidence, 3),
+            "uncertainty": round(self.uncertainty, 3),
+            "urgency": round(self.urgency, 3),
+        })
+
+    def explore_boost(self) -> float:
+        """How much extra exploration the system wants right now."""
+        # High uncertainty or high urgency → more willingness to try new paths
+        return self.uncertainty * 0.6 + self.urgency * 0.4
+
+    def competition_temperature(self, base: float = 1.2) -> float:
+        """
+        High confidence → sharper competition (lower temperature → winner takes more).
+        High uncertainty → softer competition (higher temperature → spread bets).
+        """
+        return base * (1.0 + self.uncertainty * 0.5 - self.confidence * 0.3)
+
+    def reward_sensitivity(self) -> float:
+        """
+        Urgency amplifies the impact of rewards and penalties.
+        A desperate system cares more about every signal.
+        """
+        return 1.0 + self.urgency * 0.8
+
+    def to_dict(self) -> dict:
+        return {
+            "confidence":  round(self.confidence,  3),
+            "uncertainty": round(self.uncertainty, 3),
+            "urgency":     round(self.urgency,     3),
+        }
+
+    def describe(self) -> str:
+        parts = []
+        if self.confidence > 0.7:
+            parts.append("confident")
+        elif self.confidence < 0.35:
+            parts.append("uncertain about direction")
+        if self.uncertainty > 0.65:
+            parts.append("exploring actively")
+        if self.urgency > 0.6:
+            parts.append("under pressure")
+        elif self.urgency < 0.2:
+            parts.append("relaxed")
+        return ", ".join(parts) if parts else "stable"
+
+
+
+# ── Internal Critic ──────────────────────────────────────────────────────────
+# The system evaluates its own recent output BEFORE committing.
+# Two subsystems (fast/slow) can disagree — if they do, the slow one wins.
+
+class InternalCritic:
+    """
+    Self-evaluation loop:
+      fast_eval  — quick heuristic based on recent activation pattern
+      slow_eval  — deeper check using path history + route success
+      disagreement → hesitation (exploration boost, no commitment)
+      regret_log  — what paths were abandoned and why (for transparency)
+
+    Called after every `horizon`-step sequence.
+    """
+    def __init__(self, n_clusters: int, cluster_names: list):
+        self.n     = n_clusters
+        self.names = cluster_names
+        # Simple baseline: expected value of each cluster (EWMA)
+        self.expected = torch.zeros(n_clusters, dtype=torch.float32) + 0.1
+        self._regret_log: list = []     # recent regrets for UI
+        self._hesitation_count = 0
+
+    def fast_eval(self, activation: torch.Tensor) -> float:
+        """
+        Heuristic score: are active clusters the ones we expect?
+        Returns [-1, 1] — positive = on track, negative = unexpected.
+        """
+        dev = activation.device
+        exp = self.expected.to(dev)
+        alignment = float(torch.cosine_similarity(
+            activation.unsqueeze(0), exp.unsqueeze(0)
+        ).clamp(-1, 1))
+        return alignment
+
+    def slow_eval(self, acts: torch.Tensor,
+                  route_success: torch.Tensor) -> float:
+        """
+        Structural evaluation: how successful were the routes that fired?
+        Returns mean route success score for active pairs.
+        """
+        dev = acts.device
+        topk = min(8, acts.shape[0])
+        top_idx = torch.topk(acts, topk).indices
+        rs = route_success.float().to(dev)
+        scores = []
+        ti = top_idx.tolist()
+        for i in ti:
+            for j in ti:
+                if i != j:
+                    scores.append(float(rs[i, j]))
+        if not scores:
+            return 0.0
+        return sum(scores) / len(scores)
+
+    def evaluate(self, activation: torch.Tensor,
+                 route_success: torch.Tensor,
+                 cog_state: "CognitiveState",
+                 valence: float) -> dict:
+        """
+        Full evaluation cycle.
+        Returns dict with: score, hesitate, regret, message.
+        """
+        fast  = self.fast_eval(activation)
+        slow  = self.slow_eval(activation, route_success)
+
+        # Disagreement: fast says good, slow says bad (or vice versa)
+        disagreement = abs(fast - slow) > 0.35
+        if disagreement:
+            self._hesitation_count += 1
+
+        # Combined score
+        score = fast * 0.4 + slow * 0.6 + valence * 0.2
+
+        # Regret: if score is low but confidence was high, that's regret
+        regret = max(0.0, cog_state.confidence - 0.6) * max(0.0, -score)
+        if regret > 0.1:
+            active_names = [self.names[i]
+                            for i in torch.topk(activation, min(3, self.n)).indices.tolist()]
+            entry = {
+                "regret":    round(regret, 3),
+                "clusters":  active_names,
+                "fast_eval": round(fast, 3),
+                "slow_eval": round(slow, 3),
+            }
+            self._regret_log.append(entry)
+            if len(self._regret_log) > 20:
+                self._regret_log.pop(0)
+
+        # Update expected baseline toward current (slow drift)
+        self.expected = self.expected * 0.98 + activation.detach().cpu() * 0.02
+
+        return {
+            "score":        round(score, 3),
+            "hesitate":     disagreement,
+            "regret":       round(regret, 3),
+            "fast_eval":    round(fast, 3),
+            "slow_eval":    round(slow, 3),
+            "hesitations":  self._hesitation_count,
+        }
+
+    def recent_regrets(self, n: int = 3) -> list:
+        return self._regret_log[-n:]
+
+    def to_dict(self) -> dict:
+        last = self._regret_log[-1] if self._regret_log else {}
+        return {
+            "last_regret":    last.get("regret", 0.0),
+            "last_clusters":  last.get("clusters", []),
+            "hesitations":    self._hesitation_count,
+            "fast_eval":      last.get("fast_eval", 0.0),
+            "slow_eval":      last.get("slow_eval", 0.0),
         }
 
 # ── Thought Stream ───────────────────────────────────────────────────────────
@@ -535,12 +891,14 @@ class NeuralFabric:
         self.hebbian_trace = torch.zeros(N, dtype=torch.float32, device=DEVICE)
 
         # ── New subsystems ────────────────────────────────────────────────────
-        self.conflict    = ConflictEngine(N, self._cluster_names)
-        self.predictor   = PredictionEngine(N)
-        self.temp_reward = TemporalRewardBuffer(horizon=10)
+        self.conflict     = ConflictEngine(N, self._cluster_names)
+        self.predictor    = PredictionEngine(N)
+        self.temp_reward  = TemporalRewardBuffer(horizon=10)
+        self.cog_state    = CognitiveState()
+        self.critic       = InternalCritic(N, self._cluster_names)
         # Context bias vector: memory + personality shape cluster gating
         self.context_bias = torch.zeros(N, dtype=torch.float32)
-        # Exploration noise: epsilon for random bursts (starts high, anneals)
+        # Exploration noise: epsilon now driven by CognitiveState
         self._explore_eps  = 0.18
         self._explore_step = 0
 
@@ -789,21 +1147,21 @@ class NeuralFabric:
         with self._lock:
             act = self.activation.clone()
 
-        # ── 1. Exploration noise ─────────────────────────────────────────────
-        # Inject random bursts — lets the system discover unexpected pathways
+        # ── 1. Exploration noise (driven by CognitiveState) ─────────────────
         self._explore_step += 1
-        # Epsilon anneals from 0.18 → 0.04 over ~10k steps
-        self._explore_eps = max(0.04, 0.18 * math.exp(-self._explore_step / 10000))
+        # Base epsilon anneals, but CognitiveState can re-open it
+        base_eps = max(0.04, 0.18 * math.exp(-self._explore_step / 10000))
+        cog_boost = self.cog_state.explore_boost()
+        self._explore_eps = min(0.35, base_eps + cog_boost * 0.15)
         if random.random() < self._explore_eps:
             burst_idx = random.randint(0, act.shape[0] - 1)
-            act[burst_idx] = torch.clamp(
-                act[burst_idx] + random.gauss(0, 0.08), 0.0, 1.0
-            )
+            burst_mag = random.gauss(0, 0.08) * (1.0 + self.cog_state.urgency * 0.5)
+            act[burst_idx] = torch.clamp(act[burst_idx] + burst_mag, 0.0, 1.0)
 
         # ── 2. Conflict engine: lateral inhibition + softmax gating ─────────
         ctx_bias = self.context_bias.to(DEVICE)
-        # Softmax temperature scales with norepinephrine (stress → sharper competition)
-        temp = 1.4 - ne * 0.6    # range [0.8, 1.4]
+        # Temperature: NE-driven AND CognitiveState-driven (uncertainty → softer)
+        temp = self.cog_state.competition_temperature(base=1.4 - ne * 0.6)
         act = self.conflict.compete(act, ctx_bias, temperature=temp)
 
         # GABA-mediated global inhibition: when GABA is high, suppress weak clusters
@@ -1024,6 +1382,32 @@ class NeuralFabric:
                 )
             if self._tick % self.temp_reward.horizon == 0 and self._tick > 0:
                 r, p, dom = self.temp_reward.evaluate(self.conflict)
+                # Structural route reinforcement
+                if self.predictor._last_active_pairs:
+                    signal = (r - p) * self.cog_state.reward_sensitivity()
+                    self.predictor.reinforce_routes(
+                        self.weight_mat,
+                        self.predictor._last_active_pairs,
+                        signal
+                    )
+                # Update CognitiveState from this evaluation cycle
+                stats = self.temp_reward.stats()
+                self.cog_state.update(
+                    surprise     = self.predictor.surprise_score(),
+                    reward       = r,
+                    penalty      = p,
+                    valence      = self.emotions.valence,
+                    novelty_rate = 1.0 - (1.0 / max(1, stats["path_diversity"])),
+                )
+                # Run InternalCritic
+                with self._lock:
+                    act_now = self.activation.clone().cpu()
+                self.critic.evaluate(
+                    act_now,
+                    self.predictor.route_success,
+                    self.cog_state,
+                    self.emotions.valence,
+                )
 
             # CPU readback for emotion/thoughts/callbacks (every 4 ticks)
             if self._tick % 4 == 0:
@@ -1095,6 +1479,9 @@ class NeuralFabric:
             "prediction_surprise": round(self.predictor.surprise_score(), 4),
             "temporal_reward":    self.temp_reward.stats(),
             "explore_eps":        round(self._explore_eps, 4),
+            "cognitive_state":    self.cog_state.to_dict(),
+            "critic":             self.critic.to_dict(),
+            "top_routes":         self.predictor.top_routes(self._cluster_names, 3),
         }
 
     def get_state_snapshot(self, spikes: dict = None) -> dict:

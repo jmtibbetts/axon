@@ -383,14 +383,45 @@ canvas.spark{display:block;}
           <span class="section-hint">Hover for description</span>
         </div>
         <div id="region-bars"></div>
-        <div id="conflict-panel" style="margin-top:6px;padding:4px 6px;background:#0a0014;border:1px solid #2d1b4e;border-radius:4px;">
-          <div style="font-size:7px;color:#7c3aed;letter-spacing:.08em;text-transform:uppercase;margin-bottom:3px;">&#9876; Conflict Engine</div>
-          <div id="conflict-dominant" style="font-size:7.5px;color:#c4b5fd;margin-bottom:2px;">—</div>
-          <div style="display:flex;gap:8px;font-size:7px;color:var(--muted);">
-            <span>Surprise: <span id="pred-surprise" style="color:#f97316">—</span></span>
-            <span>Explore e: <span id="explore-eps" style="color:#4ade80">—</span></span>
-            <span>Reward: <span id="temp-reward" style="color:#a855f7">—</span></span>
+        <div id="conflict-panel" style="margin-top:6px;padding:5px 6px;background:#0a0014;border:1px solid #2d1b4e;border-radius:4px;display:flex;flex-direction:column;gap:4px;">
+
+          <!-- Row 1: Conflict Engine -->
+          <div>
+            <div style="font-size:7px;color:#7c3aed;letter-spacing:.08em;text-transform:uppercase;margin-bottom:2px;">⚔ Conflict Engine</div>
+            <div id="conflict-dominant" style="font-size:7.5px;color:#c4b5fd;">—</div>
           </div>
+
+          <!-- Row 2: Cognitive State bars -->
+          <div style="font-size:7px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:1px;">🧠 Cognitive State</div>
+          <div style="display:grid;grid-template-columns:58px 1fr 22px;align-items:center;gap:2px 4px;font-size:7px;">
+            <span style="color:#94a3b8;">Confidence</span>
+            <div class="bar-track" style="height:6px;"><div id="cog-conf-bar" class="bar-fill" style="width:50%;background:#4ade80;"></div></div>
+            <span id="cog-conf-val" style="color:#4ade80;text-align:right;">50%</span>
+
+            <span style="color:#94a3b8;">Uncertainty</span>
+            <div class="bar-track" style="height:6px;"><div id="cog-unc-bar" class="bar-fill" style="width:50%;background:#f97316;"></div></div>
+            <span id="cog-unc-val" style="color:#f97316;text-align:right;">50%</span>
+
+            <span style="color:#94a3b8;">Urgency</span>
+            <div class="bar-track" style="height:6px;"><div id="cog-urg-bar" class="bar-fill" style="width:10%;background:#ef4444;"></div></div>
+            <span id="cog-urg-val" style="color:#ef4444;text-align:right;">10%</span>
+          </div>
+
+          <!-- Row 3: Critic / Regret -->
+          <div style="display:flex;gap:8px;flex-wrap:wrap;font-size:7px;color:var(--muted);border-top:1px solid #1e1b4e;padding-top:3px;margin-top:1px;">
+            <span>Surprise <span id="pred-surprise" style="color:#f97316">—</span></span>
+            <span>ε <span id="explore-eps" style="color:#4ade80">—</span></span>
+            <span>Reward <span id="temp-reward" style="color:#a855f7">—</span></span>
+            <span>Regret <span id="cog-regret" style="color:#fb923c">—</span></span>
+            <span>Hesitations <span id="cog-hesit" style="color:#c084fc">—</span></span>
+          </div>
+
+          <!-- Row 4: Top routes -->
+          <div style="font-size:7px;color:var(--muted);border-top:1px solid #1e1b4e;padding-top:3px;">
+            <span style="color:#475569;text-transform:uppercase;letter-spacing:.06em;">Top Routes: </span>
+            <span id="top-routes" style="color:#818cf8;">—</span>
+          </div>
+
         </div>
       </div>
 
@@ -1467,12 +1498,41 @@ const NM_COLORS = {
 };
 
 function updateNeuralPanel(state) {
-  // ── Conflict Engine panel ─────────────────────────────────────────────────
+  // ── Conflict + CognitiveState + Critic panel ──────────────────────────────
   if (state.conflict) {
     const dom = (state.conflict.top_dominant || []).slice(0,3)
                   .map(s => s.replace(/_/g,' ')).join(' ▶ ');
     const el = document.getElementById('conflict-dominant');
-    if (el) el.textContent = '⚔ ' + (dom || '—');
+    if (el) el.textContent = dom || '—';
+  }
+  // Cognitive state bars
+  if (state.cognitive_state) {
+    const cs = state.cognitive_state;
+    const setBar = (id, val, valId) => {
+      const b = document.getElementById(id);
+      const v = document.getElementById(valId);
+      const pct = Math.round((val||0)*100);
+      if (b) b.style.width = pct + '%';
+      if (v) v.textContent = pct + '%';
+    };
+    setBar('cog-conf-bar', cs.confidence,  'cog-conf-val');
+    setBar('cog-unc-bar',  cs.uncertainty, 'cog-unc-val');
+    setBar('cog-urg-bar',  cs.urgency,     'cog-urg-val');
+  }
+  // Critic
+  if (state.critic) {
+    const cr = state.critic;
+    const rg = document.getElementById('cog-regret');
+    if (rg) rg.textContent = (cr.last_regret||0).toFixed(3);
+    const hs = document.getElementById('cog-hesit');
+    if (hs) hs.textContent = cr.hesitations || 0;
+  }
+  // Top routes
+  if (state.top_routes && state.top_routes.length) {
+    const rt = document.getElementById('top-routes');
+    if (rt) rt.textContent = state.top_routes
+      .map(r => r[0].replace(/_/g,' ') + '→' + r[1].replace(/_/g,' '))
+      .join('  ');
   }
   const ps = document.getElementById('pred-surprise');
   if (ps && state.prediction_surprise !== undefined)
@@ -1482,8 +1542,7 @@ function updateNeuralPanel(state) {
     ee.textContent = (state.explore_eps * 100).toFixed(1) + '%';
   const tr = document.getElementById('temp-reward');
   if (tr && state.temporal_reward)
-    tr.textContent = '+' + state.temporal_reward.total_reward.toFixed(2)
-                   + ' / -' + state.temporal_reward.total_penalty.toFixed(2);
+    tr.textContent = '+' + (state.temporal_reward.total_reward||0).toFixed(2);
 
   // Neuromodulators with role descriptions
   const NM_DESC = {
