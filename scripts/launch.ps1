@@ -78,6 +78,16 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "  [SKIP] ultralytics ok" -ForegroundColor DarkGray
 }
 
+
+# tf-keras is required by retinaface (used by deepface) with TF >= 2.16
+$tfkOk = & $venvPy -c 'import tf_keras' 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  Installing tf-keras (required by deepface/retinaface)..." -ForegroundColor Cyan
+    & $venvPip install tf-keras --quiet
+} else {
+    Write-Host "  [SKIP] tf-keras ok" -ForegroundColor DarkGray
+}
+
 # deepface is our emotion backend (no torch version conflicts)
 $dfOk = & $venvPy -c 'import deepface' 2>$null
 if ($LASTEXITCODE -ne 0) {
@@ -90,9 +100,7 @@ if ($LASTEXITCODE -ne 0) {
 # Verify deepface can actually run
 $dfTest = & $venvPy -c 'from deepface import DeepFace; print("ok")' 2>&1
 if ($dfTest -notmatch "ok") {
-    Write-Host "  [WARN] deepface import issue: $dfTest" -ForegroundColor Yellow
-    Write-Host "  Reinstalling deepface..." -ForegroundColor Cyan
-    & $venvPip install deepface --quiet
+    Write-Host "  [WARN] deepface import issue (emotion uses heuristic fallback)" -ForegroundColor Yellow
 } else {
     Write-Host "  [OK] deepface ready" -ForegroundColor Green
 }
