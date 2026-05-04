@@ -130,11 +130,7 @@ class FERDetector:
             print(f"  [Optic] fer import failed ({e}), trying deepface...")
 
         try:
-            from deepface import DeepFace
-            # Warm up — verify it works
-            import numpy as np
-            DeepFace.analyze(np.zeros((48,48,3), dtype=np.uint8), actions=["emotion"],
-                             enforce_detection=False, silent=True)
+            from deepface import DeepFace  # noqa: F401 — just verify import
             self._fer = None
             self._ready = True
             self._backend = "deepface"

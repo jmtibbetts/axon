@@ -88,8 +88,9 @@ if ($LASTEXITCODE -ne 0) {
 
 # Verify deepface can actually run
 $dfTest = & $venvPy -c 'from deepface import DeepFace; print("ok")' 2>$null
-if ($dfTest -ne "ok") {
-    Write-Host "  [WARN] deepface import failed -- emotion detection will use heuristic fallback" -ForegroundColor Yellow
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  [WARN] deepface import failed -- reinstalling..." -ForegroundColor Yellow
+    & $venvPip install deepface --quiet
 } else {
     Write-Host "  [OK] deepface ready" -ForegroundColor Green
 }
