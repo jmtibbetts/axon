@@ -2,41 +2,13 @@
 
 # 🧠 AXON
 
-## Installation
-
-### Windows
-```powershell
-# From the project root — right-click and Run with PowerShell
-scripts\launch.ps1
-```
-Automatically detects NVIDIA GPU. Falls back to CPU-only PyTorch if no GPU is found.
-
-### macOS / Linux
-```bash
-# One-time install
-bash scripts/install.sh
-
-# Every subsequent launch
-bash scripts/launch.sh
-```
-- **NVIDIA GPU (Linux):** installs CUDA-enabled PyTorch matching your driver version
-- **Apple Silicon (macOS M-series):** installs PyTorch with MPS backend
-- **CPU-only:** automatically selected when no compatible GPU is detected
-
-### GPU/CPU fallback logic
-The installer writes `data/gpu_config.json` recording which backend was chosen.
-The launcher reads this to set `AXON_DEVICE` before starting.
-If you add a GPU later, delete `data/gpu_config.json` and re-run the installer.
-
----
-
 ### Emerging Artificial Intelligence
 
 *A biologically-inspired AI that sees, hears, recognises faces, reads your voice, learns, remembers, competes, forms beliefs, grows drives, and now thinks in a synchronized cognitive cycle — running entirely on your own hardware.*
 
 [![Python](https://img.shields.io/badge/Python-3.12-blue?style=flat-square&logo=python)](https://python.org)
 [![PyTorch](https://img.shields.io/badge/PyTorch-CUDA%2012.8-orange?style=flat-square&logo=pytorch)](https://pytorch.org)
-[![Platform](https://img.shields.io/badge/Platform-Windows%2011-0078d4?style=flat-square&logo=windows)](https://microsoft.com)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-0078d4?style=flat-square&logo=windows)](https://github.com/jmtibbetts/axon)
 [![GPU](https://img.shields.io/badge/GPU-RTX%205090-76b900?style=flat-square&logo=nvidia)](https://nvidia.com)
 [![License](https://img.shields.io/badge/License-Axon%20v1.0%20Personal%2FNC-blue?style=flat-square)](LICENSE)
 
@@ -427,44 +399,132 @@ Say **"diagnostic mode"** or click the Diagnostics button. AXON responds in natu
 
 ## Requirements
 
-```
-Python  3.12
-CUDA    12.8+
-```
-
-### Install
-
-```bash
-pip install -r requirements.txt
-```
-
-### Face recognition (optional)
-
-```bash
-# Windows — prebuilt dlib wheel, no cmake needed:
-pip install https://github.com/z-mahmud22/Dlib_Windows_Python3.x/raw/main/dlib-19.24.1-cp312-cp312-win_amd64.whl
-pip install face_recognition
-
-# Linux / macOS:
-pip install dlib face_recognition
-```
-
-> `face_recognition` and `librosa` are gracefully optional.
+| | Windows | macOS | Linux |
+|---|---|---|---|
+| **Python** | 3.12 | 3.12 | 3.12 |
+| **GPU (optional)** | NVIDIA + CUDA 12.x | Apple Silicon (MPS) | NVIDIA + CUDA 12.x |
+| **CPU fallback** | ✅ auto | ✅ auto | ✅ auto |
+| **LM Studio** | Required | Required | Required |
 
 ---
 
-## Quick Start
+## Installation & Quick Start
 
-```bash
-git clone https://github.com/jmtibbetts/axon.git
-cd axon
-pip install -r requirements.txt
+> **Step 0 — Prerequisites (all platforms)**
+> 1. Install [Python 3.12](https://python.org/downloads/)
+> 2. Install [LM Studio](https://lmstudio.ai) and load any GGUF model
+> 3. Clone the repo:
+> ```bash
+> git clone https://github.com/jmtibbetts/axon.git
+> cd axon
+> ```
 
-# Start LM Studio and load any GGUF model, then:
-python run.py
+---
+
+### 🪟 Windows
+
+```powershell
+# Install everything + launch (right-click → Run with PowerShell, or):
+.\scripts\launch.ps1
 ```
 
-Open `http://localhost:5000`.
+The script will:
+- Create a `.venv` virtual environment
+- Detect your GPU via `nvidia-smi`
+  - **GPU found** → installs CUDA 12.8 nightly PyTorch
+  - **No GPU** → installs CPU-only PyTorch automatically
+- Install all vision, audio, and NLP dependencies
+- Run a preflight check, then open `http://localhost:7777`
+
+On every subsequent launch, just run `scripts\launch.ps1` again — it skips steps that are already complete.
+
+---
+
+### 🍎 macOS
+
+```bash
+# One-time install (run once)
+bash scripts/install.sh
+
+# Launch (run every time)
+bash scripts/launch.sh
+```
+
+The installer detects:
+- **Apple Silicon (M1/M2/M3/M4)** → PyTorch with MPS backend
+- **Intel Mac** → CPU-only PyTorch
+- Installs `portaudio` via Homebrew for voice input
+- Builds `dlib` from source (requires Xcode CLI tools: `xcode-select --install`)
+
+> **Homebrew required for voice input.** Install at [brew.sh](https://brew.sh) if you don't have it.
+
+---
+
+### 🐧 Linux
+
+```bash
+# One-time install (run once)
+bash scripts/install.sh
+
+# Launch (run every time)
+bash scripts/launch.sh
+```
+
+The installer detects:
+- **NVIDIA GPU** → reads CUDA version from `nvidia-smi`, installs matching PyTorch wheel
+  - CUDA 12.8+ → `cu128` nightly
+  - CUDA 12.4  → `cu124`
+  - CUDA 12.1  → `cu121`
+  - Driver check fails → CPU-only fallback
+- **No GPU** → installs CPU-only PyTorch
+- Installs `portaudio` via `apt` / `dnf` / `pacman` automatically
+- Builds `dlib` from source (requires `cmake` + `build-essential`)
+
+```bash
+# Ubuntu/Debian — install build deps first if needed:
+sudo apt-get install -y cmake build-essential libopenblas-dev portaudio19-dev
+bash scripts/install.sh
+```
+
+---
+
+### ⚙️ GPU / CPU fallback logic
+
+The installer writes `data/gpu_config.json` recording the chosen backend:
+
+```json
+{ "gpu_type": "cuda", "platform": "Linux", "installed_at": "..." }
+```
+
+All subsystems (neural fabric, vision, audio) read this file at startup and select the right device automatically. **You never need to set anything manually.**
+
+If you add or change your GPU later:
+```bash
+rm data/gpu_config.json   # macOS / Linux
+del data\gpu_config.json  # Windows
+# then re-run the installer
+```
+
+---
+
+### 🔄 Resetting memory
+
+```bash
+python reset_memory.py
+```
+
+Wipes all episodic memory, semantic knowledge, Hebbian weights, and **all face profiles**. The next run starts completely fresh. This is the **only** way to clear face/person data — normal reboots never delete anything.
+
+---
+
+### 🔗 LM Studio setup
+
+1. Open LM Studio → **Local Server** tab
+2. Load any GGUF model (recommended: Mistral 7B, LLaMA 3 8B, or similar)
+3. Start the server on port **1234** (default)
+4. Launch AXON — it connects automatically
+
+Open the dashboard: `http://localhost:7777`
 
 ---
 
