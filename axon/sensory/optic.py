@@ -287,13 +287,28 @@ class OpticSystem:
         try:
             from ultralytics import YOLO
             import urllib.request, os
-            # yolov8n-face.pt is not on the Ultralytics hub — download from GitHub release
             model_path = "yolov8n-face.pt"
             if not os.path.exists(model_path):
-                url = "https://github.com/akanametov/yolo-face/releases/download/v0.0.0/yolov8n-face.pt"
-                print(f"  [Optic] Downloading yolov8n-face.pt from {url} ...")
-                urllib.request.urlretrieve(url, model_path)
-                print(f"  [Optic] Download complete.")
+                # Candidate URLs — try in order; first success wins
+                candidates = [
+                    "https://github.com/akanametov/yolo-face/releases/download/1.0.0/yolov8n-face.pt",
+                    "https://github.com/akanametov/yolo-face/releases/latest/download/yolov8n-face.pt",
+                    "https://github.com/akanametov/yolo-face/releases/download/v0.0.0/yolov8n-face.pt",
+                ]
+                downloaded = False
+                for url in candidates:
+                    try:
+                        print(f"  [Optic] Downloading yolov8n-face.pt from {url} ...")
+                        urllib.request.urlretrieve(url, model_path)
+                        print(f"  [Optic] Download complete.")
+                        downloaded = True
+                        break
+                    except Exception as dl_err:
+                        print(f"  [Optic] URL failed ({dl_err}), trying next...")
+                        if os.path.exists(model_path):
+                            os.remove(model_path)
+                if not downloaded:
+                    raise RuntimeError("All yolov8n-face.pt download mirrors failed")
             self._yolo = YOLO(model_path)
             self._yolo.to(DEVICE)
             print(f"  [Optic] YOLOv8-face loaded on {DEVICE}")

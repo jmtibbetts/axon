@@ -11,5 +11,8 @@ pygame
 numpy
 scipy
 ultralytics
+# fer and its deps — tf-keras must precede tensorflow to avoid import errors
+tf-keras
 fer
 tensorflow
+deepface
