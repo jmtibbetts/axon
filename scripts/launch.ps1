@@ -13,7 +13,11 @@ Write-Host ""
 $PY = $null
 try { $v = & py -3.12 --version 2>$null; if ($v -match "3\.12") { $PY = "py -3.12" } } catch {}
 if (-not $PY) { try { $v = & python --version 2>$null; if ($v -match "3\.12") { $PY = "python" } } catch {} }
-if (-not $PY) { Write-Host "  Python 3.12 required. Download from python.org" -ForegroundColor Red; pause; exit 1 }
+if (-not $PY) {
+    Write-Host "  [FATAL] Python 3.12 not found." -ForegroundColor Red
+    Write-Host "          Download from https://python.org" -ForegroundColor DarkGray
+    pause; exit 1
+}
 Write-Host "  Python: $PY" -ForegroundColor DarkGray
 
 # ── venv ─────────────────────────────────────────────────────────────────────
@@ -97,12 +101,10 @@ if ($dfOk -ne "ok") {
 Write-Host "  [6/9] Face recognition (dlib + face_recognition)..." -ForegroundColor Yellow
 $frOk = & $venvPy -c "import face_recognition; print('ok')" 2>$null
 if ($frOk -ne "ok") {
-    # Try pip dlib first (works if cmake is installed)
     Write-Host "  Attempting dlib install (requires cmake)..." -ForegroundColor Cyan
     & $venvPip install dlib --quiet 2>$null
     $dlibOk = & $venvPy -c "import dlib; print('ok')" 2>$null
     if ($dlibOk -ne "ok") {
-        # Fall back to prebuilt wheel for Python 3.12 Windows x64
         Write-Host "  cmake not found — using prebuilt dlib wheel..." -ForegroundColor Cyan
         $dlibWheel = "https://github.com/z-mahmud22/Dlib_Windows_Python3.x/raw/main/dlib-19.24.1-cp312-cp312-win_amd64.whl"
         & $venvPip install $dlibWheel
@@ -120,15 +122,12 @@ if ($frOk -ne "ok") {
         Write-Host "  [WARN] dlib install failed — face identity disabled" -ForegroundColor Yellow
         Write-Host "         AXON will still run without person recognition." -ForegroundColor DarkGray
     }
-} else {
-    Write-Host "  [SKIP] face_recognition ok" -ForegroundColor DarkGray
-}
+} else { Write-Host "  [SKIP] face_recognition ok" -ForegroundColor DarkGray }
 
 # ── [7/9] Audio emotion (librosa + soundfile) ─────────────────────────────────
 Write-Host "  [7/9] Audio emotion (librosa + soundfile)..." -ForegroundColor Yellow
 $lbOk = & $venvPy -c "import librosa; print('ok')" 2>$null
 if ($lbOk -ne "ok") {
-    Write-Host "  Installing librosa..." -ForegroundColor Cyan
     & $venvPip install librosa soundfile --quiet
     $lbCheck = & $venvPy -c "import librosa; print('ok')" 2>$null
     if ($lbCheck -eq "ok") {
@@ -136,24 +135,119 @@ if ($lbOk -ne "ok") {
     } else {
         Write-Host "  [WARN] librosa install failed — audio emotion disabled" -ForegroundColor Yellow
     }
-} else {
-    Write-Host "  [SKIP] librosa ok" -ForegroundColor DarkGray
-}
+} else { Write-Host "  [SKIP] librosa ok" -ForegroundColor DarkGray }
 $sfOk = & $venvPy -c "import soundfile; print('ok')" 2>$null
-if ($sfOk -ne "ok") {
-    & $venvPip install soundfile --quiet
-} else {
-    Write-Host "  [SKIP] soundfile ok" -ForegroundColor DarkGray
-}
+if ($sfOk -ne "ok") { & $venvPip install soundfile --quiet }
 
 # ── [8/9] Data directories ────────────────────────────────────────────────────
 Write-Host "  [8/9] Creating data directories..." -ForegroundColor Yellow
 New-Item -ItemType Directory -Force -Path "data\memory" | Out-Null
-Write-Host "  [OK] data/memory ready" -ForegroundColor DarkGray
 
-# ── [9/9] Launch ─────────────────────────────────────────────────────────────
+# ── [9/9] Preflight check — block launch if required deps are missing ─────────
 Write-Host ""
-Write-Host "  [9/9] Starting AXON..." -ForegroundColor Green
+Write-Host "  [9/9] Running preflight check..." -ForegroundColor Yellow
+
+$preflight_script = @"
+import sys, importlib
+
+REQUIRED = [
+    ("torch",            "PyTorch",        "pip install torch (cu128 nightly)"),
+    ("torchvision",      "torchvision",    "pip install torchvision"),
+    ("numpy",            "NumPy",          "pip install numpy>=2.0"),
+    ("cv2",              "OpenCV",         "pip install opencv-python"),
+    ("flask",            "Flask",          "pip install flask"),
+    ("flask_socketio",   "Flask-SocketIO", "pip install flask-socketio"),
+    ("flask_cors",       "Flask-CORS",     "pip install flask-cors"),
+    ("eventlet",         "eventlet",       "pip install eventlet"),
+    ("whisper",          "Whisper",        "pip install openai-whisper"),
+    ("sounddevice",      "sounddevice",    "pip install sounddevice"),
+    ("ultralytics",      "ultralytics",    "pip install ultralytics"),
+    ("pygame",           "pygame",         "pip install pygame"),
+    ("edge_tts",         "edge-tts",       "pip install edge-tts"),
+    ("scipy",            "scipy",          "pip install scipy"),
+    ("sqlite3",          "sqlite3",        "(built into Python)"),
+]
+
+OPTIONAL = [
+    ("face_recognition", "face_recognition", "see README for dlib/face_recognition install"),
+    ("librosa",          "librosa",           "pip install librosa soundfile"),
+    ("deepface",         "deepface",          "pip install deepface"),
+]
+
+missing_required = []
+missing_optional = []
+
+for mod, label, fix in REQUIRED:
+    try:
+        importlib.import_module(mod)
+    except ImportError:
+        missing_required.append((label, fix))
+
+for mod, label, fix in OPTIONAL:
+    try:
+        importlib.import_module(mod)
+    except ImportError:
+        missing_optional.append((label, fix))
+
+# Extra: confirm torch CUDA
+try:
+    import torch
+    if not torch.cuda.is_available():
+        missing_required.append(("PyTorch CUDA (GPU)", "reinstall with --index-url https://download.pytorch.org/whl/nightly/cu128"))
+except:
+    pass
+
+if missing_optional:
+    print("OPTIONAL_MISSING:" + "|".join(f"{l}::{f}" for l,f in missing_optional))
+
+if missing_required:
+    print("REQUIRED_MISSING:" + "|".join(f"{l}::{f}" for l,f in missing_required))
+    sys.exit(1)
+
+sys.exit(0)
+"@
+
+$preflight_out = & $venvPy -c $preflight_script 2>&1
+$preflight_exit = $LASTEXITCODE
+
+# Print optional warnings
+foreach ($line in $preflight_out) {
+    if ($line -match "^OPTIONAL_MISSING:(.+)") {
+        $items = $Matches[1] -split "\|"
+        foreach ($item in $items) {
+            $parts = $item -split "::"
+            Write-Host ("  [WARN] Optional dep missing: " + $parts[0]) -ForegroundColor Yellow
+            Write-Host ("         Fix: " + $parts[1]) -ForegroundColor DarkGray
+        }
+    }
+}
+
+# Hard stop on missing required deps
+if ($preflight_exit -ne 0) {
+    Write-Host ""
+    Write-Host "  ╔══════════════════════════════════════════════════════╗" -ForegroundColor Red
+    Write-Host "  ║   AXON CANNOT START — required dependencies missing  ║" -ForegroundColor Red
+    Write-Host "  ╚══════════════════════════════════════════════════════╝" -ForegroundColor Red
+    Write-Host ""
+    foreach ($line in $preflight_out) {
+        if ($line -match "^REQUIRED_MISSING:(.+)") {
+            $items = $Matches[1] -split "\|"
+            foreach ($item in $items) {
+                $parts = $item -split "::"
+                Write-Host ("  ✗  " + $parts[0]) -ForegroundColor Red
+                Write-Host ("     Fix: " + $parts[1]) -ForegroundColor DarkGray
+            }
+        }
+    }
+    Write-Host ""
+    Write-Host "  Re-run launch.ps1 to retry installation, or install manually and try again." -ForegroundColor Yellow
+    pause
+    exit 1
+}
+
+Write-Host "  [OK] All required dependencies verified." -ForegroundColor Green
+
+# ── Launch ────────────────────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "  ┌──────────────────────────────────────┐" -ForegroundColor Cyan
 Write-Host "  │  Dashboard: http://localhost:7777     │" -ForegroundColor Cyan
