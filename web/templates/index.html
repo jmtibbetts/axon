@@ -509,6 +509,12 @@ canvas.spark{display:block;}
     <!-- Platform -->
     <div class="diag-section" id="diag-platform"></div>
 
+    <!-- Meta-Controller -->
+    <div class="diag-section" id="diag-meta"></div>
+
+    <!-- Strategy Library -->
+    <div class="diag-section" id="diag-strategy"></div>
+
     <!-- Cluster breakdown -->
     <div class="diag-section" id="diag-clusters"></div>
   </div>
@@ -703,12 +709,14 @@ function requestDiagnostic() {
   const overlay = document.getElementById('diag-overlay');
   if (!overlay) return;
   overlay.style.display = 'block';
-  document.getElementById('diag-neural').innerHTML   = '<div class="diag-loading">⚡ SCANNING NEURAL FABRIC…</div>';
-  document.getElementById('diag-memory').innerHTML   = '';
-  document.getElementById('diag-caps').innerHTML     = '';
-  document.getElementById('diag-state').innerHTML    = '';
-  document.getElementById('diag-platform').innerHTML = '';
-  document.getElementById('diag-clusters').innerHTML = '';
+  document.getElementById('diag-neural').innerHTML    = '<div class="diag-loading">⚡ SCANNING NEURAL FABRIC…</div>';
+  document.getElementById('diag-memory').innerHTML    = '';
+  document.getElementById('diag-caps').innerHTML      = '';
+  document.getElementById('diag-state').innerHTML     = '';
+  document.getElementById('diag-platform').innerHTML  = '';
+  document.getElementById('diag-clusters').innerHTML  = '';
+  if (document.getElementById('diag-meta'))     document.getElementById('diag-meta').innerHTML     = '';
+  if (document.getElementById('diag-strategy')) document.getElementById('diag-strategy').innerHTML = '';
   socket.emit('diagnostic');
 }
 
@@ -858,6 +866,49 @@ socket.on('diagnostic_result', function(d) {
     diagRow('Python',  plat.python || '?') +
     diagRow('OS',      plat.os     || '?') +
     diagRow('PyTorch', plat.torch  || '?');
+
+  // ── Meta-Controller ───────────────────────────────────────────────────
+  const meta = d.meta || {};
+  if (document.getElementById('diag-meta')) {
+    const moodColors = {bored:'#eab308', surprised:'#f97316', entrapped:'#ef4444',
+                        searching:'#a78bfa', stable:'#10b981', neutral:'#6366f1'};
+    const moodCol = moodColors[meta.mood] || '#6366f1';
+    const exploreBarPct = Math.min(100, Math.round((meta.explore_rate       ||1.0)/3.0*100));
+    const rwBarPct      = Math.min(100, Math.round((meta.reward_sensitivity ||1.0)/3.0*100));
+    const cfBarPct      = Math.min(100, Math.round((meta.conflict_sharpness ||1.0)/2.0*100));
+    const lrBarPct      = Math.min(100, Math.round((meta.lr_scale           ||1.0)/3.0*100));
+    document.getElementById('diag-meta').innerHTML =
+      '<div class="diag-h">🎛️ Meta-Controller</div>' +
+      diagRow('Mood',            '<span style="color:' + moodCol + '">' + (meta.mood||'neutral') + '</span>') +
+      diagRow('Boredom Counter', meta.boredom||0, (meta.boredom||0)>30?'red':'') +
+      diagRow('Stale Counter',   meta.stale  ||0, (meta.stale  ||0)>60?'red':'') +
+      diagRow('Last Action',     meta.last_action||'—') +
+      '<div style="margin-top:10px;font-size:8px;color:#374151;letter-spacing:.05em;margin-bottom:6px;">TUNED PARAMETERS</div>' +
+      '<div class="diag-bar-row"><div class="diag-bar-label">Explore Rate</div>' +
+        '<div class="diag-bar-track"><div class="diag-bar-fill" style="width:'+exploreBarPct+'%;background:linear-gradient(90deg,#1e3a5f,#3b82f6)"></div></div>' +
+        '<div class="diag-bar-val">' + (meta.explore_rate||1).toFixed(2) + 'x</div></div>' +
+      '<div class="diag-bar-row"><div class="diag-bar-label">Reward Sens.</div>' +
+        '<div class="diag-bar-track"><div class="diag-bar-fill" style="width:'+rwBarPct+'%;background:linear-gradient(90deg,#1a3a1a,#22c55e)"></div></div>' +
+        '<div class="diag-bar-val">' + (meta.reward_sensitivity||1).toFixed(2) + 'x</div></div>' +
+      '<div class="diag-bar-row"><div class="diag-bar-label">Conflict Sharp.</div>' +
+        '<div class="diag-bar-track"><div class="diag-bar-fill" style="width:'+cfBarPct+'%;background:linear-gradient(90deg,#3a1a1a,#ef4444)"></div></div>' +
+        '<div class="diag-bar-val">' + (meta.conflict_sharpness||1).toFixed(2) + 'x</div></div>' +
+      '<div class="diag-bar-row"><div class="diag-bar-label">LR Scale</div>' +
+        '<div class="diag-bar-track"><div class="diag-bar-fill" style="width:'+lrBarPct+'%;background:linear-gradient(90deg,#1a1a3a,#a855f7)"></div></div>' +
+        '<div class="diag-bar-val">' + (meta.lr_scale||1).toFixed(2) + 'x</div></div>';
+  }
+
+  // ── Strategy Library ──────────────────────────────────────────────────
+  const strat = d.strategy_lib || {};
+  if (document.getElementById('diag-strategy')) {
+    document.getElementById('diag-strategy').innerHTML =
+      '<div class="diag-h">🧬 Strategy Library</div>' +
+      diagRow('Stored Strategies', strat.count        ||0, strat.count>0?'accent':'') +
+      diagRow('Best Outcome',      (strat.best_outcome||0).toFixed(3), 'green') +
+      diagRow('Avg Outcome',       (strat.avg_outcome ||0).toFixed(3)) +
+      diagRow('Total Replays',     strat.total_uses   ||0, 'yellow') +
+      diagRow('Mutations Applied', strat.mutations    ||0);
+  }
 
   // ── Cluster breakdown ─────────────────────────────────────────
   const clusters = n.clusters || {};

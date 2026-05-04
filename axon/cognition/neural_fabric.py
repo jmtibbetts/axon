@@ -232,6 +232,8 @@ class ConflictEngine:
         # Recent activation history for inconsistency penalty
         self._history = torch.zeros((16, n_clusters), dtype=torch.float32)
         self._hist_ptr = 0
+        # Activation fatigue: accumulated overuse counter (slow decay)
+        self._activation_fatigue = torch.zeros(n_clusters, dtype=torch.float32)
 
     # ── "Use it or lose it" ticker ──────────────────────────────────────────
     _dominance_decay_rate = 0.0003   # per compete() call (20 Hz → ~17% per 10 min)
@@ -253,6 +255,13 @@ class ConflictEngine:
         dev = activation.device
         dom = self.dominance.to(dev)
         conf = self.confidence.to(dev)
+
+        # ── Activation fatigue: heavy-use clusters fire less effectively ──────
+        # This forces behavioral rotation even without external pressure
+        fatigue_penalty = torch.clamp(self._activation_fatigue.to(dev) * 0.003, 0.0, 0.25)
+        activation = torch.clamp(activation - fatigue_penalty, 0.01, 1.0)
+        # Update fatigue: winners accumulate it; it bleeds slowly
+        # (will be updated after winners are determined below)
 
         # ── Dominance decay: every cluster bleeds dominance unless it fires ──
         decay = self._dominance_decay_rate
@@ -309,6 +318,12 @@ class ConflictEngine:
                            - lr_dom * 0.2 * losers.cpu(),
             0.10, 0.90
         )
+
+        # Update activation fatigue: winners accumulate it, all clusters recover slowly
+        self._activation_fatigue = torch.clamp(
+            self._activation_fatigue + winners.cpu() * 1.0,  # winners tire
+            0.0, 200.0
+        ) * 0.998  # slow recovery (200 ticks @ 20 Hz = ~10s to halve)
 
         # Record history
         self._history[self._hist_ptr] = activation.detach().cpu()
@@ -492,15 +507,19 @@ class TemporalRewardBuffer:
         max_sim = max(sims)
         return 1.0 - max_sim   # high sim = low novelty
 
-    def evaluate(self, conflict: "ConflictEngine") -> tuple:
+    def evaluate(self, conflict: "ConflictEngine",
+                 meta_sensitivity: float = 1.0) -> tuple:
         """
         Called every `horizon` ticks.
         Returns (reward, penalty, dominant_clusters).
 
-        New:
-          - Novelty bonus: novel activation paths get extra reward
-          - Anti-repetition: highly repeated paths get penalised
-          - Regret signal: compare chosen path vs best-seen (hindsight)
+        Upgraded:
+          - Temporal credit assignment: earlier steps get decayed credit
+            credit[t] = reward * gamma^(H-1-t)  (earlier = less credit
+            than final state — causality flows forward)
+          - Novelty + anti-repetition (unchanged)
+          - Regret signal (unchanged)
+          - meta_sensitivity: MetaController multiplier on reward magnitude
         """
         if len(self._buffer) < self.horizon:
             return 0.0, 0.0, []
@@ -508,61 +527,81 @@ class TemporalRewardBuffer:
         window = self._buffer[-self.horizon:]
         acts   = torch.stack([w[0] for w in window])    # [H, N]
         vals   = [w[2] for w in window]
+        H      = len(window)
 
         # ── Base reward from valence trajectory ───────────────────────────────
         valence_change = vals[-1] - vals[0]
         valence_mean   = sum(vals) / len(vals)
-        reward  = max(0.0, valence_change * 0.5 + max(0.0, valence_mean) * 0.3)
-        penalty = max(0.0, -valence_change * 0.3 + max(0.0, -valence_mean) * 0.2)
+        raw_reward  = max(0.0, valence_change * 0.5 + max(0.0, valence_mean) * 0.3)
+        raw_penalty = max(0.0, -valence_change * 0.3 + max(0.0, -valence_mean) * 0.2)
 
-        # Consistency (moderate range is ideal — not too rigid, not chaotic)
+        # Apply meta sensitivity
+        reward  = raw_reward  * meta_sensitivity
+        penalty = raw_penalty * meta_sensitivity
+
+        # Consistency sweet spot
         variance = acts.var(dim=0).mean().item()
         if variance < 0.005:
             reward  += 0.02
         elif variance < 0.02:
-            reward  += 0.04   # sweet spot
+            reward  += 0.04
         elif variance > 0.10:
             penalty += 0.03
 
         # ── Novelty bonus ─────────────────────────────────────────────────────
-        fp = self._path_fingerprint(acts)
+        fp      = self._path_fingerprint(acts)
         novelty = self._novelty_score(fp)
         reward += self._NOVELTY_ALPHA * novelty
-
-        # Anti-repetition penalty: if novelty is very low, this path is worn out
         if novelty < 0.10:
             penalty += self._REPETITION_PENALTY
 
-        # Store fingerprint
         self._path_history.append(fp.detach().cpu())
         if len(self._path_history) > 50:
             self._path_history.pop(0)
 
-        # ── Regret signal (hindsight) ─────────────────────────────────────────
-        # Best possible outcome = max valence seen across buffer
+        # ── Regret signal ─────────────────────────────────────────────────────
         best_possible_val = max(vals)
         actual_final_val  = vals[-1]
         regret = max(0.0, best_possible_val - actual_final_val)
-        # Regret creates extra penalty for leaving reward on the table
         if regret > 0.2:
             penalty += regret * 0.25
             self._last_regret = round(regret, 3)
         else:
             self._last_regret = 0.0
 
-        # ── Credit assignment ─────────────────────────────────────────────────
-        mean_act = acts.mean(dim=0)
-        topk_idx = torch.topk(mean_act, min(5, len(mean_act))).indices.tolist()
-        dominant = [conflict.names[i] for i in topk_idx]
+        # ── Temporal credit assignment ────────────────────────────────────────
+        # gamma: how fast credit decays backward in time
+        # t=H-1 (last step) gets full credit; t=0 (first step) gets gamma^(H-1)
+        gamma = 0.85
+        net_signal = reward - penalty
 
+        # Build per-timestep credit weights: [H]
+        temporal_weights = torch.tensor(
+            [gamma ** (H - 1 - t) for t in range(H)],
+            dtype=torch.float32
+        )
+        # Normalize so they sum to 1 (fair comparison across horizon lengths)
+        temporal_weights = temporal_weights / temporal_weights.sum()
+
+        # Per-cluster credit: activation[t] * temporal_weight[t], summed across time
+        # Shape: [H, N] * [H, 1] → [H, N] → sum → [N]
+        per_cluster_credit = (acts * temporal_weights.unsqueeze(1)).sum(0)  # [N]
+
+        # Top contributing clusters (weighted by temporal credit, not flat mean)
+        topk_idx  = torch.topk(per_cluster_credit, min(5, per_cluster_credit.shape[0])).indices.tolist()
+        dominant  = [conflict.names[i] for i in topk_idx]
+
+        # Reinforce/punish with temporally-weighted credit
         for i in topk_idx:
-            if reward > 0:
-                conflict.reward_cluster(i, reward * 0.3)
-            if penalty > 0:
-                conflict.punish_cluster(i, penalty * 0.3)
+            credit_scale = float(per_cluster_credit[i]) * 3.0   # scale to ~reward magnitude
+            if net_signal > 0:
+                conflict.reward_cluster(i, net_signal * credit_scale * 0.3)
+            elif net_signal < 0:
+                conflict.punish_cluster(i, abs(net_signal) * credit_scale * 0.3)
 
         self._total_reward  += reward
         self._total_penalty += penalty
+        self._last_temporal_weights = temporal_weights.tolist()
         return reward, penalty, dominant
 
     def stats(self) -> dict:
@@ -817,6 +856,264 @@ class ThoughtStream:
             return list(self._thoughts)[-n:]
 
 
+
+# ── Meta-Control Layer ───────────────────────────────────────────────────────
+# A second-order controller that watches the system's own performance and
+# dynamically tunes exploration rate, reward sensitivity, conflict sharpness,
+# and learning rate based on surprise trends and recent stability.
+
+class MetaController:
+    """
+    Watches recent surprise, reward, and dominance entropy and adjusts:
+      explore_rate       — epsilon multiplier (1.0 = default)
+      reward_sensitivity — reward/penalty scale (1.0 = default)
+      conflict_sharpness — temperature modifier for softmax gating
+      learning_rate_scale— Hebbian / prediction LR multiplier
+
+    Fires every `eval_interval` ticks.
+    """
+    _HISTORY_LEN   = 50    # rolling window for trend detection
+    _BOREDOM_TICKS = 40    # consecutive low-surprise ticks → bored
+    _STALE_TICKS   = 80    # dominant set unchanged ticks → entrenched
+
+    def __init__(self):
+        self.explore_rate        = 1.0
+        self.reward_sensitivity  = 1.0
+        self.conflict_sharpness  = 1.0
+        self.learning_rate_scale = 1.0
+
+        self._surprise_history : deque = deque(maxlen=self._HISTORY_LEN)
+        self._reward_history   : deque = deque(maxlen=self._HISTORY_LEN)
+        self._dom_history      : deque = deque(maxlen=self._HISTORY_LEN)
+        self._boredom_counter  = 0
+        self._stale_counter    = 0
+        self._last_dom_set     : frozenset = frozenset()
+
+        # Diagnostics for UI
+        self.last_action = "initializing"
+        self.mood        = "neutral"   # "bored" | "surprised" | "stable" | "entrapped"
+
+    def step(self, surprise: float, reward: float, penalty: float,
+             dom_set: frozenset) -> None:
+        """Called every tick with current readings."""
+        self._surprise_history.append(surprise)
+        self._reward_history.append(reward - penalty)
+
+        # Dominance entropy: are the same clusters always on top?
+        if dom_set == self._last_dom_set:
+            self._stale_counter += 1
+        else:
+            self._stale_counter = max(0, self._stale_counter - 5)
+            self._last_dom_set  = dom_set
+
+        # Boredom: low surprise for many steps
+        if surprise < 0.03:
+            self._boredom_counter += 1
+        else:
+            self._boredom_counter = max(0, self._boredom_counter - 3)
+
+        self._dom_history.append(float(self._stale_counter))
+        self._update_controls()
+
+    def _update_controls(self):
+        n = len(self._surprise_history)
+        if n < 5:
+            return
+
+        # ── Surprise trend ────────────────────────────────────────────────
+        surp_arr     = list(self._surprise_history)
+        surp_recent  = sum(surp_arr[-10:]) / 10
+        surp_older   = sum(surp_arr[-30:-10]) / max(len(surp_arr[-30:-10]), 1)
+        surp_dropping = surp_recent < surp_older * 0.7    # surprise fell >30%
+
+        # ── Reward stagnation ─────────────────────────────────────────────
+        rew_arr = list(self._reward_history)
+        rew_recent = sum(rew_arr[-10:]) / 10
+        reward_stagnant = abs(rew_recent) < 0.01
+
+        # ── Control updates ───────────────────────────────────────────────
+        actions = []
+
+        # BORED: same low-surprise state for too long
+        if self._boredom_counter > self._BOREDOM_TICKS:
+            spike = min(0.30, self._boredom_counter * 0.004)
+            self.explore_rate = min(2.5, self.explore_rate + spike)
+            self.conflict_sharpness = max(0.6, self.conflict_sharpness - 0.05)
+            actions.append(f"boredom_spike eps+{round(spike,3)}")
+            self.mood = "bored"
+
+        # ENTRAPPED: same clusters dominating for too long
+        elif self._stale_counter > self._STALE_TICKS:
+            self.explore_rate = min(2.5, self.explore_rate + 0.15)
+            # Soften competition so others can breakthrough
+            self.conflict_sharpness = max(0.5, self.conflict_sharpness - 0.08)
+            actions.append("entrapped: explore+, soften competition")
+            self.mood = "entrapped"
+
+        # REWARD STAGNANT + SURPRISE DROPPING → try something new
+        elif reward_stagnant and surp_dropping:
+            self.explore_rate = min(2.0, self.explore_rate + 0.10)
+            self.learning_rate_scale = min(2.0, self.learning_rate_scale + 0.10)
+            actions.append("stagnant: explore+, lr+")
+            self.mood = "searching"
+
+        # HIGH SURPRISE → amplify learning, boost reward sensitivity
+        elif surp_recent > 0.15:
+            self.learning_rate_scale = min(2.5, self.learning_rate_scale + 0.15)
+            self.reward_sensitivity  = min(2.0, self.reward_sensitivity  + 0.08)
+            # Tighten exploration — we're learning fast, exploit it
+            self.explore_rate = max(0.5, self.explore_rate - 0.08)
+            actions.append(f"high_surprise: lr+, exploit")
+            self.mood = "surprised"
+
+        # STABLE: decay back toward defaults
+        else:
+            self.explore_rate        += (1.0 - self.explore_rate)        * 0.05
+            self.reward_sensitivity  += (1.0 - self.reward_sensitivity)  * 0.04
+            self.conflict_sharpness  += (1.0 - self.conflict_sharpness)  * 0.04
+            self.learning_rate_scale += (1.0 - self.learning_rate_scale) * 0.04
+            self.mood = "stable"
+
+        # Clamp everything
+        self.explore_rate        = round(float(max(0.3,  min(3.0,  self.explore_rate))),        3)
+        self.reward_sensitivity  = round(float(max(0.3,  min(3.0,  self.reward_sensitivity))),  3)
+        self.conflict_sharpness  = round(float(max(0.4,  min(2.0,  self.conflict_sharpness))),  3)
+        self.learning_rate_scale = round(float(max(0.3,  min(3.0,  self.learning_rate_scale))), 3)
+
+        if actions:
+            self.last_action = "; ".join(actions)
+
+    def to_dict(self) -> dict:
+        return {
+            "mood":              self.mood,
+            "explore_rate":      self.explore_rate,
+            "reward_sensitivity":self.reward_sensitivity,
+            "conflict_sharpness":self.conflict_sharpness,
+            "lr_scale":          self.learning_rate_scale,
+            "boredom":           self._boredom_counter,
+            "stale":             self._stale_counter,
+            "last_action":       self.last_action,
+        }
+
+
+# ── Strategy Library ─────────────────────────────────────────────────────────
+# Records successful activation sequences so they can be replayed/mutated later.
+# This is the jump from "learned weights" to "learned behaviors."
+
+class StrategyLibrary:
+    """
+    Stores successful cluster activation sequences as reusable strategies.
+
+    A strategy is:
+      pattern   : list of top-active cluster-index fingerprints (one per step)
+      context   : emotion + cognitive state snapshot at recording time
+      outcome   : cumulative reward earned
+      uses      : how many times it has been replayed
+      mutations : slight variations that have been tried
+
+    When context matches a stored strategy well, the system biases activation
+    toward that strategy's known-good cluster sequence.
+    """
+    MAX_STRATEGIES = 40
+    MIN_REWARD     = 0.08    # minimum outcome to store a strategy
+    REPLAY_THRESH  = 0.65    # cosine similarity to trigger replay bias
+    MUTATION_NOISE = 0.12    # random perturbation applied during mutation
+
+    def __init__(self, n_clusters: int):
+        self.n         = n_clusters
+        self._lib: list = []   # list of strategy dicts
+
+    def maybe_store(self, act_sequence: list, emotion: str,
+                    cog_snapshot: dict, reward: float) -> bool:
+        """
+        Stores a sequence if it earned enough reward and isn't already well-covered.
+        Returns True if stored.
+        """
+        if reward < self.MIN_REWARD or len(act_sequence) < 3:
+            return False
+        # Fingerprint: mean activation vector across the sequence
+        stacked = torch.stack(act_sequence)           # [T, N]
+        fp      = F.normalize(stacked.mean(0).unsqueeze(0), dim=1).squeeze(0).cpu()
+
+        # Don't store if we already have something very similar
+        for s in self._lib:
+            sim = float(torch.dot(fp, s["fingerprint"]).clamp(-1, 1))
+            if sim > 0.88:
+                # Just update outcome instead
+                s["outcome"] = s["outcome"] * 0.7 + reward * 0.3
+                s["uses"]   += 1
+                return False
+
+        entry = {
+            "fingerprint": fp,
+            "emotion":     emotion,
+            "cog_conf":    cog_snapshot.get("confidence", 0.5),
+            "cog_unc":     cog_snapshot.get("uncertainty", 0.5),
+            "outcome":     reward,
+            "uses":        1,
+            "mutations":   0,
+        }
+        self._lib.append(entry)
+        # Evict weakest if over capacity
+        if len(self._lib) > self.MAX_STRATEGIES:
+            self._lib.sort(key=lambda x: x["outcome"] * (1 + x["uses"] * 0.1), reverse=True)
+            self._lib = self._lib[:self.MAX_STRATEGIES]
+        return True
+
+    def query_replay_bias(self, current_emotion: str,
+                          cog_snapshot: dict,
+                          surprise: float) -> torch.Tensor:
+        """
+        Returns a context bias vector [N] representing known-good cluster activations
+        for the current context.  Returns zeros if no match or surprise is high.
+        """
+        if not self._lib or surprise > 0.20:
+            # High surprise = new territory — don't bias toward old patterns
+            return torch.zeros(self.n, dtype=torch.float32)
+
+        conf = cog_snapshot.get("confidence", 0.5)
+        unc  = cog_snapshot.get("uncertainty", 0.5)
+
+        best_sim = 0.0
+        best_fp  = None
+        for s in self._lib:
+            # Emotion match bonus
+            emo_bonus = 0.05 if s["emotion"] == current_emotion else 0.0
+            # Cognitive similarity
+            cog_sim = 1.0 - (abs(s["cog_conf"] - conf) + abs(s["cog_unc"] - unc)) * 0.3
+            combined_sim = cog_sim + emo_bonus
+            if combined_sim > best_sim:
+                best_sim = combined_sim
+                best_fp  = s["fingerprint"]
+
+        if best_sim < self.REPLAY_THRESH or best_fp is None:
+            return torch.zeros(self.n, dtype=torch.float32)
+
+        # Softly bias toward best matching strategy (scale by similarity strength)
+        bias_strength = (best_sim - self.REPLAY_THRESH) * 0.5
+        return best_fp * bias_strength
+
+    def mutate_strategy(self, idx: int) -> None:
+        """Apply small random noise to a strategy's fingerprint (exploration)."""
+        if 0 <= idx < len(self._lib):
+            noise = torch.randn(self.n) * self.MUTATION_NOISE
+            self._lib[idx]["fingerprint"] = F.normalize(
+                (self._lib[idx]["fingerprint"] + noise).unsqueeze(0), dim=1
+            ).squeeze(0)
+            self._lib[idx]["mutations"] += 1
+
+    def stats(self) -> dict:
+        if not self._lib:
+            return {"count": 0, "best_outcome": 0.0, "total_uses": 0}
+        outcomes = [s["outcome"] for s in self._lib]
+        return {
+            "count":        len(self._lib),
+            "best_outcome": round(max(outcomes), 3),
+            "avg_outcome":  round(sum(outcomes) / len(outcomes), 3),
+            "total_uses":   sum(s["uses"] for s in self._lib),
+            "mutations":    sum(s["mutations"] for s in self._lib),
+        }
+
 # ── NeuronCluster (metadata only — state lives in GPU tensors) ───────────────
 
 class NeuronCluster:
@@ -898,9 +1195,24 @@ class NeuralFabric:
         self.critic       = InternalCritic(N, self._cluster_names)
         # Context bias vector: memory + personality shape cluster gating
         self.context_bias = torch.zeros(N, dtype=torch.float32)
-        # Exploration noise: epsilon now driven by CognitiveState
+        # Exploration noise: epsilon driven by CognitiveState + MetaController
         self._explore_eps  = 0.18
         self._explore_step = 0
+
+        # ── Meta-Controller (tunes the system that tunes the system) ──────────
+        self.meta = MetaController()
+
+        # ── Strategy Library (learned behavioral patterns) ────────────────────
+        self.strategy_lib = StrategyLibrary(N)
+        self._act_sequence_buf: list = []   # rolling buffer for strategy recording
+
+        # ── Per-cluster activation fatigue (for behavioral diversity) ─────────
+        # Already in self.fatigue GPU tensor — but add per-cluster use counter
+        self._cluster_use_count = torch.zeros(N, dtype=torch.float32)
+
+        # ── Surprise-driven memory encoding boost ─────────────────────────────
+        self._last_surprise   = 0.0
+        self._reward_history  : deque = deque(maxlen=30)   # for meta-controller
 
         total_neurons = sum(c.size for c in self.clusters.values())
         print(f"  [NeuralFabric] {total_neurons:,} virtual neurons | "
@@ -1130,14 +1442,16 @@ class NeuralFabric:
 
     def _gpu_tick(self, dt: float) -> torch.Tensor:
         """
-        Single GPU tick — now with:
-          1. Conflict gating (lateral inhibition + softmax competition)
-          2. Prediction error → continuous weight updates
-          3. Exploration noise (epsilon-greedy bursts)
-          4. Memory context bias shapes cluster competition
+        Single GPU tick — all upgrades integrated:
+          1. Adaptive exploration (meta-controller + boredom/surprise-driven eps)
+          2. Conflict gating with cluster fatigue + use-based wear-down
+          3. Surprise-driven learning rate + memory encoding boost
+          4. Temporal credit assignment with per-step decay weighting
+          5. Strategy replay bias injected into context
+          6. MetaController step (tunes all the above in real time)
         Returns spike vector [N] on DEVICE.
         """
-        nm = self.neuromod
+        nm  = self.neuromod
         da  = nm.dopamine
         ne  = nm.norepinephrine
         ser = nm.serotonin
@@ -1147,64 +1461,110 @@ class NeuralFabric:
         with self._lock:
             act = self.activation.clone()
 
-        # ── 1. Exploration noise (driven by CognitiveState) ─────────────────
+        # ── 0. MetaController: read current surprise + reward trend ──────────
+        surprise     = self.predictor.surprise_score()
+        self._last_surprise = surprise
+        dom_set      = frozenset(self.conflict._last_winner_set)
+        last_rew     = self._reward_history[-1] if self._reward_history else 0.0
+        self.meta.step(surprise, max(0.0, last_rew), max(0.0, -last_rew), dom_set)
+
+        # ── 1. Adaptive Exploration (meta + cognitive + boredom) ─────────────
         self._explore_step += 1
-        # Base epsilon anneals, but CognitiveState can re-open it
-        base_eps = max(0.04, 0.18 * math.exp(-self._explore_step / 10000))
-        cog_boost = self.cog_state.explore_boost()
-        self._explore_eps = min(0.35, base_eps + cog_boost * 0.15)
+        base_eps  = max(0.04, 0.18 * math.exp(-self._explore_step / 10000))
+        cog_boost = self.cog_state.explore_boost()   # uncertainty + urgency
+        meta_mult = self.meta.explore_rate            # meta-controller multiplier
+        # Surprise spike: high surprise temporarily boosts exploration
+        surprise_boost = min(0.15, surprise * 0.6) if surprise > 0.10 else 0.0
+        self._explore_eps = min(0.55, (base_eps + cog_boost * 0.15 + surprise_boost) * meta_mult)
+
         if random.random() < self._explore_eps:
             burst_idx = random.randint(0, act.shape[0] - 1)
-            burst_mag = random.gauss(0, 0.08) * (1.0 + self.cog_state.urgency * 0.5)
+            burst_mag = random.gauss(0, 0.08) * (1.0 + self.cog_state.urgency * 0.5) * meta_mult
             act[burst_idx] = torch.clamp(act[burst_idx] + burst_mag, 0.0, 1.0)
 
-        # ── 2. Conflict engine: lateral inhibition + softmax gating ─────────
-        ctx_bias = self.context_bias.to(DEVICE)
-        # Temperature: NE-driven AND CognitiveState-driven (uncertainty → softer)
-        temp = self.cog_state.competition_temperature(base=1.4 - ne * 0.6)
-        act = self.conflict.compete(act, ctx_bias, temperature=temp)
+        # ── 2. Strategy replay bias ───────────────────────────────────────────
+        cog_snap      = self.cog_state.to_dict()
+        strategy_bias = self.strategy_lib.query_replay_bias(
+            self.emotions.current, cog_snap, surprise
+        ).to(DEVICE)
 
-        # GABA-mediated global inhibition: when GABA is high, suppress weak clusters
+        # ── 3. Cluster fatigue: heavy use → temporary weakening ───────────────
+        # Track per-cluster use count (CPU, updated from spike later)
+        # Apply wear-down: clusters that have fired a lot get an activation penalty
+        wear_penalty = torch.clamp(
+            self._cluster_use_count.to(DEVICE) * 0.0002, 0.0, 0.15
+        )
+        act = torch.clamp(act - wear_penalty, 0.01, 1.0)
+
+        # ── 4. Conflict engine with meta-controlled sharpness ────────────────
+        # Merge context bias: memory + strategy replay
+        combined_bias = self.context_bias.to(DEVICE) * 0.6 + strategy_bias * 0.4
+        # Temperature: NE-driven + cognitive + meta sharpness
+        temp = self.cog_state.competition_temperature(base=1.4 - ne * 0.6)
+        temp = temp / max(0.4, self.meta.conflict_sharpness)   # meta tunes sharpness
+        act  = self.conflict.compete(act, combined_bias, temperature=temp)
+
+        # GABA-mediated inhibition
         if gab > 0.55:
             low_mask = (act < 0.15).float()
             act = act * (1.0 - low_mask * (gab - 0.55) * 0.4)
 
-        # ── 3. Standard spike computation ────────────────────────────────────
+        # ── 5. Spike computation ──────────────────────────────────────────────
         eff_thresh = self.threshold * (1.0 + self.fatigue) * (1.2 - ne * 0.4)
-        x     = (act - eff_thresh) * 8.0
-        spike = torch.sigmoid(x) * (act > eff_thresh).float()
-        spike = spike * (0.8 + da * 0.2)
+        x          = (act - eff_thresh) * 8.0
+        spike      = torch.sigmoid(x) * (act > eff_thresh).float()
+        spike      = spike * (0.8 + da * 0.2)
 
-        # Fatigue
+        # Fatigue: per-cluster (short-term)
         fired_mask = (spike > 0.05).float()
         self.fatigue = torch.clamp(self.fatigue + fired_mask * 0.05, 0.0, 1.0)
         self.fatigue = self.fatigue * 0.95
 
-        # ── 4. Propagate through weight matrix ───────────────────────────────
+        # Per-cluster use counter (long-term, slower decay)
+        self._cluster_use_count = torch.clamp(
+            self._cluster_use_count + fired_mask.cpu() * 1.0, 0.0, 500.0
+        )
+        self._cluster_use_count = self._cluster_use_count * 0.999   # slow bleed
+
+        # ── 6. Propagate ──────────────────────────────────────────────────────
         wm    = self.weight_mat.float()
         delta = wm @ spike
         delta = delta * 0.12 * (0.4 + ach * 0.6)
 
-        # ── 5. Noise ─────────────────────────────────────────────────────────
+        # ── 7. Noise ──────────────────────────────────────────────────────────
         noise = torch.randn_like(act) * 0.002 * (0.5 + ne * 0.3)
 
-        # ── 6. Decay ─────────────────────────────────────────────────────────
+        # ── 8. Decay ──────────────────────────────────────────────────────────
         decay   = 0.95 - ser * 0.03
         new_act = torch.clamp(act * decay + delta + noise, min=0.01, max=1.0)
 
-        # ── 7. Prediction error → continuous micro-adaptation ────────────────
+        # ── 9. Surprise-driven learning rate ─────────────────────────────────
+        # High surprise = this moment matters more → amplify both prediction
+        # weight update AND Hebbian trace
+        surprise_lr_mult = 1.0 + min(1.5, surprise * 5.0)   # up to 2.5x at surprise=0.3
+        meta_lr_mult     = self.meta.learning_rate_scale
+        effective_lr     = 0.0003 * surprise_lr_mult * meta_lr_mult
+
+        # ── 10. Prediction error → weight update ──────────────────────────────
         error = self.predictor.step(new_act)
         if self._tick % 5 == 0:
-            self.predictor.adjust_weights(self.weight_mat, error, spike, lr=0.0003)
+            self.predictor.adjust_weights(self.weight_mat, error, spike, lr=effective_lr)
 
-        # ── 8. Hebbian update ─────────────────────────────────────────────────
-        self.hebbian_trace = self.hebbian_trace * 0.95 + spike * 0.05
+        # ── 11. Hebbian update (surprise-boosted trace) ───────────────────────
+        hebbian_rate = 0.05 * surprise_lr_mult
+        self.hebbian_trace = self.hebbian_trace * (1.0 - hebbian_rate * 0.5) + spike * hebbian_rate
         if self._tick % 10 == 0:
             self._hebbian_update(spike, ach)
 
-        # ── 9. Inconsistency penalty every 32 ticks ──────────────────────────
+        # ── 12. Inconsistency penalty every 32 ticks ─────────────────────────
         if self._tick % 32 == 0:
             self.conflict.penalise_inconsistency(new_act)
+
+        # ── 13. Strategy buffer: record activation snapshot ───────────────────
+        if self._tick % 3 == 0:
+            self._act_sequence_buf.append(new_act.detach().cpu().clone())
+            if len(self._act_sequence_buf) > 30:
+                self._act_sequence_buf.pop(0)
 
         with self._lock:
             self.activation = new_act
@@ -1381,24 +1741,47 @@ class NeuralFabric:
                     self.emotions.valence
                 )
             if self._tick % self.temp_reward.horizon == 0 and self._tick > 0:
-                r, p, dom = self.temp_reward.evaluate(self.conflict)
+                # Pass meta_sensitivity so reward magnitude is meta-modulated
+                r, p, dom = self.temp_reward.evaluate(
+                    self.conflict,
+                    meta_sensitivity=self.meta.reward_sensitivity
+                )
+                net = r - p
+                # Store reward in history for meta-controller trend tracking
+                self._reward_history.append(net)
+
                 # Structural route reinforcement
                 if self.predictor._last_active_pairs:
-                    signal = (r - p) * self.cog_state.reward_sensitivity()
+                    signal = net * self.cog_state.reward_sensitivity()
                     self.predictor.reinforce_routes(
                         self.weight_mat,
                         self.predictor._last_active_pairs,
                         signal
                     )
+
+                # ── Strategy Library: store sequence if reward was good ───────
+                if r > self.strategy_lib.MIN_REWARD and len(self._act_sequence_buf) >= 3:
+                    self.strategy_lib.maybe_store(
+                        act_sequence  = list(self._act_sequence_buf),
+                        emotion       = self.emotions.current,
+                        cog_snapshot  = self.cog_state.to_dict(),
+                        reward        = r,
+                    )
+                    # Occasionally mutate a random stored strategy
+                    if len(self.strategy_lib._lib) > 3 and random.random() < 0.05:
+                        idx = random.randint(0, len(self.strategy_lib._lib) - 1)
+                        self.strategy_lib.mutate_strategy(idx)
+
                 # Update CognitiveState from this evaluation cycle
                 stats = self.temp_reward.stats()
                 self.cog_state.update(
-                    surprise     = self.predictor.surprise_score(),
+                    surprise     = self._last_surprise,
                     reward       = r,
                     penalty      = p,
                     valence      = self.emotions.valence,
                     novelty_rate = 1.0 - (1.0 / max(1, stats["path_diversity"])),
                 )
+
                 # Run InternalCritic
                 with self._lock:
                     act_now = self.activation.clone().cpu()
@@ -1482,7 +1865,15 @@ class NeuralFabric:
             "cognitive_state":    self.cog_state.to_dict(),
             "critic":             self.critic.to_dict(),
             "top_routes":         self.predictor.top_routes(self._cluster_names, 3),
+            "meta":               self.meta.to_dict(),
+            "strategy_lib":       self.strategy_lib.stats(),
+            "cluster_wear":       round(float(getattr(self, "_cluster_use_count", torch.zeros(1)).mean()), 2),
         }
+
+    @property
+    def surprise_level(self) -> float:
+        """Current surprise score — used by engine to boost memory encoding."""
+        return getattr(self, "_last_surprise", 0.0)
 
     def get_state_snapshot(self, spikes: dict = None) -> dict:
         if spikes is None:

@@ -308,7 +308,11 @@ class AxonEngine:
                             "input":    user_input[:120],
                         },
                         topics=["emotion", "reinforcement", emotion_after],
-                        importance=0.5 + abs(delta_valence) * 0.5,
+                        importance=min(1.0,
+                            0.5
+                            + abs(delta_valence) * 0.5
+                            + getattr(self.fabric, "surprise_level", 0.0) * 0.4
+                        ),
                         emotion=emotion_after,
                     )
 
@@ -475,6 +479,8 @@ class AxonEngine:
             gpu_total = round(f(n.get("gpu_mem_total_gb", 0)), 1)
             top_dom   = ", ".join((conflict.get("top_dominant") or [])[:3])
 
+            meta     = d.get("meta", {})
+            strat    = d.get("strategy_lib", {})
             lines = [
                 "Diagnostic scan complete.",
                 f"I am running {total_n:,} virtual neurons across {n_clusters} functional clusters, "
@@ -493,6 +499,17 @@ class AxonEngine:
                 lines.append(
                     f"I am {conf_pct}% confident, {unc_pct}% uncertain, "
                     f"and urgency is at {urg_pct}%."
+                )
+            if meta:
+                mood = meta.get("mood", "stable")
+                eps_pct = round(f(meta.get("explore_rate", 1.0)) * 100)
+                lines.append(
+                    f"Meta-controller mood is '{mood}' — exploration multiplier at {eps_pct}%."
+                )
+            if strat and strat.get("count", 0) > 0:
+                lines.append(
+                    f"I have {strat['count']} stored behavioral strategies with "
+                    f"a best outcome of {strat.get('best_outcome', 0.0):.3f}."
                 )
 
             summary = " ".join(lines)
