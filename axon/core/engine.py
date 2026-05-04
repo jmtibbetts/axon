@@ -396,6 +396,14 @@ class AxonEngine:
     def get_diagnostic(self) -> dict:
         """Full self-diagnostic — everything AXON knows about itself."""
         import torch, platform, datetime
+        try:
+            return self._get_diagnostic_impl()
+        except Exception as e:
+            import traceback
+            return {"error": traceback.format_exc()}
+
+    def _get_diagnostic_impl(self) -> dict:
+        import torch, platform, datetime
         fabric_state  = self.fabric.get_state_snapshot()
         optic         = self.optic.get_status()
         lang_status   = self.language.get_status()
@@ -405,13 +413,21 @@ class AxonEngine:
         # Memory stats
         episodes      = mem.count_episodes()
         facts         = mem.all_facts() or {}
-        connections   = mem.top_connections(5)
+        connections   = [
+            {"cluster_a": c.get("a","?"), "cluster_b": c.get("b","?"),
+             "strength": c.get("weight", 0), "fires": c.get("fires", 0)}
+            for c in (mem.top_connections(5) or [])
+        ]
 
         # Neural fabric details
         clusters      = {name: c.size for name, c in self.fabric.clusters.items()}
         total_neurons = sum(clusters.values())
         total_conns   = fabric_state.get("total_connections", 0)
-        active_conns  = int(self.fabric.weight_mat.count_nonzero().item()) if hasattr(self.fabric, 'weight_mat') else total_conns
+        try:
+            with self.fabric._lock:
+                active_conns = int(self.fabric.weight_mat.count_nonzero().item())
+        except Exception:
+            active_conns = total_conns
 
         # GPU info
         gpu_name  = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"

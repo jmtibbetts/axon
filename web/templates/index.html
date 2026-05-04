@@ -528,7 +528,9 @@ document.addEventListener('keydown', e => {
 socket.on('diagnostic_result', function(d) {
   if (d.error) {
     document.getElementById('diag-neural').innerHTML =
-      `<div class="diag-loading" style="color:#ef4444;">ERROR: ${d.error}</div>`;
+      `<div class="diag-loading" style="color:#ef4444;text-align:left;white-space:pre-wrap;font-size:8px;padding:16px;">` +
+      `<div style="color:#ef4444;margin-bottom:8px;font-size:10px;">⚠ DIAGNOSTIC ERROR</div>` +
+      d.error.replace(/</g,'&lt;') + `</div>`;
     return;
   }
 
@@ -551,12 +553,13 @@ socket.on('diagnostic_result', function(d) {
   const m = d.memory || {};
   let pathHTML = '';
   (m.top_pathways || []).forEach(p => {
-    const a = p.cluster_a || p[0] || '?';
-    const b = p.cluster_b || p[1] || '?';
-    const s = typeof p.strength !== 'undefined' ? p.strength : (p[2] || 0);
+    const a = (p.cluster_a || p.a || '?').replace(/_/g,' ');
+    const b = (p.cluster_b || p.b || '?').replace(/_/g,' ');
+    const s = parseFloat(p.strength ?? p.weight ?? 0).toFixed(3);
+    const fires = p.fires ? ` · ${p.fires} fires` : '';
     pathHTML += `<div class="diag-pathway">
-      <span>${a.replace(/_/g,' ')} ↔ ${b.replace(/_/g,' ')}</span>
-      <span class="strength">${parseFloat(s).toFixed(3)}</span>
+      <span>${a} ↔ ${b}<span style="color:#374151;font-size:7.5px;">${fires}</span></span>
+      <span class="strength">${s}</span>
     </div>`;
   });
   const oldest = m.oldest_memory
