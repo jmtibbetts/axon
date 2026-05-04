@@ -320,3 +320,50 @@ class FaceIdentitySystem:
                 for p in self._people.values()
             ],
         }
+
+    # ── Per-face profile helpers (called by UserModel) ────────────────────────
+
+    def get_person_profile(self, person_id: str) -> Optional[dict]:
+        """Return the profile dict for a person_id, or None if not found."""
+        if person_id == "__owner__":
+            conn = sqlite3.connect(str(self._db_path))
+            row = conn.execute(
+                "SELECT profile FROM people WHERE person_id=?", (person_id,)
+            ).fetchone()
+            conn.close()
+            if row:
+                try:
+                    return json.loads(row[0] or "{}")
+                except:
+                    pass
+            return None
+        p = self._people.get(person_id)
+        return dict(p["profile"]) if p else None
+
+    def save_owner_profile(self, profile: dict):
+        """Persist the owner profile record (person_id='__owner__', no embedding)."""
+        conn = sqlite3.connect(str(self._db_path))
+        now  = time.time()
+        conn.execute("""
+            INSERT INTO people (person_id, name, embedding, first_seen, last_seen, visit_count, profile)
+            VALUES (?,?,?,?,?,?,?)
+            ON CONFLICT(person_id) DO UPDATE SET
+                profile   = excluded.profile,
+                last_seen = excluded.last_seen
+        """, (
+            "__owner__",
+            profile.get("identity", {}).get("full_name") or
+            profile.get("identity", {}).get("name", "Owner"),
+            b"",   # no embedding for owner
+            now, now, 0,
+            json.dumps(profile),
+        ))
+        conn.commit()
+        conn.close()
+
+    def update_person_profile(self, person_id: str, profile: dict):
+        """Update the profile blob for an existing person."""
+        if person_id not in self._people:
+            return
+        self._people[person_id]["profile"] = profile
+        self._save_person(person_id, self._embeddings[person_id])

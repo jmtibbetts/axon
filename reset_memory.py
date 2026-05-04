@@ -22,7 +22,7 @@ def reset():
 
     # Connect and wipe all tables (preserve schema)
     conn = sqlite3.connect(str(DB_PATH))
-    tables = ["episodic", "semantic", "hebbian", "topics"]
+    tables = ["episodic", "semantic", "hebbian", "topics", "people"]
     for t in tables:
         try:
             count = conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
@@ -43,7 +43,8 @@ def reset():
             f.unlink()
             print(f"  ✓ Removed {f.name}")
 
-    print("\n  ✅ Memory wiped. AXON will introduce itself fresh on next run.")
+    print("\n  ✅ Memory wiped — all episodic, semantic, and person profiles cleared.")
+    print("     AXON will start fresh with no knowledge of anyone on next run.")
     print("     Start normally:  python run.py\n")
 
 if __name__ == "__main__":

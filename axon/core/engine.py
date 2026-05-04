@@ -97,11 +97,21 @@ class AxonEngine:
         )
         # Give language core a back-reference so it can call get_identity_summary()
         self.language._engine = self
+        # Wire up per-face user model (needs face_id ready first)
+        self.language.init_user_model(self.face_id)
+        # Seed the owner profile once with known facts (never overwrites learned data)
+        self.language.user_model.seed_owner(
+            name       = "Jon",
+            full_name  = "Jon Tibbetts",
+            city       = "Los Angeles, CA",
+            timezone   = "America/Los_Angeles",
+            job_title  = "software developer / AI researcher",
+            projects   = ["Axon (biologically-inspired AI framework)",
+                          "Neural-Forge (LSTM financial analysis)"],
+            skills     = ["Python", "machine learning",
+                          "CUDA / GPU programming", "neural network design"],
+        )
 
-        # ── Seed the user model with known owner information ──────────────────
-        # This ensures Axon always knows who it's talking to without needing
-        # the user to re-introduce themselves every session.
-        self._seed_user_profile()
 
         print("  [Engine] Initializing voice output...")
         self.voice    = VoiceOutput()
@@ -113,37 +123,6 @@ class AxonEngine:
         )
         self._last_audio_emo: dict = {}
 
-    def _seed_user_profile(self):
-        """Pre-populate the user model with known owner info so Axon never asks who it's talking to."""
-        um = self.language.user_model
-        p  = um._profile
-
-        # Only seed if name isn't already set (don't overwrite learned data)
-        if not p.get("identity", {}).get("name"):
-            um.set("identity", "name", "Jon")
-        if not p.get("identity", {}).get("full_name"):
-            um.set("identity", "full_name", "Jon Tibbetts")
-        if not p.get("location", {}).get("city"):
-            um.set("location", "city", "Los Angeles, CA")
-        if not p.get("location", {}).get("timezone"):
-            um.set("location", "timezone", "America/Los_Angeles")
-        if not p.get("work", {}).get("job_title"):
-            um.set("work", "job_title", "software developer / AI researcher")
-
-        # Seed projects if list is empty
-        if not p.get("projects"):
-            for proj in ["Axon (biologically-inspired AI framework)", "Neural-Forge (LSTM financial analysis)"]:
-                if proj not in p["projects"]:
-                    p["projects"].append(proj)
-
-        # Seed skills if list is empty
-        if not p.get("skills"):
-            for skill in ["Python", "machine learning", "CUDA / GPU programming", "neural network design"]:
-                if skill not in p["skills"]:
-                    p["skills"].append(skill)
-
-        um._save_profile()
-        print("  [Engine] User profile seeded — Jon Tibbetts")
 
         print("  [Engine] Initializing sensory systems...")
         self.optic    = OpticSystem(
@@ -245,6 +224,9 @@ class AxonEngine:
     def _on_face(self, face_data: dict):
         import time as _time
         no_face  = face_data.get("no_face", False)
+        # No face visible → revert user model to owner profile
+        if no_face and self.language.user_model:
+            self.language.user_model.switch_to_owner()
 
         # ── Face identity processing ──────────────────────────────────────
         if not no_face:

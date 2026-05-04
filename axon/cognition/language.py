@@ -325,8 +325,9 @@ class LanguageCore:
         self.prefer_local    = prefer_local
         self.fabric          = neural_fabric
         self.search          = WebSearchTool()
-        self.user_model      = UserModel(memory_system)
-        self.user_model.increment_sessions()
+        # UserModel is wired up by engine after FaceIdentitySystem is ready
+        # (engine calls language.init_user_model(face_id))
+        self.user_model      = None
 
         self._anthropic_client = None
         self._lm_client        = None
@@ -412,7 +413,13 @@ class LanguageCore:
         return resp.content[0].text.strip()
 
 
-    def respond(self, user_input: str, visual_context: dict = None, system_note: str = None) -> str:
+    def init_user_model(self, face_id_system):
+        """Called by engine after FaceIdentitySystem is available."""
+        from axon.cognition.user_model import UserModel
+        self.user_model = UserModel(face_id_system)
+        self.user_model.increment_sessions()
+
+        def respond(self, user_input: str, visual_context: dict = None, system_note: str = None) -> str:
         """
         Wrapper around think() that supports:
         - system_note: injected as extra system context (for face identity prompts)
@@ -425,7 +432,7 @@ class LanguageCore:
             original = user_input
             # Build a one-shot prompt without history
             mem_ctx      = self.memory.build_context_string()
-            user_profile = self.user_model.describe()
+            user_profile = self.user_model.describe() if self.user_model else ''
             neuron_count = self.fabric.get_state_snapshot().get("total_neurons", 0) if self.fabric else 0
             cam_active   = bool(visual_context and visual_context.get("camera_running"))
             sys_prompt   = build_system_prompt(neuron_count, camera_active=cam_active) + "\n\n" + mem_ctx
@@ -686,7 +693,8 @@ class LanguageCore:
         )
 
         # 7. Learn from user input — one authoritative pipeline
-        self.user_model.ingest(user_input)
+        if self.user_model:
+            self.user_model.ingest(user_input)
 
         # 8. Real Hebbian pathway formation from actual topics mentioned
         for topic in detected_topics:
