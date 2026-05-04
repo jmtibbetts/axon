@@ -66,7 +66,7 @@ Need something specific?
 - Exclusive use cases
 - Custom deployments
 
-Contact: jon@jontibbetts.com
+Contact: jmtibbetts@outlook.com
 
 ---
 
@@ -79,4 +79,9 @@ AI system. Early commercial partners may receive preferred pricing.
 
 ## Contact
 
-For all licensing inquiries: jon@jontibbetts.com
+For all licensing inquiries:
+
+- **Email:** jmtibbetts@outlook.com
+- **Signal:** @Ryaath
+- **Telegram:** @Ryaath
+- **Discord:** @Ryaath

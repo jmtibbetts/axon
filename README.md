@@ -482,7 +482,7 @@ Commercial use (products, SaaS, internal tooling, paid APIs) requires a separate
 
 - [Full license terms](LICENSE)
 - [Commercial licensing info](COMMERCIAL.md)
-- Contact: jon@jontibbetts.com
+- Contact: jmtibbetts@outlook.com &nbsp;·&nbsp; Signal/Telegram/Discord: @Ryaath
 
 > Versions released prior to May 4, 2026 were under MIT. Those versions remain MIT.
 > All subsequent versions are governed by Axon License v1.0.
