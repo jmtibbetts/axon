@@ -34,18 +34,32 @@ Write-Host "  [2/5] PyTorch nightly cu128..." -ForegroundColor Yellow
 $tv = & $venvPy -c "import torch; print(torch.__version__)" 2>$null
 $isNightly = $tv -match "dev"
 if (-not $isNightly) {
+    Write-Host "  Installing PyTorch nightly (cu128)..." -ForegroundColor Yellow
     & $venvPip uninstall torch torchvision torchaudio -y --quiet 2>$null
     & $venvPip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
-    Write-Host "[setup] Installing ultralytics (YOLOv8)..." -ForegroundColor Cyan
-    & $venvPip install ultralytics --quiet
-    Write-Host "[setup] Installing fer (FER2013 emotion detection)..." -ForegroundColor Cyan
-    & $venvPip install fer tensorflow --quiet
 } else {
     Write-Host "  [SKIP] PyTorch nightly ok ($tv)" -ForegroundColor DarkGray
 }
 
 Write-Host "  [3/5] Core deps..." -ForegroundColor Yellow
 & $venvPip install --quiet flask flask-socketio flask-cors eventlet anthropic openai-whisper sounddevice opencv-python mediapipe edge-tts pygame numpy scipy pyaudio
+
+Write-Host "  [3b/5] Vision deps (YOLOv8 + FER)..." -ForegroundColor Yellow
+$ultraOk = & $venvPy -c "import ultralytics" 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  Installing ultralytics (YOLOv8)..." -ForegroundColor Cyan
+    & $venvPip install ultralytics
+} else {
+    Write-Host "  [SKIP] ultralytics already installed" -ForegroundColor DarkGray
+}
+
+$ferOk = & $venvPy -c "import fer" 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  Installing fer + tensorflow..." -ForegroundColor Cyan
+    & $venvPip install fer tensorflow
+} else {
+    Write-Host "  [SKIP] fer already installed" -ForegroundColor DarkGray
+}
 
 Write-Host "  [4/5] Creating data dirs..." -ForegroundColor Yellow
 New-Item -ItemType Directory -Force -Path "data\memory" | Out-Null

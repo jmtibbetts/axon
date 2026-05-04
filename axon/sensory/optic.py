@@ -125,6 +125,7 @@ class FERDetector:
             print("  [Optic] FER emotion detector loaded (FER2013 pretrained)")
         except Exception as e:
             print(f"  [Optic] FER unavailable ({e}) — using heuristic fallback")
+            print(f"  [Optic] FIX: run  .venv\\Scripts\\pip install fer tensorflow  then restart")
             self._ready = False
 
     def predict(self, face_bgr: np.ndarray) -> tuple[str, dict]:
@@ -252,6 +253,7 @@ class OpticSystem:
             print(f"  [Optic] YOLOv8-face loaded on {DEVICE}")
         except Exception as e:
             print(f"  [Optic] YOLOv8 unavailable ({e}), using Haar fallback")
+            print(f"  [Optic] FIX: run  .venv\\Scripts\\pip install ultralytics  then restart")
             self._yolo = None
 
         self._fer.load()
