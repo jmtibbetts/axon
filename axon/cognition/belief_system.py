@@ -25,7 +25,8 @@ from typing import Dict, List, Optional, Tuple
 
 class Belief:
     __slots__ = ("key", "claim", "strength", "valence",
-                 "source", "hits", "misses", "last_tested")
+                 "source", "hits", "misses", "last_tested",
+                 "dissonance_score", "under_revision")
 
     def __init__(self, key: str, claim: str, strength: float = 0.5,
                  valence: float = 0.0, source: str = "inference"):
@@ -37,17 +38,21 @@ class Belief:
         self.hits        = 0      # times prediction confirmed
         self.misses      = 0      # times prediction violated
         self.last_tested = 0.0
+        self.dissonance_score = 0.0   # current cognitive tension
+        self.under_revision   = False # True when conflict triggered restructure
 
     def to_dict(self) -> dict:
         return {
-            "key":         self.key,
-            "claim":       self.claim,
-            "strength":    round(self.strength, 3),
-            "valence":     round(self.valence, 3),
-            "source":      self.source,
-            "hits":        self.hits,
-            "misses":      self.misses,
-            "last_tested": self.last_tested,
+            "key":             self.key,
+            "claim":           self.claim,
+            "strength":        round(self.strength, 3),
+            "valence":         round(self.valence, 3),
+            "source":          self.source,
+            "hits":            self.hits,
+            "misses":          self.misses,
+            "last_tested":     self.last_tested,
+            "dissonance":      round(self.dissonance_score, 3),
+            "under_revision":  self.under_revision,
         }
 
 
@@ -81,42 +86,63 @@ class BeliefSystem:
         conn = sqlite3.connect(self._db)
         conn.executescript("""
         CREATE TABLE IF NOT EXISTS beliefs (
-            key         TEXT PRIMARY KEY,
-            claim       TEXT NOT NULL,
-            strength    REAL DEFAULT 0.5,
-            valence     REAL DEFAULT 0.0,
-            source      TEXT DEFAULT 'inference',
-            hits        INTEGER DEFAULT 0,
-            misses      INTEGER DEFAULT 0,
-            last_tested REAL DEFAULT 0
+            key              TEXT PRIMARY KEY,
+            claim            TEXT NOT NULL,
+            strength         REAL DEFAULT 0.5,
+            valence          REAL DEFAULT 0.0,
+            source           TEXT DEFAULT 'inference',
+            hits             INTEGER DEFAULT 0,
+            misses           INTEGER DEFAULT 0,
+            last_tested      REAL DEFAULT 0,
+            dissonance_score REAL DEFAULT 0.0,
+            under_revision   INTEGER DEFAULT 0
         );
+        -- Add dissonance columns if upgrading from older schema
+        PRAGMA foreign_keys=OFF;
+        CREATE TEMP TABLE IF NOT EXISTS _tmp(x);
+        
         """)
         conn.commit()
         conn.close()
 
     def _load_all(self):
         conn = sqlite3.connect(self._db)
+        # Schema migration: add new columns if they don't exist
+        try:
+            conn.execute("ALTER TABLE beliefs ADD COLUMN dissonance_score REAL DEFAULT 0.0")
+        except: pass
+        try:
+            conn.execute("ALTER TABLE beliefs ADD COLUMN under_revision INTEGER DEFAULT 0")
+        except: pass
+        conn.commit()
         rows = conn.execute(
-            "SELECT key,claim,strength,valence,source,hits,misses,last_tested FROM beliefs"
+            "SELECT key,claim,strength,valence,source,hits,misses,last_tested,"
+            "COALESCE(dissonance_score,0.0),COALESCE(under_revision,0) FROM beliefs"
         ).fetchall()
         conn.close()
-        for key, claim, strength, valence, source, hits, misses, last_tested in rows:
+        for key, claim, strength, valence, source, hits, misses, last_tested, diss, rev in rows:
             b = Belief(key, claim, strength, valence, source)
             b.hits = hits; b.misses = misses; b.last_tested = last_tested
+            b.dissonance_score = float(diss)
+            b.under_revision   = bool(rev)
             self._cache[key] = b
 
     def _save(self, b: Belief):
         conn = sqlite3.connect(self._db)
         conn.execute("""
-            INSERT INTO beliefs (key,claim,strength,valence,source,hits,misses,last_tested)
-            VALUES (?,?,?,?,?,?,?,?)
+            INSERT INTO beliefs (key,claim,strength,valence,source,hits,misses,last_tested,
+                                  dissonance_score,under_revision)
+            VALUES (?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(key) DO UPDATE SET
                 claim=excluded.claim, strength=excluded.strength,
                 valence=excluded.valence, source=excluded.source,
                 hits=excluded.hits, misses=excluded.misses,
-                last_tested=excluded.last_tested
+                last_tested=excluded.last_tested,
+                dissonance_score=excluded.dissonance_score,
+                under_revision=excluded.under_revision
         """, (b.key, b.claim, b.strength, b.valence,
-              b.source, b.hits, b.misses, b.last_tested))
+              b.source, b.hits, b.misses, b.last_tested,
+              b.dissonance_score, int(b.under_revision)))
         conn.commit()
         conn.close()
 
@@ -200,10 +226,15 @@ class BeliefSystem:
                 b.valence   = b.valence + (external_valence - b.valence) * pull
                 b.strength  = max(0.1, b.strength - pull * 0.3)
                 b.source    = "contested"
+                # Compute and store cognitive dissonance score
+                b.dissonance_score = min(1.0, b.dissonance_score + disagreement * credibility * 0.4)
+                b.under_revision   = b.dissonance_score > 0.35
             self._save(b)
+            return b.dissonance_score if b.dissonance_score > 0.1 else 0.0
 
     def decay_tick(self):
-        """Call periodically — beliefs drift toward 0.5 if never tested."""
+        """Call periodically — beliefs drift toward 0.5 if never tested.
+           Dissonance also decays (resolves over time)."""
         now = time.time()
         with self._lock:
             for b in self._cache.values():
@@ -211,6 +242,23 @@ class BeliefSystem:
                 drift = self.DECAY_RATE * math.log1p(age / 3600)
                 b.strength += (0.5 - b.strength) * drift
                 b.strength  = max(0.03, min(0.97, b.strength))
+                # Dissonance resolves naturally (~5min to halve)
+                b.dissonance_score = max(0.0, b.dissonance_score - 0.001)
+                if b.dissonance_score < 0.15:
+                    b.under_revision = False
+
+    def high_dissonance_beliefs(self, threshold: float = 0.30) -> list:
+        """Returns beliefs currently experiencing high cognitive dissonance."""
+        with self._lock:
+            return [b.to_dict() for b in self._cache.values()
+                    if b.dissonance_score >= threshold]
+
+    def total_dissonance(self) -> float:
+        """Aggregate dissonance across all beliefs — drives NE in the fabric."""
+        with self._lock:
+            if not self._cache:
+                return 0.0
+            return min(1.0, sum(b.dissonance_score for b in self._cache.values()) / len(self._cache) * 4.0)
 
     def get(self, key: str) -> Optional[Belief]:
         return self._cache.get(key)
@@ -237,6 +285,53 @@ class BeliefSystem:
             conf = "strongly" if b.strength > 0.75 else "tentatively"
             lines.append(f'- I {conf} believe: "{b.claim}" (confidence {b.strength:.2f})')
         return "Current beliefs:\n" + "\n".join(lines)
+
+    def integrate(self, interpretation: dict) -> float:
+        """
+        Integrate an interpretation (from knowledge ingestion opinion layer).
+        Returns dissonance score triggered.
+
+        interpretation = {
+            "claim":       str,
+            "confidence":  float,
+            "valence":     float,   # +/- = positive/negative assessment
+            "novelty":     float,   # 0–1 how new is this idea
+        }
+        """
+        claim      = interpretation.get("claim", "").strip()
+        confidence = float(interpretation.get("confidence", 0.4))
+        valence    = float(interpretation.get("valence", 0.0))
+        novelty    = float(interpretation.get("novelty",  0.3))
+
+        if not claim:
+            return 0.0
+
+        import re, hashlib
+        key = hashlib.md5(claim[:60].encode()).hexdigest()[:16]
+
+        existing = self._cache.get(key)
+        dissonance = 0.0
+
+        if existing:
+            # Check for contradiction
+            disagreement = abs(existing.valence - valence)
+            if disagreement > 0.25:
+                # Cognitive dissonance — new interpretation conflicts
+                dissonance = self.challenge(key, valence, credibility=confidence)
+            else:
+                # Consistent — reinforce
+                self.confirm(key, magnitude=confidence * 0.5)
+        else:
+            # New belief formed from interpretation
+            self.assert_belief(
+                key, claim,
+                strength=confidence * 0.55,   # external knowledge starts at reduced strength
+                valence=valence,
+                source="interpretation"
+            )
+            dissonance = novelty * 0.1   # novelty itself creates mild tension
+
+        return dissonance
 
     def personality_bias(self, traits: dict) -> dict:
         """

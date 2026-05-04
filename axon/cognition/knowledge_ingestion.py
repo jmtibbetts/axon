@@ -124,6 +124,68 @@ def _concept_to_belief_key(concept: Dict) -> str:
     return ctx
 
 
+
+
+def _extract_interpretation(chunk: str, concepts: List[Dict],
+                             credibility: float = 0.6) -> Dict:
+    """
+    Form an OPINION about the chunk — not just what it says, but what
+    the system thinks about it: agreement, relevance, novelty, valence.
+
+    This is the step where ingestion stops being a database operation
+    and becomes something that has *takes*.
+
+    Returns an interpretation dict:
+    {
+        "claim":      str,    — the core assertion being evaluated
+        "confidence": float,  — how confident the system is in this reading
+        "valence":    float,  — positive/negative assessment of the idea
+        "novelty":    float,  — how new this seems (no prior concepts like it)
+        "agreement":  float,  — does this align with existing patterns?
+        "dissonance": float,  — how much does it conflict with assumed beliefs?
+    }
+    """
+    if not chunk:
+        return {}
+
+    # Derived valence — full chunk tone
+    chunk_valence = _extract_valence(chunk)
+
+    # Novelty proxy: how many unique non-common words?
+    common_words = {"the", "a", "an", "is", "are", "was", "were", "and", "or",
+                    "but", "in", "on", "at", "to", "for", "of", "with", "this",
+                    "that", "it", "be", "as", "by", "from", "not", "have", "has"}
+    words = [w.lower() for w in re.findall(r'\b\w{4,}\b', chunk)]
+    unique_ratio = len(set(words) - common_words) / max(1, len(words))
+    novelty_score = min(1.0, unique_ratio * 1.4)
+
+    # Confidence: proportional to how many concepts were explicitly extracted
+    # (heuristic: more causal patterns = more structured = more confident)
+    explicit_concepts = [c for c in concepts if c.get("outcome") != "general"]
+    confidence = min(0.90, 0.35 + len(explicit_concepts) * 0.10) * credibility
+
+    # Agreement bias: if chunk is very positive, the system leans toward agreement;
+    # if it's negative about something the system values, mild disagreement
+    agreement = 0.5 + chunk_valence * 0.2   # 0.3–0.7 range naturally
+
+    # Main claim: use first concept's context, or first sentence
+    if explicit_concepts:
+        ctx     = explicit_concepts[0]["context"]
+        outcome = explicit_concepts[0]["outcome"]
+        claim   = f"{ctx.capitalize()} leads to or causes {outcome}."
+    else:
+        sentences = re.split(r'(?<=[.!?])\s+', chunk.strip())
+        claim = sentences[0][:120] if sentences else chunk[:120]
+
+    return {
+        "claim":      claim,
+        "confidence": round(confidence, 3),
+        "valence":    round(chunk_valence, 3),
+        "novelty":    round(novelty_score, 3),
+        "agreement":  round(agreement, 3),
+        "dissonance": 0.0,   # filled in after belief.integrate() returns
+    }
+
 class KnowledgeIngestionPipeline:
     """
     Main entry point. Processes text and updates the system's internal state.
@@ -157,9 +219,14 @@ class KnowledgeIngestionPipeline:
             memories_stored = 0
             concept_list    = []
 
+            total_dissonance = 0.0
+
             for chunk in chunks:
                 chunk_valence = _extract_valence(chunk)
-                concepts = _extract_concepts(chunk)
+                concepts      = _extract_concepts(chunk)
+
+                # ── INTERPRETATION: form an opinion about this chunk ──────
+                interpretation = _extract_interpretation(chunk, concepts, credibility)
 
                 for concept in concepts:
                     total_concepts += 1
@@ -176,10 +243,8 @@ class KnowledgeIngestionPipeline:
                     # 2. Assert or challenge existing belief
                     existing = self._beliefs.get(key)
                     if existing:
-                        # Challenge: this might agree or contradict
                         self._beliefs.challenge(key, concept["valence"], credibility)
                     else:
-                        # New belief from external source — moderate confidence
                         self._beliefs.assert_belief(
                             key,
                             f"{concept['context'].capitalize()} tends to lead to {concept['outcome']}.",
@@ -196,15 +261,34 @@ class KnowledgeIngestionPipeline:
                             "source": source_label,
                         })
 
+                # ── OPINION INTEGRATION via BeliefSystem.integrate() ──────
+                if interpretation:
+                    diss = self._beliefs.integrate(interpretation)
+                    interpretation["dissonance"] = diss
+                    total_dissonance = max(total_dissonance, diss)
+                    beliefs_updated += 1   # count the interpretation as a belief update
+
+                    # High dissonance → extra neural stimulation callback
+                    if diss > 0.25 and self._on_concept:
+                        self._on_concept({
+                            "context":     interpretation["claim"][:60],
+                            "outcome":     "cognitive_tension",
+                            "valence":     -diss * 0.5,
+                            "confidence":  diss,
+                            "source":      source_label,
+                            "is_dissonance": True,
+                        })
+
             elapsed = round(time.time() - start, 3)
             summary = {
-                "source":           source_label,
-                "chunks":           len(chunks),
-                "concepts":         total_concepts,
-                "memories_stored":  memories_stored,
-                "beliefs_updated":  beliefs_updated,
-                "elapsed_s":        elapsed,
-                "top_concepts":     concept_list[:5],
+                "source":            source_label,
+                "chunks":            len(chunks),
+                "concepts":          total_concepts,
+                "memories_stored":   memories_stored,
+                "beliefs_updated":   beliefs_updated,
+                "max_dissonance":    round(total_dissonance, 3),
+                "elapsed_s":         elapsed,
+                "top_concepts":      concept_list[:5],
             }
             self._ingestion_log.append(summary)
             if len(self._ingestion_log) > 20:

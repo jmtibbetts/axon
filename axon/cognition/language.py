@@ -494,6 +494,32 @@ class LanguageCore:
             except Exception:
                 pass
 
+        # 1d. Drive + self-model context
+        if engine:
+            try:
+                drive_ctx = visual_context.get("drive_context", "") if visual_context else ""
+                self_model_ctx = visual_context.get("self_model", "") if visual_context else ""
+                if drive_ctx:
+                    sys_prompt += "\n\n[INTERNAL DRIVES] " + drive_ctx
+                if self_model_ctx:
+                    sys_prompt += "\n\n[SELF-MODEL] " + self_model_ctx
+                # High dissonance warning
+                try:
+                    diss = engine.beliefs.total_dissonance()
+                    if diss > 0.30:
+                        revised = engine.beliefs.high_dissonance_beliefs(0.25)
+                        if revised:
+                            claim_txt = revised[0]["claim"][:80]
+                            sys_prompt += (
+                                "\n\n[COGNITIVE TENSION] I am questioning: \"" + claim_txt + "\". "
+                                + f"Dissonance level: {diss:.0%}. "
+                                + "This creates uncertainty — acknowledge it if relevant."
+                            )
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
         # 1b. Inject neural state as natural-language self-awareness context
         if self.fabric:
             emo      = self.fabric.emotions.to_dict()

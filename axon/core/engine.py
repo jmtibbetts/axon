@@ -20,6 +20,10 @@ from axon.sensory.audio_emotion         import AudioEmotionDetector
 from axon.cognition.belief_system       import BeliefSystem
 from axon.cognition.preference_tracker  import PreferenceTracker, HobbyEngine
 from axon.cognition.knowledge_ingestion import KnowledgeIngestionPipeline
+from axon.cognition.drive_system        import DriveSystem
+from axon.cognition.value_system        import ValueSystem
+from axon.cognition.self_model          import SelfModel
+from axon.cognition.cognitive_cycle     import CognitiveCycle
 
 
 class AxonEngine:
@@ -70,6 +74,18 @@ class AxonEngine:
             on_concept    = self._on_knowledge_concept,
         )
 
+        print("  [Engine] Initializing drive system...")
+        self.drives = DriveSystem()
+
+        print("  [Engine] Initializing value system...")
+        self.value_system = ValueSystem()
+
+        print("  [Engine] Initializing self model...")
+        self.self_model = SelfModel()
+
+        # Last reward from fabric — consumed each cycle tick
+        self._last_reward: float = 0.0
+
         print("  [Engine] Initializing language core...")
         self.language = LanguageCore(
             self.memory,
@@ -114,6 +130,11 @@ class AxonEngine:
         self.fabric.start()
         self.audio_emo.start()
 
+        # ── Central Cognitive Cycle ────────────────────────────────────────
+        self.cycle = CognitiveCycle(self)
+        self.cycle.start()
+        self._emit("log", {"msg": "⚙ Cognitive cycle online — 10Hz synchronized loop"})
+
         if enable_camera:
             try:
                 self.optic.start(camera_index=camera_index)
@@ -150,6 +171,8 @@ class AxonEngine:
 
     def stop(self):
         self.running = False
+        if hasattr(self, "cycle"):
+            self.cycle.stop()
         self.optic.stop()
         self.auditory.stop()
         self.audio_emo.stop()
@@ -232,6 +255,12 @@ class AxonEngine:
 
         # Always stimulate social/face recognition areas
         self.fabric.stimulate_for_input("face", 0.25)
+        # Feed face data into cognitive cycle
+        if hasattr(self, "cycle"):
+            valence = self._EMOTION_VALENCE.get(emotion, 0.0) * emo_conf
+            self.cycle.inject_sensory("face_emotion",  emotion)
+            self.cycle.inject_sensory("face_valence",  valence)
+            self.cycle.inject_sensory("face_present",  not no_face)
 
         # Emotion → neural mapping (import inline to avoid circular)
         from axon.sensory.optic import EMOTION_NEURAL_MAP
@@ -353,6 +382,9 @@ class AxonEngine:
                 self.fabric.neuromod.stress(0.04)
             elif valence > 0.3 and arousal > 0.3:
                 self.fabric.neuromod.reward(0.03)
+        if hasattr(self, "cycle"):
+            self.cycle.inject_sensory("audio_arousal", state.get("arousal", 0.0))
+            self.cycle.inject_sensory("speaking",      state.get("speaking", False))
 
 
 
@@ -410,16 +442,25 @@ class AxonEngine:
     def get_identity_summary(self) -> dict:
         """
         Returns the full behavioral identity snapshot:
-        personality traits, beliefs, preferences, hobbies.
+        personality traits, beliefs, preferences, hobbies, drives, self-model.
         """
         fabric_state = self.fabric.get_state()
-        return {
-            "personality": fabric_state.get("personality", {}),
-            "beliefs":     self.beliefs.all_beliefs() if hasattr(self, 'beliefs') else [],
-            "preferences": self.preferences.summary()  if hasattr(self, 'preferences') else {},
-            "hobbies":     self.hobbies.summary()       if hasattr(self, 'hobbies') else {},
-            "top_beliefs_context": self.beliefs.as_context_string(5) if hasattr(self, 'beliefs') else "",
+        result = {
+            "personality":         fabric_state.get("personality", {}),
+            "beliefs":             self.beliefs.all_beliefs() if hasattr(self, "beliefs") else [],
+            "preferences":         self.preferences.summary() if hasattr(self, "preferences") else {},
+            "hobbies":             self.hobbies.summary() if hasattr(self, "hobbies") else {},
+            "top_beliefs_context": self.beliefs.as_context_string(5) if hasattr(self, "beliefs") else "",
         }
+        if hasattr(self, "drives") and self.drives:
+            result["drives"] = self.drives.all_drives()
+        if hasattr(self, "self_model") and self.self_model:
+            result["self_model"] = self.self_model.to_dict()
+        if hasattr(self, "value_system") and self.value_system:
+            result["value_summary"] = self.value_system.summarize()
+        if hasattr(self, "cycle") and self.cycle:
+            result["cycle_metrics"] = self.cycle.get_metrics()
+        return result
 
     def _on_transcript(self, text: str):
         if not text.strip():
@@ -445,6 +486,9 @@ class AxonEngine:
                 self._think(f"The person in front of you just introduced themselves as {extracted}. Respond warmly, say their name, and note you'll remember them.")
                 return
 
+        # Satisfy social + curiosity drives on speech input
+        if hasattr(self, "drives"):
+            self.drives.register_event("speech_input", magnitude=0.8)
         self._think(text)
 
     def _extract_name_from_text(self, text: str) -> str:
@@ -482,6 +526,16 @@ class AxonEngine:
             self.fabric.stimulate_for_input("thinking", 0.70)
             self.fabric.stimulate_for_input("memory",   0.55)
             optic_status = self.optic.get_status()
+            # Drive context
+            drive_ctx_str = ""
+            if hasattr(self, "drives"):
+                drive_ctx_str = self.drives.as_context_string()
+
+            # Self-model context
+            self_model_str = ""
+            if hasattr(self, "self_model"):
+                self_model_str = self.self_model.as_context_string()
+
             visual_ctx = {
                 "camera_running":  optic_status.get("running", False),
                 "face_present":    self._last_visual_ctx.get("face_present", False),
@@ -495,6 +549,9 @@ class AxonEngine:
                 "audio_emotion":   self._last_audio_emo.get("audio_emotion", ""),
                 "audio_arousal":   self._last_audio_emo.get("arousal", 0.0),
                 "voice_speaking":  self._last_audio_emo.get("speaking", False),
+                # Drive + identity context (injected into LLM system prompt)
+                "drive_context":   drive_ctx_str,
+                "self_model":      self_model_str,
             }
             try:
                 response = self.language.think(user_input, visual_context=visual_ctx)
@@ -510,6 +567,15 @@ class AxonEngine:
                 self.auditory.set_speaking(True)
                 self.voice.speak(response)
                 self.auditory.set_speaking(False)
+                # Drive satisfaction: social (response delivered) + competence
+                if hasattr(self, "drives"):
+                    self.drives.satisfy("social",     0.25)
+                    self.drives.satisfy("competence", 0.20)
+                # Self-model alignment scoring
+                if hasattr(self, "self_model") and response:
+                    align = self.self_model.score_alignment(response)
+                    if abs(align) > 0.01:
+                        self.fabric.neuromod.reward(align)
                 self._emit("voice_speaking", {
                     "speaking": False,
                     "enabled":  self.voice.enabled,
