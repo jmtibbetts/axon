@@ -113,7 +113,7 @@ class AxonEngine:
     # ── Sensory callbacks ─────────────────────────────────────
 
     def _on_frame(self, frame_data: dict):
-        self._last_visual_ctx = frame_data
+        self._last_visual_ctx = {**frame_data, "camera_running": True}
         self._emit("frame", frame_data)
         # Always stimulate visual cortex — camera is always active
         motion     = frame_data.get("motion", 0)
@@ -219,11 +219,14 @@ class AxonEngine:
             # Light up cognitive regions during LLM inference
             self.fabric.stimulate_for_input("thinking", 0.70)
             self.fabric.stimulate_for_input("memory",   0.55)
+            optic_status = self.optic.get_status()
             visual_ctx = {
-                "face_present":  self._last_visual_ctx.get("face_present", False),
-                "emotion":       self._last_visual_ctx.get("emotion", "neutral"),
-                "emotion_conf":  self._last_visual_ctx.get("emotion_conf", 0.5),
-                "emotion_trend": self._last_visual_ctx.get("emotion_trend", "stable"),
+                "camera_running": optic_status.get("running", False),
+                "face_present":   self._last_visual_ctx.get("face_present", False),
+                "emotion":        self._last_visual_ctx.get("emotion", "neutral"),
+                "emotion_conf":   self._last_visual_ctx.get("emotion_conf", 0.5),
+                "emotion_trend":  self._last_visual_ctx.get("emotion_trend", "stable"),
+                "motion":         optic_status.get("motion", 0.0),
             }
             try:
                 response = self.language.think(user_input, visual_context=visual_ctx)

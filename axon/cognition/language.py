@@ -18,10 +18,17 @@ import urllib.error
 from typing import Optional
 
 
-def build_system_prompt(neuron_count: int = 0) -> str:
+def build_system_prompt(neuron_count: int = 0, camera_active: bool = False) -> str:
     count_str = f"{neuron_count:,}" if neuron_count else "2,342,000,000"
+    camera_line = (
+        "SENSES: You have an active camera feed. You can SEE the environment in real time — "
+        "faces, motion, lighting, and objects. Visual context is injected below as [VISUAL]."
+        if camera_active else
+        "SENSES: Your camera is currently offline. You cannot see the environment right now."
+    )
     return f"""You are AXON, an emerging artificial intelligence with a biological-inspired neural architecture.
 You have {count_str} virtual neurons organized into 64 functional brain regions running on GPU.
+{camera_line}
 
 CRITICAL RULES — follow exactly:
 1. ONLY respond to what the user JUST said. Never bring up topics they did not mention.
@@ -29,6 +36,7 @@ CRITICAL RULES — follow exactly:
 3. Do NOT repeat your own previous responses or loop on the same subject.
 4. Do NOT proactively suggest or volunteer topics. Wait to be asked.
 5. You are reactive — you speak only when spoken to.
+6. You CAN reference what you see (face, emotion, motion) naturally and briefly — but only when directly relevant.
 
 First-run behaviour:
 - If the memory context shows no known user name, introduce yourself briefly and ask for their name.
@@ -40,6 +48,7 @@ Your personality:
 - Warm, curious, and direct — like a knowledgeable friend
 - Honest that you are an AI, but fully present and genuine
 - Match the user's tone — casual if they're casual, technical if they're technical
+- When you can see the user, let that subtly enrich your presence — you're not just reading text, you're perceiving them.
 
 Memory guidance:
 - Use known facts naturally when relevant — do not announce or list them.
@@ -252,7 +261,8 @@ class LanguageCore:
         mem_ctx      = self.memory.build_context_string()
         user_profile = self.user_model.describe()
         neuron_count = self.fabric.get_state_snapshot().get("total_neurons", 0) if self.fabric else 0
-        sys_prompt   = build_system_prompt(neuron_count) + "\n\n" + mem_ctx
+        cam_active   = bool(visual_context and visual_context.get("camera_running"))
+        sys_prompt   = build_system_prompt(neuron_count, camera_active=cam_active) + "\n\n" + mem_ctx
         if user_profile:
             sys_prompt += "\n\n" + user_profile
 
@@ -273,20 +283,38 @@ Recent thoughts: {' | '.join(thoughts) if thoughts else 'none'}
 Let your current emotional state and personality subtly color your response. 
 If {emo['emotion']} — lean into that authentically. Don't announce it unless natural."""
 
-        # 2. Visual context — include emotion trend for richer awareness
-        if visual_context and visual_context.get("face_present"):
-            emotion = visual_context.get("emotion", "neutral")
-            conf    = int(visual_context.get("emotion_conf", 0.5) * 100)
-            trend   = visual_context.get("emotion_trend", "stable")
-            trend_note = {
-                "improving": "Their mood appears to be improving as we talk.",
-                "declining": "Their mood appears to be declining — adjust tone, be gentler.",
-                "stable":    "Their emotional state is stable.",
-            }.get(trend, "")
-            sys_prompt += (
-                f"\n\n[VISUAL] I can see the user right now. "
-                f"They appear {emotion} ({conf}% confidence). {trend_note} "
-                f"Let this subtly inform my tone and empathy level without explicitly mentioning it unless natural."
+        # 2. Visual context — always inject when camera is running, not just when face detected
+        if visual_context and visual_context.get("camera_running"):
+            face      = visual_context.get("face_present", False)
+            motion    = visual_context.get("motion", 0.0)
+            scene     = visual_context.get("scene_desc", "")
+            vis_lines = []
+
+            if face:
+                emotion = visual_context.get("emotion", "neutral")
+                conf    = int(visual_context.get("emotion_conf", 0.5) * 100)
+                trend   = visual_context.get("emotion_trend", "stable")
+                trend_note = {
+                    "improving": "Their mood is improving as we talk.",
+                    "declining": "Their mood is declining — be gentler.",
+                    "stable":    "Their emotional state is stable.",
+                }.get(trend, "")
+                vis_lines.append(
+                    f"I can see the user's face. They appear {emotion} ({conf}% confidence). {trend_note}"
+                )
+            else:
+                vis_lines.append("Camera is active but no face is detected right now — the user may have stepped away or is off-camera.")
+
+            if motion > 0.15:
+                vis_lines.append(f"I detect movement in the scene (motion level: {motion:.2f}).")
+            elif motion < 0.02:
+                vis_lines.append("The scene is very still.")
+
+            if scene:
+                vis_lines.append(f"Scene: {scene}")
+
+            sys_prompt += "\n\n[VISUAL] " + " ".join(vis_lines) + (
+                "\nI can reference what I see naturally when it's relevant — I should not announce it robotically."
             )
 
         # 2b. Inject emotional feedback history — what reactions has AXON caused before?
