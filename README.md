@@ -1,6 +1,35 @@
 <div align="center">
 
 # 🧠 AXON
+
+## Installation
+
+### Windows
+```powershell
+# From the project root — right-click and Run with PowerShell
+scripts\launch.ps1
+```
+Automatically detects NVIDIA GPU. Falls back to CPU-only PyTorch if no GPU is found.
+
+### macOS / Linux
+```bash
+# One-time install
+bash scripts/install.sh
+
+# Every subsequent launch
+bash scripts/launch.sh
+```
+- **NVIDIA GPU (Linux):** installs CUDA-enabled PyTorch matching your driver version
+- **Apple Silicon (macOS M-series):** installs PyTorch with MPS backend
+- **CPU-only:** automatically selected when no compatible GPU is detected
+
+### GPU/CPU fallback logic
+The installer writes `data/gpu_config.json` recording which backend was chosen.
+The launcher reads this to set `AXON_DEVICE` before starting.
+If you add a GPU later, delete `data/gpu_config.json` and re-run the installer.
+
+---
+
 ### Emerging Artificial Intelligence
 
 *A biologically-inspired AI that sees, hears, recognises faces, reads your voice, learns, remembers, competes, forms beliefs, grows drives, and now thinks in a synchronized cognitive cycle — running entirely on your own hardware.*

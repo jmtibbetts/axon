@@ -50,29 +50,84 @@ Write-Host "  [2/10] Removing conflicting packages (fer, facenet-pytorch)..." -F
 & $venvPip uninstall keras tensorflow tensorflow-cpu tensorflow-gpu -y --quiet 2>$null
 
 # --------------------------------------------------------------------------
-# [3/10] PyTorch cu128
+# [3/10] PyTorch — GPU detection + CPU fallback
 # --------------------------------------------------------------------------
-Write-Host "  [3/10] Checking PyTorch + CUDA..." -ForegroundColor Yellow
-$cudaOk = & $venvPy -c "import torch; print(torch.cuda.is_available())" 2>$null
-if ($cudaOk -ne "True") {
-    Write-Host "  CUDA not available -- installing PyTorch nightly cu128..." -ForegroundColor Red
-    & $venvPip uninstall torch torchvision torchaudio -y --quiet 2>$null
-    & $venvPip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
-    $cudaOk2 = & $venvPy -c "import torch; print(torch.cuda.is_available())" 2>$null
-    if ($cudaOk2 -eq "True") {
-        $gpuName = & $venvPy -c "import torch; print(torch.cuda.get_device_name(0))" 2>$null
-        Write-Host "  [OK] CUDA ready: $gpuName" -ForegroundColor Green
-    } else {
-        Write-Host "  [WARN] CUDA still not available. Ensure NVIDIA driver >= 570 + CUDA 12.8." -ForegroundColor Red
+Write-Host "  [3/10] Detecting GPU and installing PyTorch..." -ForegroundColor Yellow
+
+# Detect NVIDIA GPU via nvidia-smi
+$gpuDetected = $false
+$gpuName     = ""
+try {
+    $nvsmiOut = & nvidia-smi --query-gpu=name --format=csv,noheader 2>$null
+    if ($LASTEXITCODE -eq 0 -and $nvsmiOut) {
+        $gpuDetected = $true
+        $gpuName     = $nvsmiOut.Trim().Split("`n")[0].Trim()
+        Write-Host "  GPU detected: $gpuName" -ForegroundColor Green
     }
-    # torchvision declares numpy as a dep without a lower bound -- re-pin after torch install
-    Write-Host "  Re-pinning numpy>=2.0 after torch install..." -ForegroundColor Cyan
-    & $venvPip install "numpy>=2.0" --upgrade --quiet
-} else {
-    $tv      = & $venvPy -c "import torch; print(torch.__version__)" 2>$null
-    $gpuName = & $venvPy -c "import torch; print(torch.cuda.get_device_name(0))" 2>$null
-    Write-Host "  [SKIP] torch $tv | GPU: $gpuName" -ForegroundColor DarkGray
+} catch {}
+
+$axonDevice  = if ($gpuDetected) { "cuda" } else { "cpu" }
+$gpuConfigDir = "$projectRoot\data"
+if (-not (Test-Path $gpuConfigDir)) { New-Item -ItemType Directory -Path $gpuConfigDir | Out-Null }
+$timestamp = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")
+@"
+{
+  "gpu_type": "$axonDevice",
+  "installed_at": "$timestamp",
+  "platform": "Windows",
+  "arch": "$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture)"
 }
+"@ | Set-Content "$gpuConfigDir\gpu_config.json"
+
+$cudaOk = & $venvPy -c "import torch; print(torch.cuda.is_available())" 2>$null
+
+if ($gpuDetected) {
+    # --- GPU path: install CUDA PyTorch ---
+    if ($cudaOk -ne "True") {
+        Write-Host "  CUDA torch not installed -- installing cu128 nightly..." -ForegroundColor Yellow
+        & $venvPip uninstall torch torchvision torchaudio -y --quiet 2>$null
+        & $venvPip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
+        $cudaOk2 = & $venvPy -c "import torch; print(torch.cuda.is_available())" 2>$null
+        if ($cudaOk2 -eq "True") {
+            $detectedGpu = & $venvPy -c "import torch; print(torch.cuda.get_device_name(0))" 2>$null
+            Write-Host "  [OK] CUDA ready: $detectedGpu" -ForegroundColor Green
+        } else {
+            Write-Host "  [WARN] CUDA not available after install. Driver >= 570 + CUDA 12.8 required." -ForegroundColor Red
+            Write-Host "  Falling back to CPU-only PyTorch..." -ForegroundColor Yellow
+            & $venvPip uninstall torch torchvision torchaudio -y --quiet 2>$null
+            & $venvPip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu --quiet
+            $axonDevice = "cpu"
+            @"
+{
+  "gpu_type": "cpu",
+  "installed_at": "$timestamp",
+  "platform": "Windows",
+  "arch": "fallback_from_cuda",
+  "note": "CUDA driver check failed at install time"
+}
+"@ | Set-Content "$gpuConfigDir\gpu_config.json"
+        }
+    } else {
+        $tv      = & $venvPy -c "import torch; print(torch.__version__)" 2>$null
+        $detectedGpu = & $venvPy -c "import torch; print(torch.cuda.get_device_name(0))" 2>$null
+        Write-Host "  [SKIP] torch $tv | GPU: $detectedGpu" -ForegroundColor DarkGray
+    }
+} else {
+    # --- CPU path: no GPU detected ---
+    Write-Host "  No NVIDIA GPU found -- installing CPU-only PyTorch..." -ForegroundColor Yellow
+    $torchOk = & $venvPy -c "import torch; print('ok')" 2>$null
+    if ($torchOk -ne "ok") {
+        & $venvPip uninstall torch torchvision torchaudio -y --quiet 2>$null
+        & $venvPip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu --quiet
+        Write-Host "  [OK] CPU-only PyTorch installed" -ForegroundColor Green
+    } else {
+        $tv = & $venvPy -c "import torch; print(torch.__version__)" 2>$null
+        Write-Host "  [SKIP] torch $tv (CPU mode)" -ForegroundColor DarkGray
+    }
+}
+# Always re-pin numpy after torch install (torchvision may downgrade it)
+Write-Host "  Re-pinning numpy>=2.0..." -ForegroundColor DarkGray
+& $venvPip install "numpy>=2.0" --upgrade --quiet
 
 # --------------------------------------------------------------------------
 # [4/10] Core deps

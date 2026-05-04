@@ -28,11 +28,57 @@ import torch.nn.functional as F
 # ── Device selection ────────────────────────────────────────────────────────
 
 def _best_device() -> torch.device:
+    """
+    Priority order:
+      1. AXON_DEVICE env var (set by launch script from gpu_config.json)
+      2. CUDA if available
+      3. MPS (Apple Silicon)
+      4. CPU
+    """
+    import os, json
+    from pathlib import Path
+
+    # Explicit override from launcher
+    env_device = os.environ.get("AXON_DEVICE", "").lower().strip()
+
+    if env_device == "cpu":
+        print("  [NeuralFabric] AXON_DEVICE=cpu — running fabric on CPU")
+        return torch.device("cpu")
+
+    if env_device == "mps":
+        if torch.backends.mps.is_available():
+            print("  [NeuralFabric] AXON_DEVICE=mps — Apple Silicon MPS enabled")
+            return torch.device("mps")
+        print("  [NeuralFabric] AXON_DEVICE=mps requested but MPS not available — CPU fallback")
+        return torch.device("cpu")
+
+    # Auto-detect: check gpu_config.json written by installer
+    config_path = Path(__file__).parents[2] / "data" / "gpu_config.json"
+    if config_path.exists():
+        try:
+            cfg = json.loads(config_path.read_text())
+            cfg_device = cfg.get("gpu_type", "").lower()
+            if cfg_device == "cpu":
+                print("  [NeuralFabric] gpu_config: CPU-only mode")
+                return torch.device("cpu")
+            if cfg_device == "mps" and torch.backends.mps.is_available():
+                print("  [NeuralFabric] gpu_config: MPS (Apple Silicon)")
+                return torch.device("mps")
+        except Exception:
+            pass
+
+    # CUDA
     if torch.cuda.is_available():
         name = torch.cuda.get_device_name(0)
         print(f"  [NeuralFabric] CUDA detected: {name} — running fabric on GPU")
         return torch.device("cuda")
-    print("  [NeuralFabric] No CUDA — running fabric on CPU")
+
+    # MPS
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        print("  [NeuralFabric] Apple Silicon MPS detected — running fabric on MPS")
+        return torch.device("mps")
+
+    print("  [NeuralFabric] No GPU detected — running fabric on CPU")
     return torch.device("cpu")
 
 

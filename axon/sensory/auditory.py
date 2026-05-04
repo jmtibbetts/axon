@@ -96,7 +96,21 @@ class AuditorySystem:
 
     def _load_whisper(self):
         import whisper, torch
-        if torch.cuda.is_available():
+        # Respect installer's device choice (AXON_DEVICE env or gpu_config.json)
+        import os, json
+        from pathlib import Path
+        _env_dev = os.environ.get("AXON_DEVICE", "").lower()
+        if _env_dev in ("cuda", "mps", "cpu"):
+            _auto = _env_dev
+        else:
+            _cfg = Path(__file__).parents[2] / "data" / "gpu_config.json"
+            _auto = json.loads(_cfg.read_text()).get("gpu_type", "auto") if _cfg.exists() else "auto"
+
+        if _auto == "cpu":
+            self._device = "cpu"
+        elif _auto == "mps" and hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            self._device = "mps"
+        elif torch.cuda.is_available():
             self._device = "cuda"
             gpu_name = torch.cuda.get_device_name(0)
             model_name = "medium.en"

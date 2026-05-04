@@ -20,7 +20,30 @@ import torchvision.transforms as T
 
 # ── Device ───────────────────────────────────────────────────────────────────
 
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# ── Device (mirrors neural_fabric logic, reads gpu_config.json) ──────────────
+def _optic_device():
+    import os, json
+    from pathlib import Path
+    _env = os.environ.get("AXON_DEVICE", "").lower()
+    if _env in ("cpu",):
+        return torch.device("cpu")
+    if _env == "mps" and hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        return torch.device("mps")
+    _cfg = Path(__file__).parents[2] / "data" / "gpu_config.json"
+    if _cfg.exists():
+        try:
+            _gt = json.loads(_cfg.read_text()).get("gpu_type", "")
+            if _gt == "cpu": return torch.device("cpu")
+            if _gt == "mps" and hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                return torch.device("mps")
+        except Exception: pass
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+DEVICE = _optic_device()
 
 # ── Emotion labels (FER2013 standard order) ───────────────────────────────────
 EMOTION_LABELS = ['angry', 'disgusted', 'fearful', 'happy', 'neutral', 'sad', 'surprised']
