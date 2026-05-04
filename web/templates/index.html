@@ -3265,27 +3265,81 @@ function renderPeopleList() {
   }
   el.innerHTML = people.map(p => {
     const isUnknown = !p.name || p.name === 'Unknown';
-    const firstSeen = p.first_seen ? new Date(p.first_seen * 1000).toLocaleDateString() : '';
-    return `<div style="background:#050810;border:1px solid #1e3a5f;border-radius:5px;padding:7px 9px;display:flex;align-items:center;gap:8px;">
-      <span style="font-size:18px;">${isUnknown ? '👤' : '😊'}</span>
-      <div style="flex:1;">
-        <div style="font-size:10px;color:${isUnknown?'#64748b':'#e2e8f0'};font-weight:600;">${p.name || 'Unknown'}</div>
-        <div style="font-size:8px;color:#475569;">Visits: ${p.visit_count || 1}${firstSeen ? ' · First: ' + firstSeen : ''}</div>
+    const firstSeen  = p.first_seen  ? new Date(p.first_seen  * 1000).toLocaleDateString() : '';
+    const lastSeen   = p.last_seen   ? new Date(p.last_seen   * 1000).toLocaleDateString() : '';
+    const pid        = p.person_id;
+    const notes      = (p.profile && p.profile.notes) ? p.profile.notes.replace(/`/g,'\`') : '';
+    const emoji      = isUnknown ? '👤' : '😊';
+    const nameColor  = isUnknown ? '#64748b' : '#e2e8f0';
+    const safeName   = (p.name || 'Unknown').replace(/'/g, "\'");
+    return `
+    <div id="person-card-${pid}" style="background:#050810;border:1px solid #1e3a5f;border-radius:6px;padding:8px 10px;margin-bottom:2px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+        <span style="font-size:18px;">${emoji}</span>
+        <div style="flex:1;">
+          <div style="font-size:10px;color:${nameColor};font-weight:600;">${p.name || 'Unknown'}</div>
+          <div style="font-size:8px;color:#475569;">Visits: ${p.visit_count || 1}${firstSeen ? ' · First: ' + firstSeen : ''}${lastSeen ? ' · Last: ' + lastSeen : ''}</div>
+        </div>
+        <div style="display:flex;gap:4px;align-items:center;">
+          ${isUnknown ? `<button onclick="promptNamePerson('${pid}')" style="background:#0f172a;border:1px solid #7c3aed;color:#a78bfa;font-size:8px;font-family:var(--font);padding:3px 7px;border-radius:3px;cursor:pointer;">Name</button>` : ''}
+          <button onclick="toggleNotes('${pid}')" title="Notes" style="background:#0f172a;border:1px solid #1e3a5f;color:#94a3b8;font-size:8px;font-family:var(--font);padding:3px 7px;border-radius:3px;cursor:pointer;">📝</button>
+          <button onclick="forgetPerson('${pid}','${safeName}')" title="Forget" style="background:#0f172a;border:1px solid #7f1d1d;color:#f87171;font-size:8px;font-family:var(--font);padding:3px 7px;border-radius:3px;cursor:pointer;">✕</button>
+        </div>
       </div>
-      ${isUnknown ? `<button onclick="promptNamePerson('${p.person_id}')" style="
-        background:#0f172a;border:1px solid #7c3aed;color:#a78bfa;
-        font-size:8px;font-family:var(--font);padding:3px 7px;
-        border-radius:3px;cursor:pointer;">Name</button>` : ''}
+      <div id="notes-panel-${pid}" style="display:none;margin-top:4px;">
+        <textarea id="notes-input-${pid}"
+          placeholder="Notes about ${p.name || 'this person'}..."
+          style="width:100%;box-sizing:border-box;background:#0a1628;border:1px solid #1e3a5f;color:#94a3b8;font-size:8px;font-family:var(--font);padding:5px 7px;border-radius:4px;resize:vertical;min-height:56px;outline:none;"
+        >${notes}</textarea>
+        <div style="display:flex;justify-content:flex-end;margin-top:3px;">
+          <button onclick="saveNote('${pid}')" id="save-note-btn-${pid}" style="background:#0f2444;border:1px solid #2563eb;color:#93c5fd;font-size:8px;font-family:var(--font);padding:3px 10px;border-radius:3px;cursor:pointer;">Save note</button>
+        </div>
+      </div>
     </div>`;
   }).join('');
 }
 
+function toggleNotes(pid) {
+  const panel = document.getElementById('notes-panel-' + pid);
+  if (!panel) return;
+  const open = panel.style.display === 'none';
+  panel.style.display = open ? 'block' : 'none';
+  if (open) {
+    const ta = document.getElementById('notes-input-' + pid);
+    if (ta) ta.focus();
+  }
+}
+
+function saveNote(pid) {
+  const ta  = document.getElementById('notes-input-' + pid);
+  const btn = document.getElementById('save-note-btn-' + pid);
+  if (!ta) return;
+  const note = ta.value.trim();
+  if (!note) return;
+  socket.emit('add_note_to_person', { person_id: pid, note });
+  if (btn) { btn.textContent = 'Saved ✓'; setTimeout(() => { btn.textContent = 'Save note'; }, 1800); }
+}
+
+function forgetPerson(pid, name) {
+  if (!confirm('Remove ' + name + " from AXON's memory?\n\nThis cannot be undone.")) return;
+  socket.emit('forget_person', { person_id: pid });
+}
+
 function promptNamePerson(personId) {
-  const name = prompt('What is this person's name?');
+  const name = prompt("What is this person's name?");
   if (name && name.trim()) {
     socket.emit('name_person', { person_id: personId, name: name.trim() });
   }
 }
+
+socket.on('person_forgotten', d => {
+  if (_knownPeople[d.person_id]) delete _knownPeople[d.person_id];
+  renderPeopleList();
+});
+
+socket.on('note_saved', d => {
+  console.log('[People] Note saved for', d.person_id);
+});
 
 socket.on('connect', () => {
   setTimeout(() => socket.emit('get_people'), 1000);

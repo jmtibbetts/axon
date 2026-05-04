@@ -206,6 +206,41 @@ def on_name_person(data):
             print(f"  [App] name_person error: {e}")
 
 
+@socketio.on("forget_person")
+def on_forget_person(data):
+    global _engine
+    if not _engine:
+        return
+    pid = data.get("person_id")
+    if pid:
+        try:
+            _engine.face_id.forget_person(pid)
+            emit("person_forgotten", {"person_id": pid}, broadcast=True)
+            print(f"  [App] Forgot person {pid}")
+        except Exception as e:
+            print(f"  [App] forget_person error: {e}")
+
+
+@socketio.on("add_note_to_person")
+def on_add_note_to_person(data):
+    global _engine
+    if not _engine:
+        return
+    pid  = data.get("person_id")
+    note = data.get("note", "").strip()
+    if pid and note:
+        try:
+            _engine.face_id.add_note(pid, note)
+            # Also save a semantic memory about this person
+            p = _engine.face_id.get_person(pid)
+            name = p.get("name", "someone") if p else "someone"
+            if _engine.memory:
+                _engine.memory.store_semantic(f"Note about {name}: {note}", "people", confidence=0.9)
+            emit("note_saved", {"person_id": pid}, broadcast=True)
+        except Exception as e:
+            print(f"  [App] add_note error: {e}")
+
+
 @socketio.on("get_voice_config")
 def on_get_voice_config():
     global _engine
