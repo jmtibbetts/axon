@@ -62,10 +62,10 @@ class AxonEngine:
         self.hobbies     = HobbyEngine(db_path)
 
         # Inject into fabric so reward loop can use them
-        self.fabric._gpu._belief_system      = self.beliefs
-        self.fabric._gpu._preference_tracker = self.preferences
-        self.fabric._gpu._pref_tracker       = self.preferences
-        self.fabric._gpu._cluster_names_ref  = self.fabric._gpu._cluster_names
+        self.fabric._belief_system      = self.beliefs
+        self.fabric._preference_tracker = self.preferences
+        self.fabric._pref_tracker       = self.preferences
+        self.fabric._cluster_names_ref  = self.fabric._cluster_names
 
         print("  [Engine] Initializing knowledge ingestion pipeline...")
         self.knowledge = KnowledgeIngestionPipeline(
@@ -943,8 +943,8 @@ class AxonEngine:
         # Idle hobby detection: check if system is self-activating a preference
         if hasattr(self, 'hobbies') and hasattr(self, 'fabric'):
             try:
-                act = self.fabric._gpu.activation
-                names = self.fabric._gpu._cluster_names
+                act = self.fabric.activation
+                names = self.fabric._cluster_names
                 new_hobby = self.hobbies.idle_tick(act, names)
                 if new_hobby:
                     self._emit("new_hobby", {"cluster": new_hobby})
