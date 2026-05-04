@@ -9,7 +9,7 @@
 [![PyTorch](https://img.shields.io/badge/PyTorch-CUDA%2012.8-orange?style=flat-square&logo=pytorch)](https://pytorch.org)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2011-0078d4?style=flat-square&logo=windows)](https://microsoft.com)
 [![GPU](https://img.shields.io/badge/GPU-RTX%205090-76b900?style=flat-square&logo=nvidia)](https://nvidia.com)
-[![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/badge/License-Axon%20v1.0%20Personal%2FNC-blue?style=flat-square)](LICENSE)
 
 </div>
 
@@ -476,7 +476,16 @@ data/
 
 ## License
 
-MIT — build on it, break it, make it yours.
+**Axon License v1.0** — free for personal, educational, and non-commercial use.
+
+Commercial use (products, SaaS, internal tooling, paid APIs) requires a separate license.
+
+- [Full license terms](LICENSE)
+- [Commercial licensing info](COMMERCIAL.md)
+- Contact: jon@jontibbetts.com
+
+> Versions released prior to May 4, 2026 were under MIT. Those versions remain MIT.
+> All subsequent versions are governed by Axon License v1.0.
 
 ---
 

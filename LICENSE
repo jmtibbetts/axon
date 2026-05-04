@@ -1,0 +1,70 @@
+Axon License v1.0 (Personal Use + Commercial Restrictions)
+
+Copyright (c) 2026 Jon Tibbetts
+
+Permission is granted to any individual to use, copy, modify, and run this
+software for personal, educational, and non-commercial purposes only.
+
+=============================================================================
+ALLOWED - Non-Commercial Use
+=============================================================================
+
+You may:
+
+  - Use the software for personal projects
+  - Study, modify, and experiment with the code
+  - Run the system locally for research or learning
+  - Share unmodified copies for non-commercial purposes with attribution
+
+=============================================================================
+RESTRICTED - Commercial Use
+=============================================================================
+
+You may NOT, without explicit written permission from the copyright holder:
+
+  - Use this software or derivatives in any commercial product or service
+  - Sell, sublicense, or distribute this software for profit
+  - Offer this software as a hosted or managed service (SaaS, API, platform)
+  - Use this software internally within a business or organization
+  - Train, enhance, or power a commercial AI system using this codebase
+
+=============================================================================
+COMMERCIAL LICENSING
+=============================================================================
+
+Commercial use requires a separate license agreement.
+
+Contact: jon@jontibbetts.com
+
+=============================================================================
+DUAL LICENSING NOTICE
+=============================================================================
+
+This project is dual-licensed:
+
+  - Free for personal/non-commercial use under this license
+  - Paid/commercial licenses available upon request
+
+=============================================================================
+PRIOR VERSIONS
+=============================================================================
+
+Versions of this project released prior to May 4, 2026 were licensed under
+the MIT License. Those versions remain under MIT. All subsequent versions
+are governed by this license agreement.
+
+=============================================================================
+NO WARRANTY
+=============================================================================
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+
+=============================================================================
+ENFORCEMENT
+=============================================================================
+
+Unauthorized commercial use constitutes a violation of this license and may
+result in legal action under applicable intellectual property law.
+

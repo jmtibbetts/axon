@@ -1,0 +1,8 @@
+By using this software, you agree to the Axon License v1.0.
+
+Commercial use is strictly prohibited without a valid written license
+from the copyright holder.
+
+Copyright (c) 2026 Jon Tibbetts
+Full license: see LICENSE file or https://github.com/jmtibbetts/axon/blob/main/LICENSE
+Commercial licensing: jon@jontibbetts.com

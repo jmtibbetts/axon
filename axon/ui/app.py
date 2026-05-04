@@ -442,6 +442,8 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, _shutdown)
 
     print("\n  AXON — Emerging Intelligence\n  Open: http://localhost:7777\n")
+    print("  Axon Non-Commercial License | Copyright (c) 2026 Jon Tibbetts")
+    print("  Commercial use requires a license: jon@jontibbetts.com\n")
     print("  Press Ctrl+C to exit\n")
     try:
         socketio.run(app, host="0.0.0.0", port=7777, debug=False,
