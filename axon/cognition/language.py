@@ -188,6 +188,14 @@ class LanguageCore:
             print(f"  [Language] LM Studio not detected ({e}). Will use Claude.")
 
     def _lm_studio_available(self) -> bool:
+        # Auto-reprobe every 30 seconds so late-loading models get detected
+        # and recovered connections are noticed without a manual reprobe
+        now = time.time()
+        if not hasattr(self, '_last_probe_time'):
+            self._last_probe_time = 0
+        if (now - self._last_probe_time) > 30:
+            self._last_probe_time = now
+            self._probe_lm_studio()
         return bool(self._detected_model or self.lm_studio_model)
 
     def _call_lm_studio(self, messages: list, system: str) -> str:
@@ -303,12 +311,17 @@ If {emo['emotion']} — lean into that authentically. Don't announce it unless n
                     except Exception:
                         pass
                     print(f"  [Language] LM Studio HTTP {e.code} ({body}), falling back to Claude.")
+                    # Force a fresh probe next call — model may have changed
+                    self._last_probe_time = 0
                     if self.api_key:
                         text = self._call_claude(self._history, sys_prompt)
                     else:
                         text = "LM Studio returned an error and no Claude key is configured."
                 except Exception as e:
                     print(f"  [Language] LM Studio error ({e}), falling back to Claude.")
+                    # Reset so next call probes again — catches connection drops
+                    self._detected_model  = None
+                    self._last_probe_time = 0
                     if self.api_key:
                         text = self._call_claude(self._history, sys_prompt)
                     else:
