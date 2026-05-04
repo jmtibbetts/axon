@@ -23,41 +23,51 @@ $venvPy  = "$projectRoot\.venv\Scripts\python.exe"
 $venvPip = "$projectRoot\.venv\Scripts\pip.exe"
 
 # ---------------------------------------------------------------------------
-Write-Host "  [1/5] pip..." -ForegroundColor Yellow
+Write-Host "  [1/6] pip..." -ForegroundColor Yellow
 & $venvPip install --upgrade pip setuptools wheel --quiet
 
 # ---------------------------------------------------------------------------
-Write-Host "  [2/5] PyTorch nightly cu128..." -ForegroundColor Yellow
-$tv      = & $venvPy -c 'import torch; print(torch.__version__)' 2>$null
-$cudaOk  = & $venvPy -c 'import torch; print(torch.cuda.is_available())' 2>$null
-$isNightly = $tv -match "dev"
+# fer and facenet-pytorch conflict with modern torch + numpy.
+# Remove them so they cannot drag torch back to 2.2.2 (CPU-only).
+Write-Host "  [2/6] Removing conflicting packages (fer, facenet-pytorch)..." -ForegroundColor Yellow
+& $venvPip uninstall fer facenet-pytorch -y --quiet 2>$null
 
-if ((-not $isNightly) -or ($cudaOk -ne "True")) {
-    if ($cudaOk -ne "True") {
-        Write-Host "  WARNING: PyTorch=$tv but CUDA not available. Reinstalling cu128 build..." -ForegroundColor Red
-    } else {
-        Write-Host "  Installing PyTorch nightly cu128..." -ForegroundColor Yellow
-    }
+# ---------------------------------------------------------------------------
+Write-Host "  [3/6] PyTorch nightly cu128..." -ForegroundColor Yellow
+$tv     = & $venvPy -c 'import torch; print(torch.__version__)' 2>$null
+$cudaOk = & $venvPy -c 'import torch; print(torch.cuda.is_available())' 2>$null
+
+if ($cudaOk -ne "True") {
+    Write-Host "  CUDA not available (torch=$tv). Installing cu128 build..." -ForegroundColor Red
     & $venvPip uninstall torch torchvision torchaudio -y --quiet 2>$null
     & $venvPip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
     $cudaOk2 = & $venvPy -c 'import torch; print(torch.cuda.is_available())' 2>$null
     if ($cudaOk2 -eq "True") {
         $gpuName = & $venvPy -c 'import torch; print(torch.cuda.get_device_name(0))' 2>$null
-        Write-Host "  [OK] CUDA available: $gpuName" -ForegroundColor Green
+        Write-Host "  [OK] CUDA ready: $gpuName" -ForegroundColor Green
     } else {
         Write-Host "  [WARN] CUDA still not available. Check NVIDIA driver >= 570 + CUDA 12.8." -ForegroundColor Red
     }
 } else {
     $gpuName = & $venvPy -c 'import torch; print(torch.cuda.get_device_name(0))' 2>$null
-    Write-Host "  [SKIP] PyTorch nightly ok ($tv) | GPU: $gpuName" -ForegroundColor DarkGray
+    Write-Host "  [SKIP] torch ok ($tv) | GPU: $gpuName" -ForegroundColor DarkGray
 }
 
 # ---------------------------------------------------------------------------
-Write-Host "  [3/5] Core deps..." -ForegroundColor Yellow
-& $venvPip install --quiet flask flask-socketio flask-cors eventlet anthropic openai-whisper sounddevice opencv-python mediapipe edge-tts pygame numpy scipy pyaudio
+Write-Host "  [4/6] Core deps..." -ForegroundColor Yellow
+& $venvPip install --quiet flask flask-socketio flask-cors eventlet anthropic openai-whisper sounddevice opencv-python mediapipe edge-tts pygame scipy pyaudio
+
+# numpy: must be >=2 for opencv-python 4.13, but we pin to avoid breakage
+$npv = & $venvPy -c 'import numpy; print(numpy.__version__)' 2>$null
+if (-not ($npv -match "^2\.")) {
+    Write-Host "  Upgrading numpy to 2.x..." -ForegroundColor Cyan
+    & $venvPip install "numpy>=2.0" --quiet
+} else {
+    Write-Host "  [SKIP] numpy ok ($npv)" -ForegroundColor DarkGray
+}
 
 # ---------------------------------------------------------------------------
-Write-Host "  [3b/5] Vision deps (YOLOv8 + emotion)..." -ForegroundColor Yellow
+Write-Host "  [5/6] Vision deps (YOLOv8 + deepface)..." -ForegroundColor Yellow
 
 $ultraOk = & $venvPy -c 'import ultralytics' 2>$null
 if ($LASTEXITCODE -ne 0) {
@@ -67,34 +77,29 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "  [SKIP] ultralytics ok" -ForegroundColor DarkGray
 }
 
-$ferOk = & $venvPy -c 'from fer import FER' 2>$null
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "  fer broken or missing. Trying fer==22.5.1 + tensorflow..." -ForegroundColor Cyan
-    & $venvPip uninstall fer -y --quiet 2>$null
-    & $venvPip install "fer==22.5.1" tensorflow
-    $ferOk2 = & $venvPy -c 'from fer import FER' 2>$null
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "  fer still broken. Installing deepface as emotion backend..." -ForegroundColor Yellow
-        & $venvPip install deepface
-    }
-} else {
-    Write-Host "  [SKIP] fer ok" -ForegroundColor DarkGray
-}
-
+# deepface is our emotion backend (no torch version conflicts)
 $dfOk = & $venvPy -c 'import deepface' 2>$null
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "  Installing deepface (emotion fallback)..." -ForegroundColor Cyan
+    Write-Host "  Installing deepface..." -ForegroundColor Cyan
     & $venvPip install deepface
 } else {
     Write-Host "  [SKIP] deepface ok" -ForegroundColor DarkGray
 }
 
+# Verify deepface can actually run
+$dfTest = & $venvPy -c 'from deepface import DeepFace; print("ok")' 2>$null
+if ($dfTest -ne "ok") {
+    Write-Host "  [WARN] deepface import failed -- emotion detection will use heuristic fallback" -ForegroundColor Yellow
+} else {
+    Write-Host "  [OK] deepface ready" -ForegroundColor Green
+}
+
 # ---------------------------------------------------------------------------
-Write-Host "  [4/5] Creating data dirs..." -ForegroundColor Yellow
+Write-Host "  [6/6] Creating data dirs..." -ForegroundColor Yellow
 New-Item -ItemType Directory -Force -Path "data\memory" | Out-Null
 
 # ---------------------------------------------------------------------------
-Write-Host "  [5/5] Launching AXON..." -ForegroundColor Green
+Write-Host "  Launching AXON..." -ForegroundColor Green
 Write-Host ""
 Write-Host "  Open: http://localhost:7777" -ForegroundColor Cyan
 Write-Host "  Press Ctrl+C here to stop AXON" -ForegroundColor DarkGray
