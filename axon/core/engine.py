@@ -57,7 +57,10 @@ class AxonEngine:
         )
         self.auditory = AuditorySystem(on_speech=lambda text, conf: self._on_transcript(text), on_volume=lambda v: None, device_index=None)
 
-        self._last_visual_ctx = {}
+        self._last_visual_ctx            = {}
+        self._emotion_before_response    = "neutral"
+        self._emotion_history: list      = []
+        self._last_face_data: dict       = {}
 
     # ── Start / Stop ──────────────────────────────────────────
 
@@ -127,11 +130,34 @@ class AxonEngine:
         self.fabric.stimulate_region("primary_visual",   0.08 + brightness * 0.18)
         self.fabric.stimulate_region("motion_detection", 0.05 + motion   * 0.25)
 
+    # Valence scores — positive emotions score high, negative score low
+    _EMOTION_VALENCE = {
+        "happy":     1.0, "surprised": 0.3, "neutral":   0.0,
+        "fearful":  -0.4, "disgusted": -0.6, "sad":      -0.7, "angry": -0.9,
+    }
+
     def _on_face(self, face_data: dict):
         self._emit("face", face_data)
-        emotion = face_data.get("emotion", "neutral")
-        probs   = face_data.get("emotion_probs", {})
-        conf    = face_data.get("confidence", 0.5)
+        import time as _time
+        emotion  = face_data.get("emotion", "neutral")
+        probs    = face_data.get("emotion_probs", {})
+        conf     = face_data.get("confidence", 0.5)
+        emo_conf = probs.get(emotion, conf) if probs else conf
+
+        # ── Store face data + rolling history ────────────────────────────
+        self._last_face_data = face_data
+        self._emotion_history.append((emotion, emo_conf, _time.time()))
+        if len(self._emotion_history) > 10:
+            self._emotion_history.pop(0)
+
+        # Update visual context with emotion trend
+        trend = self._emotion_trend()
+        self._last_visual_ctx.update({
+            "face_present":   True,
+            "emotion":        emotion,
+            "emotion_conf":   round(emo_conf, 3),
+            "emotion_trend":  trend,
+        })
 
         # Always stimulate social/face recognition areas
         self.fabric.stimulate_for_input("face", 0.25)
@@ -141,8 +167,7 @@ class AxonEngine:
         mapping = EMOTION_NEURAL_MAP.get(emotion, EMOTION_NEURAL_MAP["neutral"])
 
         # Scale stimulation by emotion probability (confidence in the emotion)
-        emo_conf = probs.get(emotion, conf) if probs else conf
-        scale    = max(0.3, min(1.0, emo_conf * 1.5))   # boost weak signals
+        scale = max(0.3, min(1.0, emo_conf * 1.5))
 
         for cluster, amount in mapping.get("stimulate", []):
             self.fabric.stimulate_region(cluster, amount * scale)
@@ -154,7 +179,24 @@ class AxonEngine:
 
         # Log significant emotion changes
         if emotion != "neutral" and emo_conf > 0.45:
-            self._emit("log", {"msg": f"😶 Emotion: {face_data.get('emoji','')} {emotion} ({int(emo_conf*100)}%)"})
+            self._emit("log", {"msg": f"😶 Emotion: {face_data.get('emoji','')} {emotion} ({int(emo_conf*100)}%) trend:{trend}"})
+
+    def _emotion_trend(self) -> str:
+        """Compute trajectory of last N emotions: improving / declining / stable."""
+        if len(self._emotion_history) < 3:
+            return "stable"
+        recent  = [self._EMOTION_VALENCE.get(e, 0) * c for e, c, _ in self._emotion_history[-5:]]
+        delta   = recent[-1] - recent[0]
+        if delta >  0.25: return "improving"
+        if delta < -0.25: return "declining"
+        return "stable"
+
+    def _current_face_valence(self) -> float:
+        """Return valence score of the current detected emotion."""
+        if not self._emotion_history:
+            return 0.0
+        emotion, conf, _ = self._emotion_history[-1]
+        return self._EMOTION_VALENCE.get(emotion, 0.0) * conf
 
     def _on_transcript(self, text: str):
         if not text.strip():
@@ -170,12 +212,18 @@ class AxonEngine:
     def _think(self, user_input: str):
         def _run():
             self._emit("thinking", {"state": True})
+            # Snapshot user emotion BEFORE we respond (baseline for feedback)
+            valence_before = self._current_face_valence()
+            emotion_before = (self._emotion_history[-1][0] if self._emotion_history else "neutral")
+
             # Light up cognitive regions during LLM inference
             self.fabric.stimulate_for_input("thinking", 0.70)
             self.fabric.stimulate_for_input("memory",   0.55)
             visual_ctx = {
-                "face_present": self._last_visual_ctx.get("face_present", False),
-                "emotion":      self._last_visual_ctx.get("emotion", "neutral"),
+                "face_present":  self._last_visual_ctx.get("face_present", False),
+                "emotion":       self._last_visual_ctx.get("emotion", "neutral"),
+                "emotion_conf":  self._last_visual_ctx.get("emotion_conf", 0.5),
+                "emotion_trend": self._last_visual_ctx.get("emotion_trend", "stable"),
             }
             try:
                 response = self.language.think(user_input, visual_context=visual_ctx)
@@ -200,14 +248,74 @@ class AxonEngine:
                 self.fabric.stimulate_for_input("language_out", 0.78)
                 self.fabric.stimulate_for_input("thinking",     0.55)
                 self.fabric.neuromod.reward(0.08)
-                # Emit memory event for activity feed
+
+                # ── Emotional Reinforcement Loop ──────────────────────────
+                # Give the face sensor ~2 seconds to react to our response
+                import time as _t
+                _t.sleep(2.0)
+                valence_after  = self._current_face_valence()
+                emotion_after  = (self._emotion_history[-1][0] if self._emotion_history else "neutral")
+                delta_valence  = valence_after - valence_before
+                face_present   = bool(self._emotion_history)
+
+                if face_present:
+                    if delta_valence >= 0.3:
+                        # Positive reaction — reward the pathways that fired
+                        reward_amt = min(0.25, delta_valence * 0.5)
+                        self.fabric.neuromod.reward(reward_amt)
+                        self.fabric.stimulate_for_input("reward_signal", 0.60)
+                        self._emit("log", {"msg": f"😊 Emotional reward +{reward_amt:.2f} — user {emotion_before}→{emotion_after}"})
+                        self._emit("memory_event", {
+                            "type":   "fact",
+                            "label":  f"Positive reaction: {emotion_before}→{emotion_after}",
+                            "detail": f"Response produced +{delta_valence:.2f} emotional shift",
+                        })
+                        # Strengthen language↔social Hebbian link — talking this way worked
+                        result = self.memory.coactivate("language", "social_empathy")
+                        self._emit("hebbian_event", {**result, "type": "new" if result["is_new"] else "strengthen"})
+
+                    elif delta_valence <= -0.3:
+                        # Negative reaction — apply stress penalty
+                        stress_amt = min(0.20, abs(delta_valence) * 0.4)
+                        self.fabric.neuromod.stress(stress_amt)
+                        self._emit("log", {"msg": f"😟 Emotional penalty -{stress_amt:.2f} — user {emotion_before}→{emotion_after}"})
+                        self._emit("memory_event", {
+                            "type":   "episode",
+                            "label":  f"Negative reaction: {emotion_before}→{emotion_after}",
+                            "detail": f"Response produced {delta_valence:.2f} emotional shift — will adjust",
+                        })
+                        # Store what caused a negative reaction so the LLM avoids it
+                        self.memory.learn(
+                            f"negative_reaction_{emotion_after}",
+                            f"User responded negatively (became {emotion_after}) to a response on: {user_input[:80]}",
+                            confidence=0.8, source="emotional_feedback"
+                        )
+                    else:
+                        # Neutral / stable — small baseline reward for engagement
+                        self.fabric.neuromod.reward(0.04)
+
+                    # Store emotional context of this exchange in episodic memory
+                    self.memory.store_episode(
+                        modality="emotional_feedback",
+                        content={
+                            "before":   emotion_before,
+                            "after":    emotion_after,
+                            "delta":    round(delta_valence, 3),
+                            "trend":    self._emotion_trend(),
+                            "input":    user_input[:120],
+                        },
+                        topics=["emotion", "reinforcement", emotion_after],
+                        importance=0.5 + abs(delta_valence) * 0.5,
+                        emotion=emotion_after,
+                    )
+
+                # ── Emit memory/pathway events for activity feed ──────────
                 ep_count = self.memory.count_episodes()
                 self._emit("memory_event", {
                     "type":   "episode",
                     "label":  f"Episode #{ep_count} stored",
-                    "detail": f"User input encoded to episodic memory",
+                    "detail": "User input encoded to episodic memory",
                 })
-                # Emit top hebbian connections so UI can show pathway changes
                 top = self.memory.top_connections(5)
                 for conn in top[:3]:
                     self._emit("hebbian_event", {
@@ -217,7 +325,6 @@ class AxonEngine:
                         "weight": conn["weight"],
                         "fires":  conn["fires"],
                     })
-                # Emit active region spikes for activity feed
                 state_snap = self.fabric.get_state_snapshot()
                 for region, act in (state_snap.get("regions") or {}).items():
                     if act > 0.55:

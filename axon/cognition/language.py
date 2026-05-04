@@ -273,10 +273,43 @@ Recent thoughts: {' | '.join(thoughts) if thoughts else 'none'}
 Let your current emotional state and personality subtly color your response. 
 If {emo['emotion']} — lean into that authentically. Don't announce it unless natural."""
 
-        # 2. Visual context
+        # 2. Visual context — include emotion trend for richer awareness
         if visual_context and visual_context.get("face_present"):
             emotion = visual_context.get("emotion", "neutral")
-            sys_prompt += f"\n\n[VISUAL] I can see you right now. You appear {emotion}."
+            conf    = int(visual_context.get("emotion_conf", 0.5) * 100)
+            trend   = visual_context.get("emotion_trend", "stable")
+            trend_note = {
+                "improving": "Their mood appears to be improving as we talk.",
+                "declining": "Their mood appears to be declining — adjust tone, be gentler.",
+                "stable":    "Their emotional state is stable.",
+            }.get(trend, "")
+            sys_prompt += (
+                f"\n\n[VISUAL] I can see the user right now. "
+                f"They appear {emotion} ({conf}% confidence). {trend_note} "
+                f"Let this subtly inform my tone and empathy level without explicitly mentioning it unless natural."
+            )
+
+        # 2b. Inject emotional feedback history — what reactions has AXON caused before?
+        try:
+            neg_reactions = {k: v for k, v in (self.memory.all_facts() or {}).items()
+                             if k.startswith("negative_reaction_")}
+            if neg_reactions:
+                notes = "; ".join(f"{k.replace('negative_reaction_','')}: {v[:60]}" for k, v in list(neg_reactions.items())[:3])
+                sys_prompt += "\n\n[EMOTIONAL MEMORY] Past negative reactions to avoid: " + notes
+            # Pull recent emotional feedback episodes
+            recent_emo = [e for e in self.memory.recall_recent(20, modality="emotional_feedback")]
+            if recent_emo:
+                last = recent_emo[0]
+                c = last.get("content", {}) if isinstance(last.get("content"), dict) else {}
+                if c.get("delta") and abs(c["delta"]) > 0.2:
+                    direction = "Build on this." if c["delta"] > 0 else "Adjust approach."
+                    sys_prompt += (
+                        "\n[LAST EMOTIONAL OUTCOME] My previous response moved user from "
+                        f"{c.get('before','?')} to {c.get('after','?')} "
+                        f"(delta {c['delta']:+.2f}). {direction}"
+                    )
+        except Exception:
+            pass
 
         # 3. Web search if needed
         search_result = ""
