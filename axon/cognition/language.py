@@ -419,7 +419,7 @@ class LanguageCore:
         self.user_model = UserModel(face_id_system)
         self.user_model.increment_sessions()
 
-        def respond(self, user_input: str, visual_context: dict = None, system_note: str = None) -> str:
+    def respond(self, user_input: str, visual_context: dict = None, system_note: str = None) -> str:
         """
         Wrapper around think() that supports:
         - system_note: injected as extra system context (for face identity prompts)
