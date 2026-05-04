@@ -38,8 +38,8 @@ $venvPip = "$projectRoot\.venv\Scripts\pip.exe"
 # --------------------------------------------------------------------------
 Write-Host ""
 Write-Host "  [1/10] Upgrading pip + setuptools..." -ForegroundColor Yellow
-& $venvPip install --upgrade pip wheel --quiet
-& $venvPip install "setuptools<82" --quiet
+& $venvPy -m pip install --upgrade pip wheel --quiet
+& $venvPy -m pip install "setuptools<82" --quiet
 
 # --------------------------------------------------------------------------
 # [2/10] Remove conflicting packages
@@ -109,12 +109,17 @@ $ferOk = & $venvPy -c "from fer import FER; print('ok')" 2>$null
 if ($ferOk -ne "ok") {
     Write-Host "  Installing fer..." -ForegroundColor Cyan
     & $venvPip install fer --quiet
+    # fer pulls in old numpy -- re-pin immediately
+    Write-Host "  Re-pinning numpy>=2.0 after fer install..." -ForegroundColor Cyan
+    & $venvPip install "numpy>=2.0" --upgrade --quiet
 } else { Write-Host "  [SKIP] fer ok" -ForegroundColor DarkGray }
 
 $dfOk = & $venvPy -c "from deepface import DeepFace; print('ok')" 2>$null
 if ($dfOk -ne "ok") {
     Write-Host "  Installing deepface..." -ForegroundColor Cyan
     & $venvPip install deepface
+    # deepface may also downgrade numpy -- re-pin
+    & $venvPip install "numpy>=2.0" --upgrade --quiet
 } else { Write-Host "  [SKIP] deepface ok" -ForegroundColor DarkGray }
 
 # --------------------------------------------------------------------------
@@ -190,6 +195,20 @@ if ($epubOk -ne "ok") {
 # --------------------------------------------------------------------------
 Write-Host "  [9/10] Creating data directories..." -ForegroundColor Yellow
 New-Item -ItemType Directory -Force -Path "data\memory" | Out-Null
+
+# --------------------------------------------------------------------------
+# Final numpy guard -- any package above may have downgraded it
+# --------------------------------------------------------------------------
+Write-Host "  Verifying numpy version..." -ForegroundColor DarkGray
+$npFinal = & $venvPy -c "import numpy; print(numpy.__version__)" 2>$null
+if (-not ($npFinal -match "^2\.")) {
+    Write-Host "  numpy downgraded to $npFinal -- re-pinning to 2.x..." -ForegroundColor Yellow
+    & $venvPip install "numpy>=2.0" --upgrade --quiet
+    $npFinal2 = & $venvPy -c "import numpy; print(numpy.__version__)" 2>$null
+    Write-Host "  numpy now: $npFinal2" -ForegroundColor Green
+} else {
+    Write-Host "  [OK] numpy $npFinal" -ForegroundColor DarkGray
+}
 
 # --------------------------------------------------------------------------
 # [10/10] Preflight check
