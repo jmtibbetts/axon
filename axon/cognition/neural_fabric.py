@@ -1762,6 +1762,16 @@ class NeuralFabric:
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
         print("  [NeuralFabric] GPU tick loop started")
+        # Watchdog: restart the tick thread if it crashes
+        def _watchdog():
+            while self.running:
+                time.sleep(5)
+                if self.running and (self._thread is None or not self._thread.is_alive()):
+                    print("  [NeuralFabric] tick thread died — restarting...")
+                    self._thread = threading.Thread(target=self._loop, daemon=True)
+                    self._thread.start()
+        self._watchdog_thread = threading.Thread(target=_watchdog, daemon=True)
+        self._watchdog_thread.start()
 
     def stop(self):
         self.running = False
@@ -1769,116 +1779,126 @@ class NeuralFabric:
 
     def _loop(self):
         dt = 0.05   # 20 Hz
+        _consecutive_errors = 0
         while self.running:
             t0 = time.time()
-            self._tick += 1
-            self.neuromod.tick(dt)
+            try:
+                self._tick += 1
+                self.neuromod.tick(dt)
 
-            # Full GPU tick
-            spike = self._gpu_tick(dt)
+                # Full GPU tick
+                spike = self._gpu_tick(dt)
 
-            # ── Temporal reward evaluation every 10 ticks ─────────────────
-            if self._tick % 10 == 0:
-                with self._lock:
-                    act_snap = self.activation.clone()
-                self.temp_reward.push(
-                    act_snap,
-                    self.emotions.current,
-                    self.emotions.valence
-                )
-            # Inject current personality + belief biases into reward buffer each cycle
-            if hasattr(self, 'personality') and hasattr(self, '_belief_system'):
-                traits = self.personality.to_dict()
-                biases = self._belief_system.personality_bias(traits) if self._belief_system else {}
-                self.temp_reward.set_personality_context(traits, biases)
-            if self._tick % self.temp_reward.horizon == 0 and self._tick > 0:
-                # Pass meta_sensitivity so reward magnitude is meta-modulated
-                r, p, dom = self.temp_reward.evaluate(
-                    self.conflict,
-                    meta_sensitivity=self.meta.reward_sensitivity
-                )
-                net = r - p
-                # Store reward in history for meta-controller trend tracking
-                self._reward_history.append(net)
+                # ── Temporal reward evaluation every 10 ticks ─────────────────
+                if self._tick % 10 == 0:
+                    with self._lock:
+                        act_snap = self.activation.clone()
+                    self.temp_reward.push(
+                        act_snap,
+                        self.emotions.current,
+                        self.emotions.valence
+                    )
+                # Inject current personality + belief biases into reward buffer each cycle
+                if hasattr(self, 'personality') and hasattr(self, '_belief_system'):
+                    traits = self.personality.to_dict()
+                    biases = self._belief_system.personality_bias(traits) if self._belief_system else {}
+                    self.temp_reward.set_personality_context(traits, biases)
+                if self._tick % self.temp_reward.horizon == 0 and self._tick > 0:
+                    # Pass meta_sensitivity so reward magnitude is meta-modulated
+                    r, p, dom = self.temp_reward.evaluate(
+                        self.conflict,
+                        meta_sensitivity=self.meta.reward_sensitivity
+                    )
+                    net = r - p
+                    # Store reward in history for meta-controller trend tracking
+                    self._reward_history.append(net)
 
-                # Structural route reinforcement
-                if self.predictor._last_active_pairs:
-                    signal = net * self.cog_state.reward_sensitivity()
-                    self.predictor.reinforce_routes(
-                        self.weight_mat,
-                        self.predictor._last_active_pairs,
-                        signal
+                    # Structural route reinforcement
+                    if self.predictor._last_active_pairs:
+                        signal = net * self.cog_state.reward_sensitivity()
+                        self.predictor.reinforce_routes(
+                            self.weight_mat,
+                            self.predictor._last_active_pairs,
+                            signal
+                        )
+
+                    # ── Strategy Library: store sequence if reward was good ───────
+                    if r > self.strategy_lib.MIN_REWARD and len(self._act_sequence_buf) >= 3:
+                        self.strategy_lib.maybe_store(
+                            act_sequence  = list(self._act_sequence_buf),
+                            emotion       = self.emotions.current,
+                            cog_snapshot  = self.cog_state.to_dict(),
+                            reward        = r,
+                        )
+                        # Occasionally mutate a random stored strategy
+                        if len(self.strategy_lib._lib) > 3 and random.random() < 0.05:
+                            idx = random.randint(0, len(self.strategy_lib._lib) - 1)
+                            self.strategy_lib.mutate_strategy(idx)
+
+                    # Update CognitiveState from this evaluation cycle
+                    stats = self.temp_reward.stats()
+                    self.cog_state.update(
+                        surprise     = self._last_surprise,
+                        reward       = r,
+                        penalty      = p,
+                        valence      = self.emotions.valence,
+                        novelty_rate = 1.0 - (1.0 / max(1, stats["path_diversity"])),
                     )
 
-                # ── Strategy Library: store sequence if reward was good ───────
-                if r > self.strategy_lib.MIN_REWARD and len(self._act_sequence_buf) >= 3:
-                    self.strategy_lib.maybe_store(
-                        act_sequence  = list(self._act_sequence_buf),
-                        emotion       = self.emotions.current,
-                        cog_snapshot  = self.cog_state.to_dict(),
-                        reward        = r,
+                    # Run InternalCritic
+                    with self._lock:
+                        act_now = self.activation.clone().cpu()
+                    self.critic.evaluate(
+                        act_now,
+                        self.predictor.route_success,
+                        self.cog_state,
+                        self.emotions.valence,
                     )
-                    # Occasionally mutate a random stored strategy
-                    if len(self.strategy_lib._lib) > 3 and random.random() < 0.05:
-                        idx = random.randint(0, len(self.strategy_lib._lib) - 1)
-                        self.strategy_lib.mutate_strategy(idx)
 
-                # Update CognitiveState from this evaluation cycle
-                stats = self.temp_reward.stats()
-                self.cog_state.update(
-                    surprise     = self._last_surprise,
-                    reward       = r,
-                    penalty      = p,
-                    valence      = self.emotions.valence,
-                    novelty_rate = 1.0 - (1.0 / max(1, stats["path_diversity"])),
-                )
+                # CPU readback for emotion/thoughts/callbacks (every 4 ticks)
+                if self._tick % 4 == 0:
+                    spike_cpu = spike.cpu().numpy()
+                    spike_dict = {n: float(spike_cpu[i])
+                                  for i, n in enumerate(self._cluster_names)}
 
-                # Run InternalCritic
-                with self._lock:
-                    act_now = self.activation.clone().cpu()
-                self.critic.evaluate(
-                    act_now,
-                    self.predictor.route_success,
-                    self.cog_state,
-                    self.emotions.valence,
-                )
+                    self.emotions.update(spike_dict)
 
-            # CPU readback for emotion/thoughts/callbacks (every 4 ticks)
-            if self._tick % 4 == 0:
-                spike_cpu = spike.cpu().numpy()
-                spike_dict = {n: float(spike_cpu[i])
-                              for i, n in enumerate(self._cluster_names)}
+                    if self._tick % 200 == 0:   # every ~10s — was every 1s
+                        active = sorted(spike_dict.keys(),
+                                        key=lambda k: spike_dict[k], reverse=True)[:5]
+                        self.thoughts.generate(active, self.emotions.current)
 
-                self.emotions.update(spike_dict)
+                    if self._tick % 100 == 0:
+                        self.personality.drift({
+                            "rewarding": spike_dict.get("amygdala_reward",0) > 0.4,
+                            "stressful": spike_dict.get("amygdala_fear",0)  > 0.4,
+                            "creative":  spike_dict.get("creativity",0)     > 0.3,
+                            "social":    spike_dict.get("social_cognition",0)>0.3,
+                        })
 
-                if self._tick % 200 == 0:   # every ~10s — was every 1s
-                    active = sorted(spike_dict.keys(),
-                                    key=lambda k: spike_dict[k], reverse=True)[:5]
-                    self.thoughts.generate(active, self.emotions.current)
+                    if self._tick % 1000 == 0:
+                        self.personality.save()
 
-                if self._tick % 100 == 0:
-                    self.personality.drift({
-                        "rewarding": spike_dict.get("amygdala_reward",0) > 0.4,
-                        "stressful": spike_dict.get("amygdala_fear",0)  > 0.4,
-                        "creative":  spike_dict.get("creativity",0)     > 0.3,
-                        "social":    spike_dict.get("social_cognition",0)>0.3,
-                    })
+                    if self._callbacks:
+                        state = self._make_snapshot(spike_dict)
+                        for cb in self._callbacks:
+                            try: cb(state)
+                            except: pass
 
-                if self._tick % 1000 == 0:
-                    self.personality.save()
+                # Ambient firing
+                if self._tick % 2 == 0:
+                    self._ambient_fire()
 
-                if self._callbacks:
-                    state = self._make_snapshot(spike_dict)
-                    for cb in self._callbacks:
-                        try: cb(state)
-                        except: pass
-
-            # Ambient firing
-            if self._tick % 2 == 0:
-                self._ambient_fire()
-
-            elapsed = time.time() - t0
-            time.sleep(max(0.0, dt - elapsed))
+                elapsed = time.time() - t0
+                time.sleep(max(0.0, dt - elapsed))
+                _consecutive_errors = 0
+            except Exception as _loop_exc:
+                _consecutive_errors += 1
+                import traceback
+                print(f"  [NeuralFabric] tick error (#{_consecutive_errors}): {_loop_exc}")
+                if _consecutive_errors <= 3:
+                    traceback.print_exc()
+                time.sleep(min(2.0, dt * _consecutive_errors))
 
     def _make_snapshot(self, spike_dict: dict) -> dict:
         top = sorted(spike_dict.items(), key=lambda x: x[1], reverse=True)[:15]
