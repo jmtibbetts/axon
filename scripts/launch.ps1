@@ -278,8 +278,11 @@ if missing_optional:
 sys.exit(0)
 '@
 
-$preflight_out  = & $venvPy -c $preflight_script 2>&1
+$preflight_tmp = [System.IO.Path]::GetTempFileName() + ".py"
+[System.IO.File]::WriteAllText($preflight_tmp, $preflight_script)
+$preflight_out  = & $venvPy $preflight_tmp 2>&1
 $preflight_exit = $LASTEXITCODE
+Remove-Item $preflight_tmp -Force -ErrorAction SilentlyContinue
 
 if ($preflight_exit -ne 0) {
     Write-Host ""
