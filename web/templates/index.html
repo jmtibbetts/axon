@@ -67,7 +67,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);
 #user-profile-panel .prow{display:flex;gap:4px;margin-bottom:1px;}
 #user-profile-panel .pk{color:#7c3aed;min-width:70px;font-size:7.5px;text-transform:uppercase;letter-spacing:.05em;padding-top:1px;}
 #user-profile-panel .pv{color:#ddd6fe;flex:1;word-break:break-word;}
-#region-legend .rl{display:flex;align-items:center;gap:5px;font-size:9px;color:rgba(255,255,255,0.75);letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;}
+#region-legend{display:none!important;} #region-legend .rl{display:flex;align-items:center;gap:5px;font-size:9px;color:rgba(255,255,255,0.75);letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;}
 #region-legend .rl .dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;box-shadow:0 0 4px currentColor;}
 
 /* -- CHAT -- */
@@ -1150,11 +1150,13 @@ function drawNeural() {
   }
 
   // ── Draw neurons ────────────────────────────────────────────────────────────
+  // Always draw neurons with a dim resting glow so the map is never black
+  const RESTING_GLOW = 0.035;
   neuronNodes.forEach(n => {
-    if (n.activation < 0.003) return;
-    const r     = n.baseR * 0.6 + n.activation * 2.2;
-    // Alpha starts near 0 for dim neurons — only active ones are clearly visible
-    const alpha = Math.round(Math.pow(n.activation, 0.7) * 200).toString(16).padStart(2,'0');
+    const vis = Math.max(RESTING_GLOW, n.activation);
+    if (vis < 0.005) return;
+    const r     = n.baseR * 0.6 + vis * 2.2;
+    const alpha = Math.round(Math.pow(vis, 0.7) * 200).toString(16).padStart(2,'0');
 
     // Core
     nCtx.beginPath();
@@ -1163,9 +1165,9 @@ function drawNeural() {
     nCtx.fill();
 
     // Glow halo — proportional to activation
-    if (n.activation > 0.55) {
-      const glowR   = r * (1.8 + n.activation * 2.5);
-      const glowAlpha = Math.round(n.activation * 70).toString(16).padStart(2,'0');
+    if (vis > 0.45) {
+      const glowR     = r * (1.8 + vis * 2.5);
+      const glowAlpha = Math.round(vis * 70).toString(16).padStart(2,'0');
       const grd = nCtx.createRadialGradient(n.x,n.y,r,n.x,n.y,glowR);
       grd.addColorStop(0, n.color + glowAlpha);
       grd.addColorStop(1, n.color + '00');
@@ -1185,6 +1187,40 @@ function drawNeural() {
       nCtx.stroke();
     }
   });
+
+  // ── Draw region labels directly on canvas near cluster centers ──────────────
+  nCtx.save();
+  for (const [key, props] of Object.entries(REGION_DEFS)) {
+    const cx = props.x * W;
+    const cy = props.y * H;
+    const act = sharpenedRegion[key] || 0;
+    // Label alpha: always readable but glows brighter when active
+    const labelAlpha = 0.38 + act * 0.62;
+    const labelSize  = Math.round(9 + act * 3);
+
+    // Tinted background pill for readability
+    nCtx.font = `${labelSize}px monospace`;
+    const tw = nCtx.measureText(props.label).width;
+    const px = cx - tw / 2 - 4;
+    const py = cy + props.spread * H * 0.75 + 10;  // below the cluster
+    const ph = labelSize + 5;
+    nCtx.fillStyle = `rgba(2,2,10,${0.55 + act * 0.3})`;
+    nCtx.beginPath();
+    nCtx.roundRect(px, py - ph + 3, tw + 8, ph, 3);
+    nCtx.fill();
+
+    // Label text — color-matched to region
+    const hexAlpha = Math.round(labelAlpha * 255).toString(16).padStart(2,'0');
+    nCtx.fillStyle = props.color + hexAlpha;
+    nCtx.fillText(props.label, cx - tw / 2, py);
+
+    // Small connector dot at cluster center
+    nCtx.beginPath();
+    nCtx.arc(cx, cy, 2.5 + act * 2, 0, Math.PI * 2);
+    nCtx.fillStyle = props.color + Math.round((0.5 + act * 0.5) * 255).toString(16).padStart(2,'0');
+    nCtx.fill();
+  }
+  nCtx.restore();
 
   requestAnimationFrame(drawNeural);
 }
