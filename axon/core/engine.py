@@ -349,7 +349,11 @@ class AxonEngine:
     _DIAG_KEYWORDS = {
         # full diagnostic visual panel
         "diagnostic": "panel",
+        "/diagnostic": "panel",
+        "/diag": "panel",
         "diagnostic mode": "panel",
+        "run diagnostic": "panel",
+        "show diagnostic": "panel",
         # summary self-description
         "describe yourself": "summary",
         "what are you": "summary",
@@ -420,8 +424,10 @@ class AxonEngine:
 
         mode = self._check_self_query(user_input)
         if mode == "panel":
-            # Tell UI to open the visual diagnostic panel
+            # Open the visual diagnostic panel AND speak a concise summary
             self._emit("open_diagnostic", {})
+            import threading
+            threading.Thread(target=self._deliver_diagnostic_summary, daemon=True).start()
             return
         if mode == "neuro":
             self._deliver_neuro_description()
@@ -431,6 +437,63 @@ class AxonEngine:
             return
 
         self._think(user_input)
+
+    def _deliver_diagnostic_summary(self):
+        """Speak a concise diagnostic readout when panel is opened."""
+        try:
+            self._emit("thinking", {"state": True})
+            d = self._get_diagnostic_impl()
+            n = d.get("neural", {})
+            m = d.get("memory", {})
+            st = d.get("state", {})
+            emo = st.get("emotion", {})
+            neuro = st.get("neuromod", {})
+            cog = d.get("cognitive_state", {})
+            fabric = self.fabric.get_state_snapshot()
+            conflict = fabric.get("conflict", {})
+
+            # Build spoken summary
+            top_dom = ", ".join((conflict.get("top_dominant") or [])[:3])
+            valence_word = (
+                "positive" if float(emo.get("valence", 0)) > 0.1
+                else "negative" if float(emo.get("valence", 0)) < -0.1
+                else "neutral"
+            )
+            dopa = round(float(neuro.get("dopamine", 0.5)) * 100)
+            sero = round(float(neuro.get("serotonin", 0.5)) * 100)
+            conf_pct  = round(float(cog.get("confidence",  0.5)) * 100) if cog else None
+            unc_pct   = round(float(cog.get("uncertainty", 0.5)) * 100) if cog else None
+            urg_pct   = round(float(cog.get("urgency",     0.1)) * 100) if cog else None
+            gpu_used  = n.get("gpu_mem_used_gb", 0)
+            gpu_total = n.get("gpu_mem_total_gb", 0)
+            active_conns = n.get("total_connections", 0)
+            total_n   = n.get("total_neurons", 0)
+
+            lines = [
+                f"Diagnostic scan complete.",
+                f"I am running {total_n:,} virtual neurons across {n.get('num_clusters', 0)} functional clusters, "
+                f"with {active_conns:,} active synaptic connections.",
+                f"GPU memory: {gpu_used} of {gpu_total} GB in use.",
+                f"I have {m.get('episodic_count', 0)} episodic memories and {m.get('semantic_facts', 0)} learned facts.",
+                f"Current emotional state is {emo.get('emotion', 'unknown')} — valence is {valence_word}.",
+                f"Dopamine is at {dopa}%, serotonin at {sero}%.",
+            ]
+            if top_dom:
+                lines.append(f"The most dominant cognitive clusters right now are: {top_dom}.")
+            if conf_pct is not None:
+                lines.append(
+                    f"Cognitively I am {conf_pct}% confident, {unc_pct}% uncertain, "
+                    f"and urgency is at {urg_pct}%."
+                )
+            summary = " ".join(lines)
+
+            self._emit("thinking", {"state": False})
+            self._emit("response", {"text": summary})
+            if self.voice.enabled:
+                self.voice.speak(summary)
+        except Exception as e:
+            self._emit("thinking", {"state": False})
+            self._emit("response", {"text": f"Diagnostic scan failed: {e}"})
 
     def _deliver_self_description(self, mode: str):
         """Generate and stream self-description through normal response channel + voice."""

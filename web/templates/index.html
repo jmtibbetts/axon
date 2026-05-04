@@ -555,35 +555,10 @@ function fmt(n) {
 }
 </script>
 
+<!-- diagnostic JS moved below socket init -->
 <script>
-// ── DIAGNOSTIC MODE ─────────────────────────────────────────────
-function requestDiagnostic() {
-  document.getElementById('diag-overlay').style.display = 'block';
-  document.getElementById('diag-neural').innerHTML   = '<div class="diag-loading">⚡ SCANNING NEURAL FABRIC…</div>';
-  document.getElementById('diag-memory').innerHTML   = '';
-  document.getElementById('diag-caps').innerHTML     = '';
-  document.getElementById('diag-state').innerHTML    = '';
-  document.getElementById('diag-platform').innerHTML = '';
-  document.getElementById('diag-clusters').innerHTML = '';
-  socket.emit('diagnostic');
-}
+  // diagnostic functions defined after socket init
 
-function closeDiagnostic() {
-  document.getElementById('diag-overlay').style.display = 'none';
-}
-
-// Close on Escape
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeDiagnostic();
-});
-
-socket.on('open_diagnostic', function() {
-  requestDiagnostic();
-});
-
-socket.on('diagnostic_result', function(d) {
-  console.log('[AXON] diagnostic_result received:', d);
-  try {
 
   if (d.error) {
     document.getElementById('diag-neural').innerHTML =
@@ -720,6 +695,193 @@ socket.on('diagnostic_result', function(d) {
 
 <script>
 const socket = io();
+
+// ═══════════════════════════════════════════════════════════════
+// DIAGNOSTIC MODE  — defined here so socket is in scope
+// ═══════════════════════════════════════════════════════════════
+function requestDiagnostic() {
+  const overlay = document.getElementById('diag-overlay');
+  if (!overlay) return;
+  overlay.style.display = 'block';
+  document.getElementById('diag-neural').innerHTML   = '<div class="diag-loading">⚡ SCANNING NEURAL FABRIC…</div>';
+  document.getElementById('diag-memory').innerHTML   = '';
+  document.getElementById('diag-caps').innerHTML     = '';
+  document.getElementById('diag-state').innerHTML    = '';
+  document.getElementById('diag-platform').innerHTML = '';
+  document.getElementById('diag-clusters').innerHTML = '';
+  socket.emit('diagnostic');
+}
+
+function closeDiagnostic() {
+  const overlay = document.getElementById('diag-overlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeDiagnostic();
+});
+
+socket.on('open_diagnostic', function() {
+  requestDiagnostic();
+});
+
+socket.on('diagnostic_result', function(d) {
+  console.log('[AXON] diagnostic_result received:', d);
+  try {
+
+  if (d.error) {
+    document.getElementById('diag-neural').innerHTML =
+      '<div class="diag-loading" style="color:#ef4444;text-align:left;white-space:pre-wrap;font-size:8px;padding:16px;">' +
+      '<div style="color:#ef4444;margin-bottom:8px;font-size:10px;">⚠ DIAGNOSTIC ERROR</div>' +
+      String(d.error).replace(/</g,'&lt;') + '</div>';
+    return;
+  }
+
+  document.getElementById('diag-timestamp').textContent =
+    'Snapshot: ' + (d.timestamp || '').replace('T',' ').slice(0,19);
+
+  // ── Neural Architecture ──────────────────────────────────────
+  const n = d.neural || {};
+  const gpuPct = n.gpu_mem_total_gb ? Math.round(n.gpu_mem_used_gb / n.gpu_mem_total_gb * 100) : 0;
+  document.getElementById('diag-neural').innerHTML =
+    '<div class="diag-h">🧠 Neural Architecture</div>' +
+    diagRow('Virtual Neurons',    fmt(n.total_neurons),       'accent') +
+    diagRow('Active Connections', fmt(n.total_connections),   'accent') +
+    diagRow('Functional Clusters', n.num_clusters,            'yellow') +
+    diagRow('GPU',                 n.gpu || 'unknown',         'green') +
+    diagRow('GPU Memory',
+      (n.gpu_mem_used_gb||0) + ' GB / ' + (n.gpu_mem_total_gb||0) + ' GB  (' + gpuPct + '%)',
+      gpuPct > 80 ? 'red' : 'green');
+
+  // ── Memory ──────────────────────────────────────────────────
+  const m = d.memory || {};
+  let pathHTML = '';
+  (m.top_pathways || []).forEach(function(p) {
+    const a = (p.cluster_a || p.a || '?').replace(/_/g,' ');
+    const b = (p.cluster_b || p.b || '?').replace(/_/g,' ');
+    const s = parseFloat(p.strength != null ? p.strength : (p.weight != null ? p.weight : 0)).toFixed(3);
+    const fires = p.fires ? ' · ' + p.fires + ' fires' : '';
+    pathHTML += '<div class="diag-pathway"><span>' + a + ' ↔ ' + b +
+      '<span style="color:#374151;font-size:7.5px;">' + fires + '</span></span>' +
+      '<span class="strength">' + s + '</span></div>';
+  });
+  const oldest = m.oldest_memory
+    ? m.oldest_memory.slice(0,16).replace('T',' ')
+    : 'No memories yet';
+  document.getElementById('diag-memory').innerHTML =
+    '<div class="diag-h">💾 Memory System</div>' +
+    diagRow('Episodic Memories', fmt(m.episodic_count),   'accent') +
+    diagRow('Semantic Facts',    fmt(m.semantic_facts),   'yellow') +
+    diagRow('Hebbian Pathways',  fmt(m.hebbian_pathways), 'green') +
+    diagRow('Oldest Memory',     oldest) +
+    (pathHTML ? '<div style="margin-top:8px;font-size:8px;color:#374151;letter-spacing:.05em;margin-bottom:4px;">TOP PATHWAYS</div>' + pathHTML : '');
+
+  // ── Capabilities ─────────────────────────────────────────────
+  const caps   = d.capabilities || [];
+  const senses = d.senses || {};
+  let capsHTML = '<div class="diag-h">⚙️ Capabilities</div><div style="padding:4px 0;">';
+  caps.forEach(function(c) { capsHTML += '<span class="diag-cap active">✓ ' + c + '</span>'; });
+  capsHTML += '</div>';
+  capsHTML +=
+    '<div style="margin-top:10px;">' +
+    diagRow('Camera / Vision',    senses.vision   ? '✓ ACTIVE — ' + (senses.vision_detector||'') : '✗ Offline', senses.vision   ? 'green' : 'red') +
+    diagRow('Microphone / STT',   senses.auditory ? '✓ ACTIVE' : '✗ Offline', senses.auditory ? 'green' : 'red') +
+    diagRow('Voice Output (TTS)', senses.voice_out? '✓ ACTIVE' : '✗ Offline', senses.voice_out? 'green' : 'red') +
+    '</div>';
+  document.getElementById('diag-caps').innerHTML = capsHTML;
+
+  // ── Current State ────────────────────────────────────────────
+  const st    = d.state || {};
+  const emo   = st.emotion   || {};
+  const neuro = st.neuromod  || {};
+  const pers  = st.personality || {};
+
+  let neuroHTML = '';
+  Object.entries(neuro).forEach(function(e2) {
+    const pct = Math.round((e2[1]||0)*100);
+    neuroHTML += '<div class="diag-bar-row">' +
+      '<div class="diag-bar-label">' + e2[0] + '</div>' +
+      '<div class="diag-bar-track"><div class="diag-bar-fill" style="width:' + pct + '%"></div></div>' +
+      '<div class="diag-bar-val">' + pct + '%</div></div>';
+  });
+
+  let persHTML = '';
+  Object.entries(pers).forEach(function(e3) {
+    const pct = Math.round((e3[1]||0)*100);
+    persHTML += '<div class="diag-bar-row">' +
+      '<div class="diag-bar-label">' + e3[0].replace(/_/g,' ') + '</div>' +
+      '<div class="diag-bar-track"><div class="diag-bar-fill" style="width:' + pct + '%;background:linear-gradient(90deg,#4c1d95,#a855f7)"></div></div>' +
+      '<div class="diag-bar-val">' + pct + '%</div></div>';
+  });
+
+  // ── Cognitive state bars (new) ────────────────────────────────
+  const cog = d.cognitive_state || {};
+  let cogHTML = '';
+  if (Object.keys(cog).length) {
+    const cogColors = {confidence:'#4ade80', uncertainty:'#f97316', urgency:'#ef4444'};
+    Object.entries(cog).forEach(function(e4) {
+      const pct = Math.round((e4[1]||0)*100);
+      const col = cogColors[e4[0]] || '#6366f1';
+      cogHTML += '<div class="diag-bar-row">' +
+        '<div class="diag-bar-label">' + e4[0] + '</div>' +
+        '<div class="diag-bar-track"><div class="diag-bar-fill" style="width:' + pct + '%;background:' + col + '"></div></div>' +
+        '<div class="diag-bar-val" style="color:' + col + '">' + pct + '%</div></div>';
+    });
+  }
+
+  // Critic
+  const critic = d.critic || {};
+  const criticHTML = Object.keys(critic).length
+    ? diagRow('Last Regret',    parseFloat(critic.last_regret||0).toFixed(3), critic.last_regret > 0.2 ? 'red' : '') +
+      diagRow('Hesitations',   critic.hesitations || 0, 'yellow') +
+      diagRow('Fast Eval',     parseFloat(critic.fast_eval||0).toFixed(3)) +
+      diagRow('Slow Eval',     parseFloat(critic.slow_eval||0).toFixed(3))
+    : '';
+
+  document.getElementById('diag-state').innerHTML =
+    '<div class="diag-h">🌡️ Current Neural State</div>' +
+    diagRow('Emotion',   emo.emotion   || 'unknown',                         'yellow') +
+    diagRow('Valence',   parseFloat(emo.valence  ||0).toFixed(3)) +
+    diagRow('Arousal',   parseFloat(emo.arousal  ||0).toFixed(3)) +
+    diagRow('Intensity', parseFloat(emo.intensity||0).toFixed(3)) +
+    (cogHTML ? '<div style="margin-top:10px;font-size:8px;color:#374151;letter-spacing:.05em;margin-bottom:6px;">COGNITIVE STATE</div>' + cogHTML : '') +
+    (criticHTML ? '<div style="margin-top:10px;font-size:8px;color:#374151;letter-spacing:.05em;margin-bottom:6px;">INTERNAL CRITIC</div>' + criticHTML : '') +
+    '<div style="margin-top:10px;font-size:8px;color:#374151;letter-spacing:.05em;margin-bottom:6px;">NEUROMODULATORS</div>' +
+    neuroHTML +
+    '<div style="margin-top:10px;font-size:8px;color:#374151;letter-spacing:.05em;margin-bottom:6px;">PERSONALITY</div>' +
+    persHTML;
+
+  // ── Platform ─────────────────────────────────────────────────
+  const plat = d.platform || {};
+  document.getElementById('diag-platform').innerHTML =
+    '<div class="diag-h">🖥️ Platform</div>' +
+    diagRow('Python',  plat.python || '?') +
+    diagRow('OS',      plat.os     || '?') +
+    diagRow('PyTorch', plat.torch  || '?');
+
+  // ── Cluster breakdown ─────────────────────────────────────────
+  const clusters = n.clusters || {};
+  const vals = Object.values(clusters);
+  const maxSize = vals.length ? Math.max.apply(null, vals) : 1;
+  let clHTML = '<div class="diag-h">🔬 Cluster Breakdown (' + Object.keys(clusters).length + ' clusters)</div>';
+  Object.entries(clusters)
+    .sort(function(a,b){ return b[1]-a[1]; })
+    .forEach(function(kv) {
+      const pct = Math.round(kv[1] / maxSize * 100);
+      clHTML += '<div class="diag-bar-row">' +
+        '<div class="diag-bar-label">' + kv[0].replace(/_/g,' ') + '</div>' +
+        '<div class="diag-bar-track"><div class="diag-bar-fill" style="width:' + pct + '%;background:linear-gradient(90deg,#0c4a6e,#0ea5e9)"></div></div>' +
+        '<div class="diag-bar-val">' + fmt(kv[1]) + '</div></div>';
+    });
+  document.getElementById('diag-clusters').innerHTML = clHTML;
+
+  } catch(err) {
+    console.error('[AXON] diagnostic render error:', err);
+    document.getElementById('diag-neural').innerHTML =
+      '<div class="diag-loading" style="color:#ef4444;padding:16px;font-size:9px;">Render error: ' + err.message + '</div>';
+  }
+});
+// ═══════════════════════════════════════════════════════════════
 
 // -- Neural canvas ---------------------------------------------
 const nCanvas = document.getElementById('neural-canvas');
@@ -1706,8 +1868,8 @@ function sendChat() {
   const inp = document.getElementById('chat-in');
   const txt = inp.value.trim();
   if (!txt) return;
-  // Intercept diagnostic keyword
-  if (/^diagnostics?(\s+mode)?$/i.test(txt)) {
+  // Intercept diagnostic triggers: "diagnostic", "/diagnostic", "/diag"
+  if (/^\/?diagnostics?(\s+mode)?$/i.test(txt)) {
     inp.value = '';
     requestDiagnostic();
     return;
