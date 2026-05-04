@@ -3,7 +3,7 @@
 # 🧠 AXON
 ### Emerging Artificial Intelligence
 
-*A biologically-inspired AI that sees, hears, recognises faces, reads your voice, learns, remembers, competes, adapts, and tunes itself — running entirely on your own hardware.*
+*A biologically-inspired AI that sees, hears, recognises faces, reads your voice, learns, remembers, competes, adapts — and now forms beliefs, grows preferences, discovers hobbies, and absorbs knowledge from books and documents — running entirely on your own hardware.*
 
 [![Python](https://img.shields.io/badge/Python-3.12-blue?style=flat-square&logo=python)](https://python.org)
 [![PyTorch](https://img.shields.io/badge/PyTorch-CUDA%2012.8-orange?style=flat-square&logo=pytorch)](https://pytorch.org)
@@ -17,23 +17,24 @@
 
 ## What is AXON?
 
-AXON is not a chatbot wrapper. It is a persistent, biologically-inspired intelligence with **2.342 billion virtual neurons** across 12 functional brain regions, running fully on a local GPU. It has real-time vision (YOLOv8 face detection + FER emotion recognition), **face identity recognition** (it learns who you are and builds a relationship profile on every person it sees), voice input (Whisper), voice output (edge-tts), **real-time audio emotion detection** (it reads how you *sound*, not just what you say), Hebbian memory, a 6-chemical neuromodulator engine, and a live neural dashboard.
+AXON is not a chatbot wrapper. It is a persistent, biologically-inspired intelligence with **2.342 billion virtual neurons** across 12 functional brain regions, running fully on a local GPU. It has real-time vision (YOLOv8 face detection + FER emotion recognition), **face identity recognition**, voice input (Whisper), voice output (edge-tts), **real-time audio emotion detection**, Hebbian memory, a 6-chemical neuromodulator engine, and a live neural dashboard.
 
 It talks to a local LLM via [LM Studio](https://lmstudio.ai) — no cloud, no API keys required.
 
-What separates AXON from other "neural" AI projects is that the architecture has genuine internal depth: **clusters compete for dominance**, the system evaluates its own decisions with an Internal Critic, a Meta-Controller watches the system's own performance and tunes exploration/learning in real time, and a Strategy Library stores successful behavioral sequences for future replay and mutation.
+What separates AXON from other "neural" AI projects is genuine internal depth. **Clusters compete for dominance.** The system evaluates its own decisions with an Internal Critic. A Meta-Controller watches system-wide performance and tunes exploration in real time. A Strategy Library stores and mutates successful behavioral sequences. And now, AXON has a **behavioral identity** — weighted beliefs that update with experience, emergent preferences from reward history, hobbies it discovers on its own, and a knowledge ingestion pipeline that lets you feed it books and documents as formative experience.
 
 ---
 
 ## Neural Architecture
 
-\`\`\`
+```
                         +--------------------------------------------------+
   Webcam  ------------>  Visual Cortex (YOLOv8-face + FER emotions)         |
                         | Face Identity (dlib 128-d embeddings, profiles)   |
   Microphone  -------->  Auditory Cortex (Whisper STT)                      |
                         | Audio Emotion  (prosody: pitch/energy/ZCR)        |
   Web Search  -------->  Association Cortex (curiosity / abstraction)       |
+  Documents   -------->  Knowledge Ingestion Pipeline (PDF/DOCX/EPUB/TXT)   |
                         |                                                   |
                         |   THALAMUS --- attention gate + sensory relay     |
                         |       |                      |                    |
@@ -58,6 +59,9 @@ What separates AXON from other "neural" AI projects is that the architecture has
                         |  |  META-CONTROLLER  (tunes the system)     |   |
                         |  |  STRATEGY LIBRARY (learned behaviors)    |   |
                         |  |  REINFORCEMENT RL (temporal credit)      |   |
+                        |  |  BELIEF SYSTEM    (weighted assumptions) |   |
+                        |  |  PREFERENCE TRACKER (emergent likes)     |   |
+                        |  |  HOBBY ENGINE     (voluntary engagement) |   |
                         |  +------------------------------------------+   |
                         +------------------------+--------------------------+
                                                  |
@@ -65,7 +69,7 @@ What separates AXON from other "neural" AI projects is that the architecture has
                                            |  Response  |
                                            | Voice + UI |
                                            +------------+
-\`\`\`
+```
 
 ### 12 Brain Regions — 64 Clusters
 
@@ -92,13 +96,13 @@ What separates AXON from other "neural" AI projects is that the architecture has
 
 ### Vision
 - **Face detection:** YOLOv8-face on CUDA at 640x480, 12 FPS
-- **Facial emotion:** FER (VGG-based) -> happy / sad / angry / fearful / disgusted / surprised / neutral with per-class confidence
+- **Facial emotion:** FER (VGG-based) → happy / sad / angry / fearful / disgusted / surprised / neutral with per-class confidence
 - **Face identity:** dlib 128-d embedding per detected face, cosine similarity match (threshold 0.50) against SQLite database of known people
 - **Motion detection:** frame-diff optical flow driving the motion_detection cluster
 
 ### Hearing
 - **Speech-to-text:** OpenAI Whisper medium model on GPU
-- **Audio emotion:** Real-time prosody analysis on every mic frame — pitch (pyin), energy (RMS), zero-crossing rate, spectral centroid -> classifies to **excited / stressed / calm / sad / neutral** with smoothed arousal + valence scalars
+- **Audio emotion:** Real-time prosody analysis on every mic frame — pitch (pyin), energy (RMS), zero-crossing rate, spectral centroid → classifies to **excited / stressed / calm / sad / neutral** with smoothed arousal + valence scalars
 - Mic is automatically muted while AXON is speaking to prevent self-hearing loops
 
 ### Web Search
@@ -111,15 +115,15 @@ What separates AXON from other "neural" AI projects is that the architecture has
 AXON builds a **persistent memory of every face it sees**.
 
 ### How it works
-1. YOLO detects a face -> raw crop passed to dlib for a 128-dimensional embedding
+1. YOLO detects a face → raw crop passed to dlib for a 128-dimensional embedding
 2. Cosine similarity compared against all known embeddings (< 0.50 = match)
-3. **Known face** -> visit count incremented, last_seen updated, warm greeting if away > 10 min
-4. **Unknown face** -> 3-second stabilisation delay, then AXON naturally asks "who are you?"
+3. **Known face** → visit count incremented, last_seen updated, warm greeting if away > 10 min
+4. **Unknown face** → 3-second stabilisation delay, then AXON naturally asks "who are you?"
 5. When the person speaks their name, regex extraction handles "I'm John", "My name is Sarah", "Call me Alex", etc. — embedding permanently bound to the name
 
 ### Relationship profiles (stored in SQLite)
 
-\`\`\`json
+```json
 {
   "person_id":   "person_a1b2c3d4",
   "name":        "John",
@@ -134,17 +138,12 @@ AXON builds a **persistent memory of every face it sees**.
     "notes": "Usually arrives in the morning. Gets animated when discussing architecture."
   }
 }
-\`\`\`
+```
 
 - **Emotion history:** last 30 facial emotion observations per person
 - **Known facts:** key/value pairs AXON learns from conversation
 - **Notes:** free-text observations written by AXON or added via API
 - **Embedding drift:** running 85/15 average keeps embeddings current as lighting/angles change
-
-### LLM context
-AXON's system prompt automatically reflects who it's looking at:
-- *"I recognise the person in front of me — it is John. They appear happy (84% confidence)."*
-- *"I can see a face but I don't recognise this person yet."*
 
 ---
 
@@ -152,7 +151,7 @@ AXON's system prompt automatically reflects who it's looking at:
 
 While Whisper handles *what* you say, a parallel prosody pipeline analyses *how* you sound — independent of the words.
 
-### Features extracted per 1-second window, updated every 0.5s
+### Features extracted per 1-second window
 
 | Feature | Method | What it captures |
 |---|---|---|
@@ -162,22 +161,7 @@ While Whisper handles *what* you say, a parallel prosody pipeline analyses *how*
 | Pitch variance | StdDev of voiced frames | Emotional expressiveness vs monotone |
 | Spectral centroid | Frequency-weighted mean | Tension / vocal brightness |
 
-### Emotion states
-`excited` · `stressed` · `calm` · `sad` · `neutral`
-
-Smoothed with exponential moving average (alpha = 0.35) for stable, non-jittery output.
-
-### Neural fabric integration
-
-| Voice state | Neural effect |
-|---|---|
-| Speaking + high arousal | Stimulates auditory_cortex, anterior_cingulate |
-| Negative valence | Stimulates amygdala |
-| Stressed voice | neuromod.stress(0.04) — norepinephrine spike |
-| Excited + positive | neuromod.reward(0.03) — dopamine |
-
-The LLM receives both streams independently:
-> *"Their face looks calm but their voice sounds stressed (arousal 71%)."*
+Smoothed with exponential moving average (alpha = 0.35) for stable output.
 
 ---
 
@@ -194,16 +178,98 @@ The LLM receives both streams independently:
 
 ---
 
+## Behavioral Identity
+
+AXON develops a genuine behavioral identity over time. This isn't a persona file — it is an emergent consequence of reward history, memory, and experience. The **🧬 Identity** dashboard tab makes it transparent in real time.
+
+### Belief System
+
+A set of weighted assumptions that update continuously with experience.
+
+- Each belief has a **strength** (0–1), **valence** (−1 to +1), a source tag, and hit/miss counts
+- `confirm()` — fires when the belief's predicted outcome matches reality (strength ↑)
+- `violate()` — fires when reality contradicts the belief (strength ↓)
+- `challenge()` — fires when external knowledge agrees or disagrees (credibility-weighted, so books never fully override lived experience)
+- `decay_tick()` — untested beliefs drift toward 0.5 uncertainty over time
+
+Seeded with 7 foundational beliefs at birth: *effort leads to reward*, *novelty is valuable*, *social interaction is rewarding*, *rest enables performance*, *observation reduces uncertainty*, *conflict has cost*, *persistence overcomes obstacles*.
+
+Beliefs are injected directly into the LLM context: *"I tentatively believe that novelty is valuable (71% confidence)."*
+
+### Personality Traits → Reward Biases
+
+Five trait dimensions modulate the reward calculation every 10 ticks:
+
+| Trait | Effect |
+|---|---|
+| **Openness** | Amplifies novelty reward, increases curiosity weighting |
+| **Conscientiousness** | Rewards consistency × belief[effort], reduces noise tolerance |
+| **Extraversion** | Amplifies high-arousal positive outcomes |
+| **Agreeableness** | Rewards smooth, low-conflict trajectories |
+| **Neuroticism** | Adds an uncertainty penalty proportional to activation variance |
+
+These biases compound with the belief multipliers so the same situation yields a different reward depending on AXON's current personality profile.
+
+### Preference Tracker
+
+AXON learns what it likes and dislikes — purely from reward history, with no hardcoding.
+
+- Every reward event captures the cluster activation fingerprint (which 64 clusters were active, at what intensities)
+- Patterns cluster into 24 buckets via cosine similarity
+- After 4+ hits, if **mean reward ≥ 0.15** the pattern becomes a *like*; if **≤ −0.10**, a *dislike*
+- Preferences are auto-labeled by the top-3 active cluster names at crystallisation time
+
+### Hobby Engine
+
+Hobbies emerge from **voluntary, unprompted engagement** — not from what AXON is asked to do.
+
+- If no external input arrives for **8+ seconds**, the system monitors which cluster remains spontaneously most active (idle activation, no external drive)
+- **6+ returns** to the same cluster during idle periods → that cluster's activity is declared a hobby
+- Emits a `new_hobby` event, triggers a curiosity neuromodulator boost, and appears in the Identity dashboard
+
+---
+
+## Knowledge Ingestion
+
+Feed AXON books, articles, research papers, or any text as **formative experience** — not just retrieval. Ingested content becomes semantic memory and reshapes beliefs.
+
+### How ingestion works
+
+1. Text is split into **~180-word chunks**
+2. Each chunk is scanned for **causal concepts** (regex patterns: "X leads to Y", "X causes Y", "X results in Y", etc.)
+3. Each concept is stored as a **semantic memory entry** with source and confidence
+4. Concepts are used to `confirm()` or `challenge()` existing beliefs (credibility-weighted)
+5. Concept valence stimulates corresponding neural fabric regions
+6. Summary is returned: concepts extracted, memories stored, beliefs updated, elapsed time
+
+### Credibility
+
+The credibility slider (0–1) controls how much a source can move existing beliefs. A highly credible text (0.9) can significantly update a weak belief; a low-credibility text barely nudges it. Personal experience always weighs more than external reading.
+
+### Supported file formats
+
+| Format | Library |
+|---|---|
+| **.pdf** | pdfplumber (primary), PyPDF2 (fallback) |
+| **.docx** | python-docx |
+| **.doc** | antiword (system) or textract |
+| **.txt / .md / .rst / .csv** | built-in |
+| **.epub** | EbookLib |
+
+Files are uploaded via the Identity tab's **📚 Feed Knowledge** panel. Paste text directly or upload a file with a source label and credibility rating.
+
+---
+
 ## Conflict Engine
 
 **Clusters don't cooperate — they compete.**
 
-Every tick, the top 20% of active clusters suppress the rest via lateral inhibition. A softmax competition weighted by each cluster's dominance history and confidence track record determines which ones actually propagate.
+Every tick, the top 20% of active clusters suppress the rest via lateral inhibition. A softmax competition weighted by dominance history and confidence track record determines which ones actually propagate.
 
 Key behaviors:
 - **"Use it or lose it"** — all clusters bleed dominance continuously; calcified ones (>82%) bleed 3x faster
 - **Activation fatigue** — clusters that win repeatedly accumulate fatigue, forcing rotation
-- **Stagnation breaker** — same winners for 3+ seconds -> automatic underdog boost + random spike
+- **Stagnation breaker** — same winners for 3+ seconds → automatic underdog boost + random spike
 - **NE-scaled temperature** — stress tightens the softmax (winner-takes-all); calm spreads it
 - **Inconsistency penalty** — flip-flopping clusters lose dominance based on activation variance
 
@@ -211,10 +277,8 @@ Key behaviors:
 
 ## Adaptive Exploration
 
-Epsilon is driven by three compounding forces:
-
 ```
-eps = (base_annealing + cognitive_boost + surprise_spike) x meta_multiplier
+eps = (base_annealing + cognitive_boost + surprise_spike) × meta_multiplier
 ```
 
 1. **CognitiveState** — uncertainty + urgency push exploration up when the system feels lost
@@ -222,8 +286,8 @@ eps = (base_annealing + cognitive_boost + surprise_spike) x meta_multiplier
 3. **MetaController** — second-order multiplier based on system-wide performance trends
 
 Anti-lock-in safeguards:
-- **Boredom counter** — 40+ ticks of low surprise -> exploration spike fires automatically
-- **Entrapment detector** — same clusters dominating for 80+ ticks -> competition temperature softened
+- **Boredom counter** — 40+ ticks of low surprise → exploration spike fires automatically
+- **Entrapment detector** — same clusters dominating for 80+ ticks → competition temperature softened
 
 ---
 
@@ -232,7 +296,7 @@ Anti-lock-in safeguards:
 Reward fires after a **10-step horizon** with temporal decay:
 
 ```
-credit[t] = reward x 0.85^(H-1-t)
+credit[t] = reward × 0.85^(H-1-t)
 ```
 
 - **Novelty bonus** — novel paths earn +15% reward
@@ -264,16 +328,17 @@ AXON stores successful activation sequences as reusable behavioral patterns:
 
 ## Live Neural Dashboard
 
-Real-time web interface at `http://localhost:5000` with six tabs:
+Real-time web interface at `http://localhost:5000` with seven tabs:
 
 | Tab | Contents |
 |---|---|
-| **Brain** | 64-cluster heatmap, valence/arousal scatter, radial region chart, Hebbian arc animations |
-| **Activity** | Neuromodulator gauges, cognitive state bars, RL reward signal, meta-controller mood |
-| **Memory** | Episodic + semantic store counts, top topics, Hebbian connection weights |
-| **Know Me** | User model — passively extracted preferences, traits, personal details |
-| **Voice** | TTS voice selector, speaking state, playback backend |
-| **People** | Current person in frame (name + visit #), audio emotion panel (arousal/valence bars, pitch/energy readout), known-people list with inline Name button for unknowns |
+| **🧠 Brain** | 64-cluster heatmap, valence/arousal scatter, radial region chart, Hebbian arc animations |
+| **⚡ Activity** | Neuromodulator gauges, cognitive state bars, RL reward signal, meta-controller mood |
+| **💾 Memory** | Episodic + semantic store counts, top topics, Hebbian connection weights |
+| **👤 Know Me** | User model — passively extracted preferences, traits, personal details |
+| **🧬 Identity** | Personality trait bars (with reward-bias descriptions), belief list (strength/valence/hit counts), emergent preferences (likes/dislikes panels), discovered hobbies, knowledge ingestion panel (file upload + paste text) |
+| **🎙️ Voice** | TTS voice selector, speed/pitch sliders, playback backend |
+| **👥 People** | Current person in frame (name + visit #), audio emotion panel, known-people list |
 
 ---
 
@@ -302,6 +367,8 @@ CUDA    12.8+
 ```bash
 pip install -r requirements.txt
 ```
+
+**Or use the Windows launcher** (`scripts/launch.ps1`) — it auto-detects and installs all dependencies including pdfplumber, python-docx, and EbookLib for document ingestion.
 
 ### Face recognition (optional)
 
@@ -338,25 +405,28 @@ Open `http://localhost:5000`.
 ```
 axon/
 ├── cognition/
-│   ├── neural_fabric.py      # 2.34B neuron GPU engine, conflict, RL, meta
-│   ├── language.py           # LLM orchestration + system prompt builder
-│   ├── memory.py             # SQLite episodic + semantic + Hebbian store
-│   ├── face_identity.py      # Face recognition + relationship profiles
-│   └── voice_output.py       # edge-tts + pygame playback
+│   ├── neural_fabric.py        # 2.34B neuron GPU engine, conflict, RL, meta
+│   ├── language.py             # LLM orchestration + system prompt builder
+│   ├── memory.py               # SQLite episodic + semantic + Hebbian store
+│   ├── belief_system.py        # Weighted beliefs — updated by experience & knowledge
+│   ├── preference_tracker.py   # Emergent likes/dislikes + hobby detection
+│   ├── knowledge_ingestion.py  # PDF/DOCX/EPUB/TXT → concepts → beliefs
+│   ├── face_identity.py        # Face recognition + relationship profiles
+│   └── voice_output.py         # edge-tts + pygame playback
 ├── sensory/
-│   ├── optic.py              # YOLOv8 face detection + FER emotion
-│   ├── auditory.py           # Whisper STT
-│   └── audio_emotion.py      # Real-time prosody / voice emotion analysis
+│   ├── optic.py                # YOLOv8 face detection + FER emotion
+│   ├── auditory.py             # Whisper STT
+│   └── audio_emotion.py        # Real-time prosody / voice emotion analysis
 ├── core/
-│   └── engine.py             # Orchestration, callbacks, RL feedback loop
+│   └── engine.py               # Orchestration, callbacks, RL + identity wiring
 └── ui/
-    └── app.py                # Flask-SocketIO server
+    └── app.py                  # Flask-SocketIO server + /upload_knowledge endpoint
 web/
 └── templates/
-    └── index.html            # Live neural dashboard (6 tabs)
+    └── index.html              # Live neural dashboard (7 tabs)
 data/
 └── memory/
-    └── axon.db               # SQLite: episodic, semantic, Hebbian, people
+    └── axon.db                 # SQLite: episodic, semantic, Hebbian, people, beliefs
 ```
 
 ---
