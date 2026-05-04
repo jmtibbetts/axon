@@ -311,6 +311,32 @@ canvas.spark{display:block;}
         display:flex;flex-direction:column;gap:3px;
         pointer-events:none;
       "></div>
+      <!-- Canvas HUD: mode indicator + playback controls -->
+      <div id="canvas-hud" style="
+        position:absolute;bottom:8px;left:8px;
+        display:flex;gap:6px;align-items:center;
+        pointer-events:auto;
+      ">
+        <div id="mode-badge" style="
+          font-size:8px;font-family:monospace;letter-spacing:.06em;
+          padding:2px 7px;border-radius:3px;border:1px solid #1e3a5f;
+          background:rgba(0,0,0,0.7);color:#6366f1;
+          transition:all .4s;
+        ">STABLE</div>
+        <div id="playback-controls" style="display:flex;gap:4px;">
+          <button onclick="startPlayback()" title="Decision Playback" style="
+            background:rgba(0,0,0,0.7);border:1px solid #1e3a5f;color:#6366f1;
+            font-size:9px;font-family:monospace;padding:2px 6px;border-radius:3px;
+            cursor:pointer;transition:all .2s;
+          " id="playback-btn">⏮ PLAYBACK</button>
+          <div id="playback-scrubber" style="display:none;align-items:center;gap:4px;">
+            <button onclick="stepPlayback(-1)" style="background:rgba(0,0,0,0.7);border:1px solid #374151;color:#6366f1;font-size:9px;padding:2px 5px;border-radius:3px;cursor:pointer;">◀</button>
+            <span id="playback-step-label" style="font-size:8px;font-family:monospace;color:#9ca3af;">0/10</span>
+            <button onclick="stepPlayback(1)" style="background:rgba(0,0,0,0.7);border:1px solid #374151;color:#6366f1;font-size:9px;padding:2px 5px;border-radius:3px;cursor:pointer;">▶</button>
+            <button onclick="stopPlayback()" style="background:rgba(0,0,0,0.7);border:1px solid #ef4444;color:#ef4444;font-size:9px;padding:2px 5px;border-radius:3px;cursor:pointer;">✕ EXIT</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1038,6 +1064,39 @@ const AXON_ROUTES = [
 // Travelling signal pulses along axon routes
 const pulses = [];   // {x0,y0,x1,y1,t,color,strength}
 
+// ── Winner/loser tracking (dominance visualization) ───────────────────
+let winnerRegions  = new Set();   // regions currently dominating
+let loserRegions   = new Set();
+let winnerSmooth   = {};          // per-region smooth dominance 0-1
+let conflictPairs  = [];          // [{r1,r2,intensity,t}] tension arcs
+
+// ── Activation trails (comet tails) ──────────────────────────────────
+const activationTrails = [];      // {x,y,color,life,radius}
+
+// ── Learning burst events ─────────────────────────────────────────────
+const learningBursts = [];        // {x,y,color,t,type,radius}
+
+// ── Ghost paths (memory influence) ───────────────────────────────────
+const ghostPaths = [];            // {x0,y0,x1,y1,color,alpha,life}
+
+// ── Cluster fatigue overlay ───────────────────────────────────────────
+let fatigueMap = {};              // region → 0-1 fatigue level
+
+// ── Exploration vs exploitation mode ─────────────────────────────────
+let exploreMode   = false;        // true = high epsilon, show exploration flares
+let exploitMode   = false;        // true = tight pathways
+let epsilonLevel  = 0.18;
+
+// ── Playback buffer (Decision Playback Mode) ─────────────────────────
+const PLAYBACK_BUF_LEN = 10;
+const playbackBuffer  = [];       // ring of {regions, dominantSet, timestamp}
+let   playbackActive  = false;
+let   playbackStep    = 0;
+
+// ── Per-region confidence glow (belief field) ─────────────────────────
+let confidenceLevel = 0.5;        // global scalar from backend
+let uncertaintyLevel = 0.5;
+
 function addPulse(r1, r2, strength) {
   const d1 = REGION_DEFS[r1], d2 = REGION_DEFS[r2];
   if (!d1 || !d2) return;
@@ -1045,10 +1104,59 @@ function addPulse(r1, r2, strength) {
   pulses.push({
     x0: d1.x*W, y0: d1.y*H,
     x1: d2.x*W, y1: d2.y*H,
-    t:  0,                   // 0→1 travel progress
+    t:  0,
     color: d1.color,
     strength: Math.min(1, strength),
   });
+}
+
+// ── Learning burst: ripple at a region centroid ───────────────────────
+function addLearningBurst(regionKey, type, intensity) {
+  // type: 'surprise' | 'reward' | 'penalty' | 'weight_update'
+  const d = REGION_DEFS[regionKey];
+  if (!d) return;
+  const W = nCanvas.width, H = nCanvas.height;
+  const colors = {
+    surprise:      '#ffffff',
+    reward:        '#22c55e',
+    penalty:       '#ef4444',
+    weight_update: '#a855f7',
+  };
+  learningBursts.push({
+    x:       d.x * W,
+    y:       d.y * H,
+    color:   colors[type] || '#ffffff',
+    t:       0.0,    // 0→1 lifetime
+    type,
+    radius:  14 + intensity * 24,
+    rings:   type === 'surprise' ? 3 : 2,
+  });
+}
+
+// ── Ghost path: memory influence highlight ────────────────────────────
+function addGhostPath(r1, r2, alpha) {
+  const d1 = REGION_DEFS[r1], d2 = REGION_DEFS[r2];
+  if (!d1 || !d2 || r1 === r2) return;
+  const W = nCanvas.width, H = nCanvas.height;
+  ghostPaths.push({
+    x0: d1.x*W, y0: d1.y*H,
+    x1: d2.x*W, y1: d2.y*H,
+    color: d1.color,
+    alpha: Math.min(0.35, alpha),
+    life:  1.0,
+  });
+}
+
+// ── Conflict pair: tension arc between competing regions ──────────────
+function addConflictPair(r1, r2, intensity) {
+  const existing = conflictPairs.find(p =>
+    (p.r1===r1&&p.r2===r2)||(p.r1===r2&&p.r2===r1));
+  if (existing) {
+    existing.intensity = Math.max(existing.intensity, intensity);
+    existing.t = 0;
+    return;
+  }
+  conflictPairs.push({ r1, r2, intensity, t: 0 });
 }
 
 // Per-neuron neighbor list (cross-region via AXON_ROUTES + within-region)
@@ -1168,6 +1276,63 @@ function drawNeural() {
   // ── Receive new state and schedule spike waves ──────────────────────
   if (neuralState && neuralState.top_clusters && axonFrame % 8 === 0) {
     const newTop = (neuralState.top_clusters || []).slice(0, 8);
+
+    // ── Determine winner / loser regions ─────────────────────────────
+    const allRegionActs = Object.entries(sharpenedRegion);
+    allRegionActs.sort((a,b) => b[1]-a[1]);
+    const topN = Math.max(2, Math.floor(allRegionActs.length * 0.20));
+    winnerRegions = new Set(allRegionActs.slice(0, topN).map(r=>r[0]));
+    loserRegions  = new Set(allRegionActs.slice(topN).map(r=>r[0]));
+    // Smooth the dominance value per region
+    for (const [r, v] of allRegionActs) {
+      winnerSmooth[r] = (winnerSmooth[r] || 0) * 0.85 + v * 0.15;
+    }
+
+    // ── Update confidence / uncertainty from backend ──────────────────
+    if (neuralState.cognitive_state) {
+      confidenceLevel  = neuralState.cognitive_state.confidence  || 0.5;
+      uncertaintyLevel = neuralState.cognitive_state.uncertainty || 0.5;
+    }
+
+    // ── Exploration / exploitation mode from epsilon ──────────────────
+    if (neuralState.meta) {
+      epsilonLevel  = neuralState.explore_eps || 0.18;
+      exploreMode   = (neuralState.meta.mood === 'bored' ||
+                       neuralState.meta.mood === 'entrapped' ||
+                       epsilonLevel > 0.28);
+      exploitMode   = (neuralState.meta.mood === 'surprised' || epsilonLevel < 0.08);
+      updateModeBadge(neuralState.meta, epsilonLevel);
+    } else {
+      epsilonLevel = neuralState.explore_eps || 0.18;
+      exploreMode  = epsilonLevel > 0.28;
+      exploitMode  = epsilonLevel < 0.08;
+      updateModeBadge(null, epsilonLevel);
+    }
+
+    // ── Conflict pairs from top competing regions ─────────────────────
+    // Pairs where two high-activation regions compete via lateral inhibition
+    const topWinners = allRegionActs.slice(0, 4).map(r=>r[0]);
+    for (let i=0; i<topWinners.length; i++) {
+      for (let j=i+1; j<topWinners.length; j++) {
+        const a1 = sharpenedRegion[topWinners[i]] || 0;
+        const a2 = sharpenedRegion[topWinners[j]] || 0;
+        if (a1 > 0.25 && a2 > 0.25) {
+          addConflictPair(topWinners[i], topWinners[j], Math.min(a1, a2));
+        }
+      }
+    }
+
+    // ── Playback buffer snapshot ──────────────────────────────────────
+    if (!playbackActive) {
+      playbackBuffer.push({
+        regions:     {...sharpenedRegion},
+        dominantSet: new Set(winnerRegions),
+        eps:         epsilonLevel,
+        ts:          Date.now(),
+      });
+      if (playbackBuffer.length > PLAYBACK_BUF_LEN) playbackBuffer.shift();
+    }
+
     newTop.forEach(c => {
       const sharpAct = sharpenedRegion[c.region || regionForCluster(c.name)] || 0;
       if (sharpAct > 0.12) {
@@ -1184,6 +1349,24 @@ function drawNeural() {
         addPulse(src, dst, Math.sqrt(coact) * w);
       }
     });
+
+    // ── Exploration flares: random cluster bursts when in explore mode ─
+    if (exploreMode && Math.random() < 0.4) {
+      const rKeys = Object.keys(REGION_DEFS);
+      const rnd   = rKeys[Math.floor(Math.random()*rKeys.length)];
+      if (loserRegions.has(rnd)) scheduleSpikeWave(rnd, 0.25 + Math.random()*0.3);
+    }
+
+    // ── Ghost paths: show memory-biased pathways ──────────────────────
+    // Show routes that connect the top winning regions as faint prior paths
+    if (axonFrame % 24 === 0) {
+      const topTwo = allRegionActs.slice(0, 2).map(r=>r[0]);
+      if (topTwo.length >= 2) {
+        const route = AXON_ROUTES.find(([s,d]) =>
+          (topTwo.includes(s) && topTwo.includes(d)));
+        if (route) addGhostPath(route[0], route[1], 0.22);
+      }
+    }
   }
 
   // ── Default-mode ambient pulses when idle ───────────────────────────
@@ -1194,24 +1377,45 @@ function drawNeural() {
     if (r) addPulse(r[0], r[1], 0.08 + Math.random()*0.06);
   }
 
-  // ── Update neuron activations ───────────────────────────────────────
+  // ── Update neuron activations + emit trails ─────────────────────────
+  const TRAIL_SAMPLE_RATE = 12;   // emit a trail dot every N frames
   neuronNodes.forEach(n => {
     const regionAct = sharpenedRegion[n.region] || 0;
+    // Apply fatigue dimming
+    const fatigue = fatigueMap[n.region] || 0;
+    const fatigueScale = 1.0 - fatigue * 0.4;
+
     if (regionAct < 0.001) {
-      n.activation *= 0.92;   // dark regions fade quickly to black
+      n.activation *= 0.92;
       n.phase += n.speed;
       return;
     }
-    // Each neuron has a personal multiplier so the cluster has depth:
-    // some neurons brighter, some dimmer — not a flat uniform blob
     if (!n.personalMult) n.personalMult = 0.4 + Math.random() * 1.2;
-    const target = Math.min(1.0, regionAct * n.personalMult);
+    const target = Math.min(1.0, regionAct * n.personalMult * fatigueScale);
     n.activation += (target - n.activation) * 0.06;
     n.phase      += n.speed;
-    // Flicker proportional to activity — active neurons dance, quiet ones barely move
     const flicker = (Math.sin(n.phase) * 0.5 + 0.5) * regionAct;
     n.activation  = Math.max(0.0, Math.min(1.0, n.activation + flicker * 0.025 - 0.008));
+
+    // ── Activation trails (comet tails) ─────────────────────────────
+    if (n.activation > 0.55 && axonFrame % TRAIL_SAMPLE_RATE === 0) {
+      activationTrails.push({
+        x:      n.x,
+        y:      n.y,
+        color:  n.color,
+        life:   1.0,
+        radius: n.baseR * 0.8 + n.activation * 1.2,
+      });
+    }
   });
+
+  // Advance trails (2-4 second lifespan @ 60fps → ~0.004/frame decay)
+  for (let i = activationTrails.length - 1; i >= 0; i--) {
+    activationTrails[i].life -= 0.006;
+    if (activationTrails[i].life <= 0) activationTrails.splice(i, 1);
+  }
+  // Cap trail count to avoid memory issues
+  if (activationTrails.length > 1200) activationTrails.splice(0, 200);
 
   // ── Process spike queue ─────────────────────────────────────────────
   const remaining = [];
@@ -1241,6 +1445,92 @@ function drawNeural() {
     });
   });
   neuronNodes.forEach((n, i) => { n.activation = nextActivation[i]; });
+
+  // ── Draw activation trails (comet tails) ────────────────────────────
+  for (const trail of activationTrails) {
+    const a = Math.round(trail.life * 55).toString(16).padStart(2,'0');
+    nCtx.beginPath();
+    nCtx.arc(trail.x, trail.y, trail.radius, 0, Math.PI*2);
+    nCtx.fillStyle = trail.color + a;
+    nCtx.fill();
+  }
+
+  // ── Draw ghost paths (memory influence) ──────────────────────────────
+  for (let i = ghostPaths.length-1; i >= 0; i--) {
+    const g = ghostPaths[i];
+    g.life -= 0.008;
+    if (g.life <= 0) { ghostPaths.splice(i,1); continue; }
+    const W = nCanvas.width, H = nCanvas.height;
+    const alpha = Math.round(g.alpha * g.life * 180).toString(16).padStart(2,'0');
+    const mx = (g.x0 + g.x1)/2;
+    const my = (g.y0 + g.y1)/2 - 20;
+    // Dashed ghost arc
+    nCtx.save();
+    nCtx.setLineDash([4, 6]);
+    nCtx.lineWidth = 1.2;
+    nCtx.beginPath();
+    nCtx.moveTo(g.x0, g.y0);
+    nCtx.quadraticCurveTo(mx, my, g.x1, g.y1);
+    nCtx.strokeStyle = g.color + alpha;
+    nCtx.stroke();
+    nCtx.setLineDash([]);
+    // Small memory dot at midpoint
+    const midT = 0.5;
+    const bx = (1-midT)*(1-midT)*g.x0 + 2*(1-midT)*midT*mx + midT*midT*g.x1;
+    const by = (1-midT)*(1-midT)*g.y0 + 2*(1-midT)*midT*my + midT*midT*g.y1;
+    nCtx.beginPath();
+    nCtx.arc(bx, by, 2.5, 0, Math.PI*2);
+    nCtx.fillStyle = g.color + alpha;
+    nCtx.fill();
+    nCtx.restore();
+  }
+
+  // ── Draw conflict tension arcs ────────────────────────────────────────
+  for (let i = conflictPairs.length-1; i >= 0; i--) {
+    const cp = conflictPairs[i];
+    cp.t += 0.025;
+    if (cp.t > 1.2) { conflictPairs.splice(i,1); continue; }
+    const d1 = REGION_DEFS[cp.r1], d2 = REGION_DEFS[cp.r2];
+    if (!d1||!d2) { conflictPairs.splice(i,1); continue; }
+    const W = nCanvas.width, H = nCanvas.height;
+    const x1 = d1.x*W, y1 = d1.y*H;
+    const x2 = d2.x*W, y2 = d2.y*H;
+    // Jitter: the arc wiggles to show tension
+    const jitter = Math.sin(axonFrame * 0.18 + i) * 8 * cp.intensity;
+    const mx = (x1+x2)/2 + jitter;
+    const my = (y1+y2)/2 - 30 + jitter * 0.5;
+    const fade = Math.min(1.0, 1.0 - (cp.t - 0.7) / 0.5);  // fade after 0.7
+    const alpha = Math.round(cp.intensity * fade * 160).toString(16).padStart(2,'0');
+    // Draw both colors fighting — two overlapping lines with opposite colors
+    nCtx.save();
+    nCtx.lineWidth = 1.0 + cp.intensity * 1.5;
+    nCtx.setLineDash([3, 4]);
+    // Line 1 (region 1 color)
+    nCtx.beginPath();
+    nCtx.moveTo(x1, y1);
+    nCtx.quadraticCurveTo(mx, my, x2, y2);
+    nCtx.strokeStyle = d1.color + alpha;
+    nCtx.stroke();
+    // Line 2 (region 2 color, slight offset jitter)
+    const jitter2 = Math.sin(axonFrame * 0.22 + i + 1.2) * 6 * cp.intensity;
+    const mx2 = (x1+x2)/2 + jitter2;
+    const my2 = (y1+y2)/2 - 28 + jitter2 * 0.5;
+    nCtx.beginPath();
+    nCtx.moveTo(x1, y1);
+    nCtx.quadraticCurveTo(mx2, my2, x2, y2);
+    nCtx.strokeStyle = d2.color + Math.round(parseInt(alpha,16)*0.5).toString(16).padStart(2,'0');
+    nCtx.stroke();
+    nCtx.setLineDash([]);
+    // Tension midpoint spark
+    const spark = nCtx.createRadialGradient(mx,my,0,mx,my,5+cp.intensity*6);
+    spark.addColorStop(0, '#ffffff' + alpha);
+    spark.addColorStop(1, d1.color + '00');
+    nCtx.beginPath();
+    nCtx.arc(mx, my, 5+cp.intensity*6, 0, Math.PI*2);
+    nCtx.fillStyle = spark;
+    nCtx.fill();
+    nCtx.restore();
+  }
 
   // ── Draw within-region synaptic connections ─────────────────────────
   nCtx.lineWidth = 0.25;
@@ -1403,13 +1693,28 @@ function drawNeural() {
   }
 
   // ── Draw neurons ────────────────────────────────────────────────────────────
-  // Always draw neurons with a dim resting glow so the map is never black
   const RESTING_GLOW = 0.035;
   neuronNodes.forEach(n => {
-    const vis = Math.max(RESTING_GLOW, n.activation);
+    const regionAct = sharpenedRegion[n.region] || 0;
+    const isWinner  = winnerRegions.has(n.region);
+    const isLoser   = loserRegions.has(n.region) && regionAct > 0.05;
+    const fatigue   = fatigueMap[n.region] || 0;
+    const dominance = winnerSmooth[n.region] || 0;
+
+    // Winners: enlarged, faster pulse; losers: dimmed
+    const sizeMult  = isWinner ? (1.0 + dominance * 0.7) : (isLoser ? 0.6 : 1.0);
+    const alphaMult = isWinner ? 1.0 : (isLoser ? 0.45 : 0.8);
+    // Fatigue: dim the neuron proportional to overuse
+    const fatigueDim = 1.0 - fatigue * 0.5;
+
+    let vis = Math.max(RESTING_GLOW, n.activation) * alphaMult * fatigueDim;
     if (vis < 0.005) return;
-    const r     = n.baseR * 0.6 + vis * 2.2;
+    const r     = (n.baseR * 0.6 + vis * 2.2) * sizeMult;
     const alpha = Math.round(Math.pow(vis, 0.7) * 200).toString(16).padStart(2,'0');
+
+    // Confidence field: confident decisions → tight saturated core
+    //                   uncertain → slightly desaturated + scattered
+    const confBoost = isWinner ? confidenceLevel * 0.3 : 0;
 
     // Core
     nCtx.beginPath();
@@ -1417,10 +1722,12 @@ function drawNeural() {
     nCtx.fillStyle = n.color + alpha;
     nCtx.fill();
 
-    // Glow halo — proportional to activation
-    if (vis > 0.45) {
-      const glowR     = r * (1.8 + vis * 2.5);
-      const glowAlpha = Math.round(vis * 70).toString(16).padStart(2,'0');
+    // Glow halo — winners get a larger, brighter halo
+    if (vis > 0.30) {
+      const haloMult  = isWinner ? (1.8 + dominance * 1.5) : 1.4;
+      const glowR     = r * (haloMult + vis * 2.0);
+      const glowInt   = isWinner ? vis * 0.80 + confBoost : vis * 0.45;
+      const glowAlpha = Math.round(glowInt * 90).toString(16).padStart(2,'0');
       const grd = nCtx.createRadialGradient(n.x,n.y,r,n.x,n.y,glowR);
       grd.addColorStop(0, n.color + glowAlpha);
       grd.addColorStop(1, n.color + '00');
@@ -1430,52 +1737,221 @@ function drawNeural() {
       nCtx.fill();
     }
 
-    // Spike ring burst
-    if (n.activation > 0.82) {
-      const ring = r + (axonFrame % 18) * 0.22;
+    // Spike ring burst — winners pulse faster
+    if (n.activation > 0.75) {
+      const pulsePeriod = isWinner ? 12 : 18;
+      const ring = r + (axonFrame % pulsePeriod) * (isWinner ? 0.35 : 0.22);
       nCtx.beginPath();
       nCtx.arc(n.x,n.y,ring,0,Math.PI*2);
-      nCtx.strokeStyle = n.color + '22';
-      nCtx.lineWidth   = 0.6;
+      nCtx.strokeStyle = n.color + (isWinner ? '33' : '18');
+      nCtx.lineWidth   = isWinner ? 0.9 : 0.6;
       nCtx.stroke();
     }
+
+    // Fatigue shimmer: tiny fragmentation dots around the neuron
+    if (fatigue > 0.5 && n.activation > 0.3 && axonFrame % 4 === 0) {
+      const fAngle = (axonFrame * 0.08 + n.phase) % (Math.PI*2);
+      const fr = r * 2 + fatigue * 4;
+      nCtx.beginPath();
+      nCtx.arc(n.x + Math.cos(fAngle)*fr, n.y + Math.sin(fAngle)*fr, 0.8, 0, Math.PI*2);
+      nCtx.fillStyle = n.color + '44';
+      nCtx.fill();
+    }
+
+    // Exploration flare: random brief bright flash on unexplored neurons
+    if (exploreMode && isLoser && Math.random() < 0.0015) {
+      const fg = nCtx.createRadialGradient(n.x,n.y,0,n.x,n.y,r*4);
+      fg.addColorStop(0, '#ffffff55');
+      fg.addColorStop(1, n.color + '00');
+      nCtx.beginPath();
+      nCtx.arc(n.x, n.y, r*4, 0, Math.PI*2);
+      nCtx.fillStyle = fg;
+      nCtx.fill();
+    }
   });
+
+  // ── Learning bursts (ripple through the network at surprise/reward) ──
+  for (let i = learningBursts.length-1; i >= 0; i--) {
+    const b = learningBursts[i];
+    b.t += 0.04;
+    if (b.t >= 1.0) { learningBursts.splice(i,1); continue; }
+    for (let ring = 0; ring < b.rings; ring++) {
+      const offset  = ring / b.rings;
+      const rt      = Math.max(0, b.t - offset * 0.3);
+      if (rt <= 0) continue;
+      const rr      = b.radius * rt * (1 + ring * 0.4);
+      const alpha   = Math.round((1 - rt) * (1 - ring*0.3) * 160).toString(16).padStart(2,'0');
+      const lw      = (1 - rt) * (b.type === 'surprise' ? 2.0 : 1.4);
+      nCtx.beginPath();
+      nCtx.arc(b.x, b.y, rr, 0, Math.PI*2);
+      nCtx.strokeStyle = b.color + alpha;
+      nCtx.lineWidth   = lw;
+      nCtx.stroke();
+    }
+  }
 
   // ── Draw region labels directly on canvas near cluster centers ──────────────
   nCtx.save();
   for (const [key, props] of Object.entries(REGION_DEFS)) {
-    const cx = props.x * W;
-    const cy = props.y * H;
+    const cx  = props.x * W;
+    const cy  = props.y * H;
     const act = sharpenedRegion[key] || 0;
-    // Label alpha: always readable but glows brighter when active
-    const labelAlpha = 0.38 + act * 0.62;
-    const labelSize  = Math.round(9 + act * 3);
+    const isW = winnerRegions.has(key);
+    const isL = loserRegions.has(key) && act > 0.05;
+    const dom = winnerSmooth[key] || 0;
+    const fat = fatigueMap[key] || 0;
 
-    // Tinted background pill for readability
+    // Size: winners are bigger labels
+    const labelAlpha = isW ? Math.min(1.0, 0.55 + dom * 0.6) :
+                       isL ? 0.25 + act * 0.3 :
+                             0.38 + act * 0.5;
+    const labelSize  = isW ? Math.round(10 + dom * 4) : Math.round(9 + act * 2);
+
     nCtx.font = `${labelSize}px monospace`;
     const tw = nCtx.measureText(props.label).width;
     const px = cx - tw / 2 - 4;
-    const py = cy + props.spread * H * 0.75 + 10;  // below the cluster
+    const py = cy + props.spread * H * 0.75 + 10;
     const ph = labelSize + 5;
-    nCtx.fillStyle = `rgba(2,2,10,${0.55 + act * 0.3})`;
-    nCtx.beginPath();
-    nCtx.roundRect(px, py - ph + 3, tw + 8, ph, 3);
-    nCtx.fill();
 
-    // Label text — color-matched to region
+    // Winner gets a glowing pill background
+    if (isW) {
+      nCtx.fillStyle = props.color + Math.round(dom * 40).toString(16).padStart(2,'0');
+      nCtx.beginPath();
+      nCtx.roundRect(px-2, py - ph + 1, tw + 12, ph + 2, 4);
+      nCtx.fill();
+    } else {
+      nCtx.fillStyle = `rgba(2,2,10,${0.55 + act * 0.3})`;
+      nCtx.beginPath();
+      nCtx.roundRect(px, py - ph + 3, tw + 8, ph, 3);
+      nCtx.fill();
+    }
+
+    // Fatigue indicator: ⚡ suffix when tired
+    const label = fat > 0.5 ? props.label + ' ⚡' : props.label;
     const hexAlpha = Math.round(labelAlpha * 255).toString(16).padStart(2,'0');
     nCtx.fillStyle = props.color + hexAlpha;
-    nCtx.fillText(props.label, cx - tw / 2, py);
+    nCtx.fillText(label, cx - tw/2, py);
 
-    // Small connector dot at cluster center
+    // Dominant crown marker above winner labels
+    if (isW && dom > 0.4) {
+      nCtx.font = `${labelSize - 1}px monospace`;
+      nCtx.fillStyle = '#ffffff' + Math.round(dom * 180).toString(16).padStart(2,'0');
+      nCtx.fillText('▲', cx - 4, py - ph - 1);
+    }
+
+    // Center dot — larger for winners
+    const dotR  = isW ? 3.5 + dom * 3 : 2.5 + act * 2;
+    const dotA  = Math.round((0.5 + act * 0.5) * 255).toString(16).padStart(2,'0');
     nCtx.beginPath();
-    nCtx.arc(cx, cy, 2.5 + act * 2, 0, Math.PI * 2);
-    nCtx.fillStyle = props.color + Math.round((0.5 + act * 0.5) * 255).toString(16).padStart(2,'0');
+    nCtx.arc(cx, cy, dotR, 0, Math.PI*2);
+    nCtx.fillStyle = props.color + dotA;
     nCtx.fill();
+
+    // Loser: faint cross-out overlay
+    if (isL && act < 0.1) {
+      nCtx.strokeStyle = '#ffffff11';
+      nCtx.lineWidth   = 0.5;
+      nCtx.beginPath();
+      nCtx.moveTo(cx - dotR, cy - dotR);
+      nCtx.lineTo(cx + dotR, cy + dotR);
+      nCtx.stroke();
+    }
   }
   nCtx.restore();
 
+  // ── Exploit mode: draw tight high-opacity pathways between winners ───
+  if (exploitMode) {
+    const topW = [...winnerRegions].slice(0,3);
+    AXON_ROUTES.forEach(([src, dst, w]) => {
+      if (topW.includes(src) && topW.includes(dst)) {
+        const d1 = REGION_DEFS[src], d2 = REGION_DEFS[dst];
+        if (!d1||!d2) return;
+        const mx = (d1.x*W + d2.x*W)/2;
+        const my = (d1.y*H + d2.y*H)/2 - 20;
+        nCtx.save();
+        nCtx.lineWidth = 1.5;
+        nCtx.beginPath();
+        nCtx.moveTo(d1.x*W, d1.y*H);
+        nCtx.quadraticCurveTo(mx, my, d2.x*W, d2.y*H);
+        nCtx.strokeStyle = d1.color + '66';
+        nCtx.stroke();
+        nCtx.restore();
+      }
+    });
+  }
+
   requestAnimationFrame(drawNeural);
+}
+
+// ── Decision Playback Mode ───────────────────────────────────────────────────
+function startPlayback() {
+  if (playbackBuffer.length < 2) return;
+  playbackActive = true;
+  playbackStep   = 0;
+  document.getElementById('playback-btn').style.display     = 'none';
+  document.getElementById('playback-scrubber').style.display = 'flex';
+  renderPlaybackStep();
+}
+
+function stopPlayback() {
+  playbackActive = false;
+  document.getElementById('playback-btn').style.display     = 'inline-block';
+  document.getElementById('playback-scrubber').style.display = 'none';
+  // Restore live state
+  if (neuralState && neuralState.regions) {
+    for (const [k,v] of Object.entries(neuralState.regions)) {
+      winnerSmooth[k] = v;
+    }
+  }
+}
+
+function stepPlayback(dir) {
+  playbackStep = Math.max(0, Math.min(playbackBuffer.length-1, playbackStep + dir));
+  renderPlaybackStep();
+}
+
+function renderPlaybackStep() {
+  const label = document.getElementById('playback-step-label');
+  if (label) label.textContent = `${playbackStep+1}/${playbackBuffer.length}`;
+  const frame = playbackBuffer[playbackStep];
+  if (!frame) return;
+  // Override winner/loser sets for this step
+  const entries = Object.entries(frame.regions).sort((a,b)=>b[1]-a[1]);
+  const topN = Math.max(2, Math.floor(entries.length * 0.20));
+  winnerRegions = new Set(entries.slice(0, topN).map(r=>r[0]));
+  loserRegions  = new Set(entries.slice(topN).map(r=>r[0]));
+  for (const [r,v] of entries) winnerSmooth[r] = v;
+  // Highlight the dominant set as winners
+  frame.dominantSet.forEach(r => {
+    const region = regionForCluster(r);
+    winnerSmooth[region] = Math.max(winnerSmooth[region]||0, 0.75);
+  });
+  // Flash reward/winner clusters
+  for (const r of frame.dominantSet) {
+    const reg = regionForCluster(r);
+    addLearningBurst(reg, 'reward', 0.5);
+  }
+}
+
+// ── Update HUD mode badge ────────────────────────────────────────────────────
+function updateModeBadge(meta, eps) {
+  const badge = document.getElementById('mode-badge');
+  if (!badge) return;
+  const mood = (meta && meta.mood) || 'stable';
+  const colors = {
+    bored:      {bg:'#1a1500', border:'#eab308', color:'#eab308', label:'BORED'},
+    entrapped:  {bg:'#1a0a0a', border:'#ef4444', color:'#ef4444', label:'ENTRAPPED'},
+    searching:  {bg:'#120a1a', border:'#a855f7', color:'#a855f7', label:'SEARCHING'},
+    surprised:  {bg:'#1a0e00', border:'#f97316', color:'#f97316', label:'SURPRISED'},
+    stable:     {bg:'#0a1a0a', border:'#22c55e', color:'#22c55e', label:'STABLE'},
+    neutral:    {bg:'#0a0a1a', border:'#6366f1', color:'#6366f1', label:'NEUTRAL'},
+  };
+  const c = colors[mood] || colors.neutral;
+  badge.style.background   = c.bg;
+  badge.style.borderColor  = c.border;
+  badge.style.color        = c.color;
+  const epsLabel = eps !== undefined ? ` ε=${(eps*100).toFixed(0)}%` : '';
+  badge.textContent = (exploreMode ? '⚡ ' : exploitMode ? '🎯 ' : '') + c.label + epsLabel;
 }
 
 // Helper: map cluster name → region key
@@ -1756,6 +2232,49 @@ function updateNeuralPanel(state) {
   const tr = document.getElementById('temp-reward');
   if (tr && state.temporal_reward)
     tr.textContent = '+' + (state.temporal_reward.total_reward||0).toFixed(2);
+
+  // ── Learning bursts: fire visual events from neural state changes ──
+  if (state.prediction_surprise !== undefined) {
+    const surp = state.prediction_surprise;
+    if (surp > 0.12) {
+      // Surprise burst: fire at the top active region
+      const topRegion = state.top_clusters && state.top_clusters[0]
+        ? (state.top_clusters[0].region || regionForCluster(state.top_clusters[0].name))
+        : 'thalamus';
+      addLearningBurst(topRegion, 'surprise', Math.min(1, surp * 4));
+    }
+  }
+  if (state.temporal_reward) {
+    const netR = (state.temporal_reward.total_reward || 0);
+    // Check if reward jumped (crude delta: store last value)
+    const prevR = window._lastTotalReward || 0;
+    const delta = netR - prevR;
+    window._lastTotalReward = netR;
+    if (delta > 0.08) {
+      // Reward burst: fire at top dominant cluster region
+      const domConf = state.conflict && state.conflict.top_dominant;
+      if (domConf && domConf.length) {
+        const reg = regionForCluster(domConf[0]);
+        addLearningBurst(reg, 'reward', Math.min(1, delta * 5));
+      }
+    }
+  }
+
+  // ── Fatigue map update ────────────────────────────────────────────
+  // Use cluster_wear from state (normalized 0-500 → 0-1)
+  if (state.cluster_wear !== undefined) {
+    const wearNorm = Math.min(1.0, state.cluster_wear / 80.0);
+    // Apply to top dominant clusters (they're the ones that tire)
+    const domList = state.conflict && state.conflict.top_dominant || [];
+    domList.forEach((clName, idx) => {
+      const reg = regionForCluster(clName);
+      fatigueMap[reg] = Math.max(fatigueMap[reg]||0, wearNorm * (1 - idx * 0.18));
+    });
+    // Decay all fatigue slowly
+    for (const r of Object.keys(fatigueMap)) {
+      fatigueMap[r] = Math.max(0, (fatigueMap[r]||0) - 0.003);
+    }
+  }
 
   // Neuromodulators with role descriptions
   const NM_DESC = {
