@@ -223,7 +223,7 @@ if (-not ($npFinal -match "^2\.")) {
 Write-Host ""
 Write-Host "  [10/10] Running preflight check..." -ForegroundColor Yellow
 
-$preflight_script = @"
+$preflight_script = @'
 import sys
 
 REQUIRED = [
@@ -276,7 +276,7 @@ if missing_optional:
     print("OPTIONAL_MISSING:" + ",".join(missing_optional))
 
 sys.exit(0)
-"@
+'@
 
 $preflight_out  = & $venvPy -c $preflight_script 2>&1
 $preflight_exit = $LASTEXITCODE
