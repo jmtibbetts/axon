@@ -208,6 +208,224 @@ class PersonalityMatrix:
             return {k: round(v, 3) for k, v in self.traits.items()}
 
 
+
+
+# ── Conflict Engine ───────────────────────────────────────────────────────────
+# Clusters compete via lateral inhibition + softmax gating.
+# Winners suppress losers. Dominance history biases future competition.
+
+class ConflictEngine:
+    """
+    Implements cluster competition:
+      - Lateral inhibition: high-activation clusters suppress neighbours
+      - Softmax gating with context bias: only the confident survive
+      - Dominance memory: past winners are harder to beat (but can tire)
+      - Confidence signal: per-cluster track record of "being right"
+    """
+    def __init__(self, n_clusters: int, cluster_names: list):
+        self.n  = n_clusters
+        self.names = cluster_names
+        # How much each cluster has "won" historically (0-1)
+        self.dominance = torch.ones(n_clusters, dtype=torch.float32) * 0.5
+        # Per-cluster confidence track record
+        self.confidence = torch.ones(n_clusters, dtype=torch.float32) * 0.5
+        # Recent activation history for inconsistency penalty
+        self._history = torch.zeros((16, n_clusters), dtype=torch.float32)
+        self._hist_ptr = 0
+
+    def compete(self, activation: torch.Tensor,
+                context_bias: torch.Tensor,
+                temperature: float = 1.2) -> torch.Tensor:
+        """
+        Run one competition step.
+        Returns gated activation where winners are amplified, losers suppressed.
+        """
+        dev = activation.device
+        dom = self.dominance.to(dev)
+        conf = self.confidence.to(dev)
+
+        # Weighted score: raw activation * dominance * confidence * context
+        score = activation * (0.5 + dom * 0.5) * (0.5 + conf * 0.5) * (0.8 + context_bias * 0.4)
+
+        # Softmax competition — temperature controls sharpness
+        weights = F.softmax(score / temperature, dim=0)
+
+        # Lateral inhibition: top 20% suppress the rest
+        top_thresh = torch.quantile(activation, 0.80)
+        winners  = (activation >= top_thresh).float()
+        losers   = 1.0 - winners
+        # Winners get boosted, losers get inhibited
+        gated = activation * (1.0 + winners * 0.15) * (1.0 - losers * 0.08)
+        gated = torch.clamp(gated, 0.0, 1.0)
+
+        # Update dominance: winners grow, losers decay slightly
+        lr_dom = 0.005
+        self.dominance = torch.clamp(
+            self.dominance.to(dev) + lr_dom * winners.cpu() - lr_dom * 0.3 * losers.cpu(),
+            0.1, 0.9
+        )
+
+        # Record history for temporal consistency check
+        self._history[self._hist_ptr] = activation.detach().cpu()
+        self._hist_ptr = (self._hist_ptr + 1) % 16
+
+        return gated
+
+    def penalise_inconsistency(self, activation: torch.Tensor, penalty: float = 0.01):
+        """
+        Reduce dominance of clusters that flip-flop (high variance in history).
+        Stable, consistent clusters are rewarded.
+        """
+        dev = activation.device
+        var = self._history.var(dim=0)   # [N] — how much each cluster bounced
+        # High variance → dominance penalty
+        self.dominance = torch.clamp(
+            self.dominance - penalty * var,
+            0.1, 0.9
+        )
+
+    def reward_cluster(self, idx: int, magnitude: float = 0.05):
+        self.dominance[idx]  = min(0.9, self.dominance[idx]  + magnitude)
+        self.confidence[idx] = min(0.9, self.confidence[idx] + magnitude * 0.8)
+
+    def punish_cluster(self, idx: int, magnitude: float = 0.05):
+        self.dominance[idx]  = max(0.1, self.dominance[idx]  - magnitude)
+        self.confidence[idx] = max(0.1, self.confidence[idx] - magnitude * 0.5)
+
+    def to_dict(self) -> dict:
+        top_idx = torch.topk(self.dominance, 5).indices.tolist()
+        return {
+            "top_dominant": [self.names[i] for i in top_idx],
+            "dominance_mean": round(float(self.dominance.mean()), 3),
+            "confidence_mean": round(float(self.confidence.mean()), 3),
+        }
+
+
+# ── Prediction Engine (continuous learning loop) ──────────────────────────────
+# Tracks expected vs actual cluster activity and fires error signals.
+
+class PredictionEngine:
+    """
+    Implements a simple predictive coding loop:
+      prediction[t] = EWMA of past activations  (expected)
+      error[t]      = actual[t] - prediction[t] (surprise)
+    Error drives micro-weight updates — the system adapts continuously.
+    """
+    def __init__(self, n_clusters: int):
+        self.n = n_clusters
+        self.prediction = torch.zeros(n_clusters, dtype=torch.float32)
+        self.error      = torch.zeros(n_clusters, dtype=torch.float32)
+        self._alpha     = 0.12   # prediction update rate (how fast expectations change)
+
+    def step(self, actual: torch.Tensor) -> torch.Tensor:
+        """Returns error signal [N] and updates internal prediction."""
+        dev = actual.device
+        pred = self.prediction.to(dev)
+        error = actual.detach() - pred              # positive = more than expected
+        # Update running prediction
+        self.prediction = (pred + self._alpha * error).cpu()
+        self.error = error.cpu()
+        return error   # on same device as `actual`
+
+    def surprise_score(self) -> float:
+        """Scalar: how surprised the system is right now (mean abs error)."""
+        return float(self.error.abs().mean())
+
+    def adjust_weights(self, weight_mat: torch.Tensor,
+                       error: torch.Tensor, spike: torch.Tensor,
+                       lr: float = 0.0003):
+        """
+        Hebbian-error update:
+          Δw_ij ∝ spike_i * error_j
+        If error_j > 0 (more activity than expected), strengthen inputs to j.
+        If error_j < 0 (less than expected), weaken them.
+        Only touches top-K active neurons to keep it sparse.
+        """
+        dev = weight_mat.device
+        err = error.to(dev)
+        sp  = spike.to(dev)
+        topk = min(16, sp.shape[0])
+        top_idx = torch.topk(sp.abs(), topk).indices
+        sp_top  = sp[top_idx]
+        err_top = err[top_idx]
+        delta = torch.outer(sp_top, err_top) * lr
+        with torch.no_grad():
+            sub = weight_mat[top_idx][:, top_idx].float()
+            sub = torch.clamp(sub + delta, -1.0, 1.0)
+            weight_mat[top_idx.unsqueeze(1), top_idx] = sub.half()
+
+
+# ── Temporal Reward Buffer ─────────────────────────────────────────────────────
+# Multi-step reward: accumulates actions, fires reward ONLY after N steps.
+
+class TemporalRewardBuffer:
+    """
+    Delayed reward system:
+      - Accumulates (cluster_activations, context) tuples
+      - After `horizon` steps, evaluates the sequence and assigns credit
+      - Successful paths reinforce dominance; failed paths are penalised
+      - Penalises inconsistency across steps (flip-flopping = bad)
+    """
+    def __init__(self, horizon: int = 8):
+        self.horizon = horizon
+        self._buffer: list = []       # list of (activation_snapshot, emotion)
+        self._total_reward = 0.0
+        self._total_penalty = 0.0
+
+    def push(self, activation: torch.Tensor, emotion: str, valence: float):
+        snap = activation.detach().cpu().clone()
+        self._buffer.append((snap, emotion, valence))
+        if len(self._buffer) > self.horizon * 2:
+            self._buffer.pop(0)
+
+    def evaluate(self, conflict: "ConflictEngine") -> tuple:
+        """
+        Called every `horizon` ticks.
+        Returns (reward, penalty, dominant_clusters).
+        """
+        if len(self._buffer) < self.horizon:
+            return 0.0, 0.0, []
+
+        window = self._buffer[-self.horizon:]
+        acts   = torch.stack([w[0] for w in window])    # [H, N]
+        vals   = [w[2] for w in window]
+
+        # Net reward signal from valence trajectory
+        valence_change = vals[-1] - vals[0]
+        valence_mean   = sum(vals) / len(vals)
+        reward  = max(0.0, valence_change * 0.5 + max(0.0, valence_mean) * 0.3)
+        penalty = max(0.0, -valence_change * 0.3 + max(0.0, -valence_mean) * 0.2)
+
+        # Consistency bonus: low variance across window = stable focused thinking
+        variance = acts.var(dim=0).mean().item()
+        if variance < 0.01:
+            reward  += 0.05   # very consistent = bonus
+        elif variance > 0.08:
+            penalty += 0.03   # chaotic = mild penalty
+
+        # Credit assignment: who was most active across the window?
+        mean_act = acts.mean(dim=0)
+        topk_idx = torch.topk(mean_act, min(5, len(mean_act))).indices.tolist()
+        dominant = [conflict.names[i] for i in topk_idx]
+
+        # Apply reward/penalty to dominant clusters
+        for i in topk_idx:
+            if reward > 0:
+                conflict.reward_cluster(i, reward * 0.3)
+            if penalty > 0:
+                conflict.punish_cluster(i, penalty * 0.3)
+
+        self._total_reward  += reward
+        self._total_penalty += penalty
+        return reward, penalty, dominant
+
+    def stats(self) -> dict:
+        return {
+            "total_reward":  round(self._total_reward,  3),
+            "total_penalty": round(self._total_penalty, 3),
+            "buffer_len":    len(self._buffer),
+        }
+
 # ── Thought Stream ───────────────────────────────────────────────────────────
 
 class ThoughtStream:
@@ -315,6 +533,16 @@ class NeuralFabric:
         self._build_weight_matrix()
 
         self.hebbian_trace = torch.zeros(N, dtype=torch.float32, device=DEVICE)
+
+        # ── New subsystems ────────────────────────────────────────────────────
+        self.conflict    = ConflictEngine(N, self._cluster_names)
+        self.predictor   = PredictionEngine(N)
+        self.temp_reward = TemporalRewardBuffer(horizon=10)
+        # Context bias vector: memory + personality shape cluster gating
+        self.context_bias = torch.zeros(N, dtype=torch.float32)
+        # Exploration noise: epsilon for random bursts (starts high, anneals)
+        self._explore_eps  = 0.18
+        self._explore_step = 0
 
         total_neurons = sum(c.size for c in self.clusters.values())
         print(f"  [NeuralFabric] {total_neurons:,} virtual neurons | "
@@ -543,7 +771,14 @@ class NeuralFabric:
     # ── GPU tick ─────────────────────────────────────────────────────────────
 
     def _gpu_tick(self, dt: float) -> torch.Tensor:
-        """Single GPU tick. Returns spike vector [N] on DEVICE."""
+        """
+        Single GPU tick — now with:
+          1. Conflict gating (lateral inhibition + softmax competition)
+          2. Prediction error → continuous weight updates
+          3. Exploration noise (epsilon-greedy bursts)
+          4. Memory context bias shapes cluster competition
+        Returns spike vector [N] on DEVICE.
+        """
         nm = self.neuromod
         da  = nm.dopamine
         ne  = nm.norepinephrine
@@ -554,40 +789,64 @@ class NeuralFabric:
         with self._lock:
             act = self.activation.clone()
 
-        # Effective threshold: fatigue + norepinephrine modulation
-        eff_thresh = self.threshold * (1.0 + self.fatigue) * (1.2 - ne * 0.4)
+        # ── 1. Exploration noise ─────────────────────────────────────────────
+        # Inject random bursts — lets the system discover unexpected pathways
+        self._explore_step += 1
+        # Epsilon anneals from 0.18 → 0.04 over ~10k steps
+        self._explore_eps = max(0.04, 0.18 * math.exp(-self._explore_step / 10000))
+        if random.random() < self._explore_eps:
+            burst_idx = random.randint(0, act.shape[0] - 1)
+            act[burst_idx] = torch.clamp(
+                act[burst_idx] + random.gauss(0, 0.08), 0.0, 1.0
+            )
 
-        # Sigmoid spike
+        # ── 2. Conflict engine: lateral inhibition + softmax gating ─────────
+        ctx_bias = self.context_bias.to(DEVICE)
+        # Softmax temperature scales with norepinephrine (stress → sharper competition)
+        temp = 1.4 - ne * 0.6    # range [0.8, 1.4]
+        act = self.conflict.compete(act, ctx_bias, temperature=temp)
+
+        # GABA-mediated global inhibition: when GABA is high, suppress weak clusters
+        if gab > 0.55:
+            low_mask = (act < 0.15).float()
+            act = act * (1.0 - low_mask * (gab - 0.55) * 0.4)
+
+        # ── 3. Standard spike computation ────────────────────────────────────
+        eff_thresh = self.threshold * (1.0 + self.fatigue) * (1.2 - ne * 0.4)
         x     = (act - eff_thresh) * 8.0
         spike = torch.sigmoid(x) * (act > eff_thresh).float()
         spike = spike * (0.8 + da * 0.2)
 
-        # Fatigue: clusters that fired get tired
+        # Fatigue
         fired_mask = (spike > 0.05).float()
         self.fatigue = torch.clamp(self.fatigue + fired_mask * 0.05, 0.0, 1.0)
-        self.fatigue = self.fatigue * 0.95   # decay
+        self.fatigue = self.fatigue * 0.95
 
-        # Propagate through weight matrix (the GPU magic ✨)
-        # weight_mat is [N,N] float16; spike is float32 → cast for matmul
-        wm = self.weight_mat.float()
-        delta = wm @ spike                   # [N] weighted input from all sources
-        delta = delta * 0.12                 # scale — local propagation
-        delta = delta * (0.4 + ach * 0.6)    # acetylcholine boosts learning
+        # ── 4. Propagate through weight matrix ───────────────────────────────
+        wm    = self.weight_mat.float()
+        delta = wm @ spike
+        delta = delta * 0.12 * (0.4 + ach * 0.6)
 
-        # Noise
+        # ── 5. Noise ─────────────────────────────────────────────────────────
         noise = torch.randn_like(act) * 0.002 * (0.5 + ne * 0.3)
 
-        # Decay (serotonin stabilises) — floor keeps neurons from going fully dark
-        decay = 0.95 - ser * 0.03
-        new_act = torch.clamp(act * decay + delta + noise, min=0.01)
-        new_act = torch.clamp(new_act, 0.0, 1.0)
+        # ── 6. Decay ─────────────────────────────────────────────────────────
+        decay   = 0.95 - ser * 0.03
+        new_act = torch.clamp(act * decay + delta + noise, min=0.01, max=1.0)
 
-        # Hebbian: EWMA trace
+        # ── 7. Prediction error → continuous micro-adaptation ────────────────
+        error = self.predictor.step(new_act)
+        if self._tick % 5 == 0:
+            self.predictor.adjust_weights(self.weight_mat, error, spike, lr=0.0003)
+
+        # ── 8. Hebbian update ─────────────────────────────────────────────────
         self.hebbian_trace = self.hebbian_trace * 0.95 + spike * 0.05
-
-        # Periodic Hebbian weight update (top-K co-active pairs)
         if self._tick % 10 == 0:
             self._hebbian_update(spike, ach)
+
+        # ── 9. Inconsistency penalty every 32 ticks ──────────────────────────
+        if self._tick % 32 == 0:
+            self.conflict.penalise_inconsistency(new_act)
 
         with self._lock:
             self.activation = new_act
@@ -695,6 +954,43 @@ class NeuralFabric:
                 self.activation[a] = torch.clamp(self.activation[a] * 0.8 + shared * 0.2, 0.0, 1.0)
                 self.activation[b] = torch.clamp(self.activation[b] * 0.8 + shared * 0.2, 0.0, 1.0)
 
+
+    def update_context_from_memory(self, memory_success: dict):
+        """
+        Feed memory success/failure data into context_bias vector.
+        memory_success: {cluster_name: success_rate_0_to_1}
+        This biases future softmax competition — clusters that historically
+        led to good outcomes get a higher context bias.
+        """
+        N = len(self._cluster_names)
+        new_bias = torch.zeros(N, dtype=torch.float32)
+        for name, rate in memory_success.items():
+            idx = self._name_to_idx.get(name)
+            if idx is not None:
+                # Sigmoid-centered: 0.5 success = neutral bias
+                new_bias[idx] = (rate - 0.5) * 2.0   # range [-1, 1]
+        # Smooth update — don't jump sharply
+        self.context_bias = self.context_bias * 0.9 + new_bias * 0.1
+
+    def inject_reward(self, magnitude: float = 0.3, source: str = "external"):
+        """Reward signal: boost neuromod dopamine + credit active clusters."""
+        self.neuromod.reward(magnitude)
+        # Credit the currently most-active clusters
+        with self._lock:
+            act = self.activation.clone()
+        topk = torch.topk(act, min(5, act.shape[0])).indices.tolist()
+        for i in topk:
+            self.conflict.reward_cluster(i, magnitude * 0.4)
+
+    def inject_penalty(self, magnitude: float = 0.2, source: str = "external"):
+        """Penalty signal: stress neuromod + punish active clusters."""
+        self.neuromod.stress(magnitude)
+        with self._lock:
+            act = self.activation.clone()
+        topk = torch.topk(act, min(5, act.shape[0])).indices.tolist()
+        for i in topk:
+            self.conflict.punish_cluster(i, magnitude * 0.3)
+
     # ── Main loop ─────────────────────────────────────────────────────────────
 
     def start(self):
@@ -716,6 +1012,18 @@ class NeuralFabric:
 
             # Full GPU tick
             spike = self._gpu_tick(dt)
+
+            # ── Temporal reward evaluation every 10 ticks ─────────────────
+            if self._tick % 10 == 0:
+                with self._lock:
+                    act_snap = self.activation.clone()
+                self.temp_reward.push(
+                    act_snap,
+                    self.emotions.current,
+                    self.emotions.valence
+                )
+            if self._tick % self.temp_reward.horizon == 0 and self._tick > 0:
+                r, p, dom = self.temp_reward.evaluate(self.conflict)
 
             # CPU readback for emotion/thoughts/callbacks (every 4 ticks)
             if self._tick % 4 == 0:
@@ -783,6 +1091,10 @@ class NeuralFabric:
             "total_neurons": sum(c.size for c in self.clusters.values()),
             "total_connections": int(self.weight_mat.count_nonzero().item()),
             "new_synapses":  new_syn,
+            "conflict":           self.conflict.to_dict(),
+            "prediction_surprise": round(self.predictor.surprise_score(), 4),
+            "temporal_reward":    self.temp_reward.stats(),
+            "explore_eps":        round(self._explore_eps, 4),
         }
 
     def get_state_snapshot(self, spikes: dict = None) -> dict:

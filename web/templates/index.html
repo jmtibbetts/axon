@@ -383,6 +383,15 @@ canvas.spark{display:block;}
           <span class="section-hint">Hover for description</span>
         </div>
         <div id="region-bars"></div>
+        <div id="conflict-panel" style="margin-top:6px;padding:4px 6px;background:#0a0014;border:1px solid #2d1b4e;border-radius:4px;">
+          <div style="font-size:7px;color:#7c3aed;letter-spacing:.08em;text-transform:uppercase;margin-bottom:3px;">&#9876; Conflict Engine</div>
+          <div id="conflict-dominant" style="font-size:7.5px;color:#c4b5fd;margin-bottom:2px;">—</div>
+          <div style="display:flex;gap:8px;font-size:7px;color:var(--muted);">
+            <span>Surprise: <span id="pred-surprise" style="color:#f97316">—</span></span>
+            <span>Explore e: <span id="explore-eps" style="color:#4ade80">—</span></span>
+            <span>Reward: <span id="temp-reward" style="color:#a855f7">—</span></span>
+          </div>
+        </div>
       </div>
 
       <!-- Top clusters -->
@@ -1458,6 +1467,24 @@ const NM_COLORS = {
 };
 
 function updateNeuralPanel(state) {
+  // ── Conflict Engine panel ─────────────────────────────────────────────────
+  if (state.conflict) {
+    const dom = (state.conflict.top_dominant || []).slice(0,3)
+                  .map(s => s.replace(/_/g,' ')).join(' ▶ ');
+    const el = document.getElementById('conflict-dominant');
+    if (el) el.textContent = '⚔ ' + (dom || '—');
+  }
+  const ps = document.getElementById('pred-surprise');
+  if (ps && state.prediction_surprise !== undefined)
+    ps.textContent = state.prediction_surprise.toFixed(3);
+  const ee = document.getElementById('explore-eps');
+  if (ee && state.explore_eps !== undefined)
+    ee.textContent = (state.explore_eps * 100).toFixed(1) + '%';
+  const tr = document.getElementById('temp-reward');
+  if (tr && state.temporal_reward)
+    tr.textContent = '+' + state.temporal_reward.total_reward.toFixed(2)
+                   + ' / -' + state.temporal_reward.total_penalty.toFixed(2);
+
   // Neuromodulators with role descriptions
   const NM_DESC = {
     dopamine:       'Reward, motivation, goal pursuit',
