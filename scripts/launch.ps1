@@ -31,8 +31,8 @@ Write-Host "  [1/5] pip..." -ForegroundColor Yellow
 & $venvPip install --upgrade pip setuptools wheel --quiet
 
 Write-Host "  [2/5] PyTorch nightly cu128..." -ForegroundColor Yellow
-$tv      = & $venvPy -c "import torch; print(torch.__version__)"        2>$null
-$cudaOk  = & $venvPy -c "import torch; print(torch.cuda.is_available())" 2>$null
+$tv       = & $venvPy -c 'import torch; print(torch.__version__)'         2>$null
+$cudaOk   = & $venvPy -c 'import torch; print(torch.cuda.is_available())'  2>$null
 $isNightly = $tv -match "dev"
 
 if (-not $isNightly -or $cudaOk -ne "True") {
@@ -43,16 +43,16 @@ if (-not $isNightly -or $cudaOk -ne "True") {
     }
     & $venvPip uninstall torch torchvision torchaudio -y --quiet 2>$null
     & $venvPip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
-    $cudaOk2 = & $venvPy -c "import torch; print(torch.cuda.is_available())" 2>$null
+    $cudaOk2 = & $venvPy -c 'import torch; print(torch.cuda.is_available())'  2>$null
     if ($cudaOk2 -eq "True") {
-        $gpuName = & $venvPy -c "import torch; print(torch.cuda.get_device_name(0))" 2>$null
+        $gpuName = & $venvPy -c 'import torch; print(torch.cuda.get_device_name(0))' 2>$null
         Write-Host "  [OK] CUDA available: $gpuName" -ForegroundColor Green
     } else {
         Write-Host "  [WARN] CUDA still not available after reinstall — check CUDA 12.8 drivers" -ForegroundColor Red
         Write-Host "         Make sure NVIDIA driver >= 570 and CUDA toolkit 12.8 are installed." -ForegroundColor DarkGray
     }
 } else {
-    $gpuName = & $venvPy -c "import torch; print(torch.cuda.get_device_name(0))" 2>$null
+    $gpuName = & $venvPy -c 'import torch; print(torch.cuda.get_device_name(0))' 2>$null
     Write-Host "  [SKIP] PyTorch nightly ok ($tv) | GPU: $gpuName" -ForegroundColor DarkGray
 }
 
@@ -60,7 +60,7 @@ Write-Host "  [3/5] Core deps..." -ForegroundColor Yellow
 & $venvPip install --quiet flask flask-socketio flask-cors eventlet anthropic openai-whisper sounddevice opencv-python mediapipe edge-tts pygame numpy scipy pyaudio
 
 Write-Host "  [3b/5] Vision deps (YOLOv8 + FER)..." -ForegroundColor Yellow
-$ultraOk = & $venvPy -c "import ultralytics" 2>$null
+$ultraOk = & $venvPy -c 'import ultralytics' 2>$null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  Installing ultralytics (YOLOv8)..." -ForegroundColor Cyan
     & $venvPip install ultralytics
@@ -69,13 +69,13 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # Test whether FER actually works (package may be installed but broken)
-$ferOk = & $venvPy -c "from fer import FER" 2>$null
+$ferOk = & $venvPy -c 'from fer import FER' 2>$null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  fer broken or missing — trying fer==22.5.1 + tensorflow..." -ForegroundColor Cyan
     & $venvPip uninstall fer -y --quiet 2>$null
     & $venvPip install "fer==22.5.1" tensorflow
     # Re-test; if still broken install deepface as fallback
-    $ferOk2 = & $venvPy -c "from fer import FER" 2>$null
+    $ferOk2 = & $venvPy -c 'from fer import FER' 2>$null
     if ($LASTEXITCODE -ne 0) {
         Write-Host "  fer still broken — installing deepface as emotion backend..." -ForegroundColor Yellow
         & $venvPip install deepface
@@ -85,7 +85,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # Ensure deepface is available as backup regardless
-$dfOk = & $venvPy -c "import deepface" 2>$null
+$dfOk = & $venvPy -c 'import deepface' 2>$null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  Installing deepface (emotion fallback)..." -ForegroundColor Cyan
     & $venvPip install deepface
