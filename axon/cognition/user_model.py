@@ -288,45 +288,81 @@ class UserModel:
     def describe(self) -> str:
         """Render the user profile as a natural-language context block for the LLM."""
         p = self._profile
-        lines = ["[USER PROFILE — what I know about you]"]
-
         id_ = p.get("identity", {})
-        if id_.get("name"):
-            lines.append(f"Name: {id_['name']}")
-        if id_.get("age"):
-            lines.append(f"Age: {id_['age']}")
-
         work = p.get("work", {})
+        loc  = p.get("location", {})
+
+        name = id_.get("full_name") or id_.get("name")
+
+        # Build a compact but warm context paragraph
+        parts = []
+
+        # Who
+        if name:
+            intro = f"The person I am talking to is {name}"
+            if id_.get("age"):
+                intro += f", age {id_['age']}"
+            if loc.get("city"):
+                intro += f", based in {loc['city']}"
+            if loc.get("timezone"):
+                intro += f" ({loc['timezone']})"
+            intro += "."
+            parts.append(intro)
+
+        # Work
         if work.get("job_title"):
-            job_line = f"Job: {work['job_title']}"
+            job_line = f"They work as a {work['job_title']}"
             if work.get("employer"):
                 job_line += f" at {work['employer']}"
-            if work.get("industry"):
-                job_line += f" ({work['industry']} industry)"
-            lines.append(job_line)
+            job_line += "."
+            parts.append(job_line)
 
-        loc = p.get("location", {})
-        if loc.get("city"):
-            lines.append(f"Location: {loc['city']}")
-        if loc.get("timezone"):
-            lines.append(f"Timezone: {loc['timezone']}")
-        if loc.get("wake_time") or loc.get("sleep_time"):
-            sched = []
-            if loc.get("wake_time"):  sched.append(f"up at {loc['wake_time']}")
-            if loc.get("sleep_time"): sched.append(f"sleeps at {loc['sleep_time']}")
-            lines.append(f"Schedule: {', '.join(sched)}")
-
-        interests = p.get("interests", [])
-        if interests:
-            lines.append(f"Interests: {', '.join(interests[:8])}")
-
-        skills = p.get("skills", [])
-        if skills:
-            lines.append(f"Skills: {', '.join(skills[:6])}")
-
+        # Projects
         projects = p.get("projects", [])
         if projects:
-            lines.append(f"Current projects: {', '.join(projects[:4])}")
+            parts.append(f"Current projects: {', '.join(projects[:4])}.")
+
+        # Skills
+        skills = p.get("skills", [])
+        if skills:
+            parts.append(f"Technical skills: {', '.join(skills[:6])}.")
+
+        # Interests
+        interests = p.get("interests", [])
+        if interests:
+            parts.append(f"Interests include: {', '.join(interests[:6])}.")
+
+        # Goals
+        goals = p.get("goals", [])
+        if goals:
+            parts.append(f"Goals: {', '.join(goals[:3])}.")
+
+        # Relations
+        relations = p.get("relations", [])
+        if relations:
+            parts.append(f"Mentioned relationships: {', '.join(relations[:4])}.")
+
+        # Top topics
+        topics = p.get("topics", {})
+        if topics:
+            top = sorted(topics.items(), key=lambda x: x[1], reverse=True)[:4]
+            parts.append(f"Frequently discusses: {', '.join(t for t, _ in top)}.")
+
+        # Style
+        style = p.get("style", {})
+        style_parts = []
+        if style.get("message_length"):
+            style_parts.append(f"{style['message_length']} messages")
+        if style.get("formality"):
+            style_parts.append(f"{style['formality']} tone")
+        if style_parts:
+            parts.append(f"Communication style: {', '.join(style_parts)}.")
+
+        if not parts:
+            return ""
+
+        header = "[WHAT I KNOW ABOUT THIS PERSON — use this to personalise every response]"
+        return header + "\n" + " ".join(parts)
 
         goals = p.get("goals", [])
         if goals:
