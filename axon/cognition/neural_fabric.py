@@ -1582,7 +1582,11 @@ class NeuralFabric:
 
         # ── 8. Decay ──────────────────────────────────────────────────────────
         decay   = 0.95 - ser * 0.03
-        new_act = torch.clamp(act * decay + delta + noise, min=0.01, max=1.0)
+        new_act = torch.clamp(act * decay + delta + noise, min=0.001, max=1.0)
+        # Resting potential: prevent all regions from collapsing to floor at idle
+        # Biological cortex maintains ~5-8% baseline firing; mirror that here.
+        resting = torch.full_like(new_act, 0.04 + 0.03 * ser)   # serotonin raises resting tone
+        new_act = torch.max(new_act, resting)
 
         # ── 9. Surprise-driven learning rate ─────────────────────────────────
         # High surprise = this moment matters more → amplify both prediction
