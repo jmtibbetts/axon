@@ -141,6 +141,28 @@ def on_stop():
         _engine = None
     emit("log", {"msg": "AXON stopped."})
 
+def _sanitize(obj):
+    """Recursively convert numpy/torch scalar types to native Python for JSON."""
+    import numpy as np
+    if isinstance(obj, dict):
+        return {k: _sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize(v) for v in obj]
+    if isinstance(obj, np.integer):
+        return int(obj)
+    if isinstance(obj, (np.floating, np.float32, np.float64)):
+        return float(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    try:
+        import torch
+        if isinstance(obj, torch.Tensor):
+            return obj.item() if obj.numel() == 1 else obj.tolist()
+    except ImportError:
+        pass
+    return obj
+
+
 @socketio.on("diagnostic")
 def on_diagnostic():
     global _engine
@@ -149,9 +171,10 @@ def on_diagnostic():
         return
     try:
         data = _engine.get_diagnostic()
-        emit("diagnostic_result", data)
+        emit("diagnostic_result", _sanitize(data))
     except Exception as e:
-        emit("diagnostic_result", {"error": str(e)})
+        import traceback
+        emit("diagnostic_result", {"error": str(e) + "\n" + traceback.format_exc()[-800:]})
 
 if __name__ == "__main__":
     import signal, sys
