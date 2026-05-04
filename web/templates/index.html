@@ -504,6 +504,18 @@ canvas.spark{display:block;}
 </style>
 
 <script>
+// ── Diagnostic helpers (must be defined first) ──────────────────
+function diagRow(key, val, cls) {
+  cls = cls || '';
+  return '<div class="diag-row"><span class="diag-key">' + key + '</span><span class="diag-val ' + cls + '">' + val + '</span></div>';
+}
+function fmt(n) {
+  if (n === null || n === undefined) return '—';
+  return Number(n).toLocaleString();
+}
+</script>
+
+<script>
 // ── DIAGNOSTIC MODE ─────────────────────────────────────────────
 function requestDiagnostic() {
   document.getElementById('diag-overlay').style.display = 'block';
@@ -530,11 +542,14 @@ socket.on('open_diagnostic', function() {
 });
 
 socket.on('diagnostic_result', function(d) {
+  console.log('[AXON] diagnostic_result received:', d);
+  try {
+
   if (d.error) {
     document.getElementById('diag-neural').innerHTML =
-      `<div class="diag-loading" style="color:#ef4444;text-align:left;white-space:pre-wrap;font-size:8px;padding:16px;">` +
-      `<div style="color:#ef4444;margin-bottom:8px;font-size:10px;">⚠ DIAGNOSTIC ERROR</div>` +
-      d.error.replace(/</g,'&lt;') + `</div>`;
+      '<div class="diag-loading" style="color:#ef4444;text-align:left;white-space:pre-wrap;font-size:8px;padding:16px;">' +
+      '<div style="color:#ef4444;margin-bottom:8px;font-size:10px;">⚠ DIAGNOSTIC ERROR</div>' +
+      String(d.error).replace(/</g,'&lt;') + '</div>';
     return;
   }
 
@@ -653,19 +668,14 @@ socket.on('diagnostic_result', function(d) {
       </div>`;
     });
   document.getElementById('diag-clusters').innerHTML = clHTML;
+
+  } catch(err) {
+    console.error('[AXON] diagnostic render error:', err);
+    document.getElementById('diag-neural').innerHTML =
+      '<div class="diag-loading" style="color:#ef4444;padding:16px;font-size:9px;">Render error: ' + err.message + '</div>';
+  }
 });
 
-function diagRow(key, val, cls='') {
-  return `<div class="diag-row">
-    <span class="diag-key">${key}</span>
-    <span class="diag-val ${cls}">${val}</span>
-  </div>`;
-}
-
-function fmt(n) {
-  if (n === null || n === undefined) return '—';
-  return Number(n).toLocaleString();
-}
 </script>
 
 <script>
