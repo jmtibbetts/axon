@@ -114,6 +114,36 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);
 /* Cluster bars */
 .cluster-bar .bar-fill{background:var(--accent);}
 .cluster-bar.hot .bar-fill{background:var(--red);}
+/* Tabs */
+.info-tab{flex:1;padding:4px 2px;font-size:8.5px;background:none;border:none;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;letter-spacing:.04em;}
+.info-tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+.info-tab:hover{color:#fff;}
+.tab-pane{display:none;}
+.tab-pane.active{display:block;}
+.section-hint{font-size:7px;color:#4b5563;font-weight:400;margin-left:4px;text-transform:none;letter-spacing:0;}
+/* Activity feed */
+.feed-item{display:flex;gap:5px;align-items:flex-start;padding:3px 0;border-bottom:1px solid #0f172a;animation:fadeIn .4s ease;}
+.feed-icon{font-size:10px;flex-shrink:0;margin-top:1px;}
+.feed-body{flex:1;min-width:0;}
+.feed-label{font-size:8px;color:#94a3b8;line-height:1.4;}
+.feed-detail{font-size:7.5px;color:#4b5563;margin-top:1px;}
+.feed-time{font-size:7px;color:#374151;flex-shrink:0;}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-4px);}to{opacity:1;transform:none;}}
+/* Memory panel */
+.mem-stat-box{background:#0d1117;border:1px solid #1e293b;border-radius:4px;padding:4px 7px;flex:1;min-width:60px;}
+.mem-stat-val{font-size:14px;font-weight:700;color:var(--accent);}
+.mem-stat-lbl{font-size:7px;color:#4b5563;text-transform:uppercase;letter-spacing:.05em;}
+.pathway-row{display:flex;align-items:center;gap:4px;padding:2px 0;border-bottom:1px solid #0f172a;}
+.pathway-nodes{font-size:7.5px;color:#94a3b8;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.pathway-strength{font-size:7.5px;color:var(--green);flex-shrink:0;width:30px;text-align:right;}
+.fact-row{display:flex;gap:5px;padding:2px 0;border-bottom:1px solid #0f172a;}
+.fact-key{font-size:7.5px;color:#7c3aed;min-width:70px;flex-shrink:0;}
+.fact-val{font-size:7.5px;color:#c4b5fd;flex:1;word-break:break-word;}
+.topic-chip{display:inline-block;background:#1e1b4b;border:1px solid #3730a3;border-radius:10px;padding:2px 7px;font-size:7.5px;color:#818cf8;margin:2px;}
+/* Region bar tooltips */
+.bar-row{position:relative;}
+.bar-row .region-desc{display:none;position:absolute;left:100%;top:0;z-index:20;width:160px;background:#0d1117;border:1px solid #1e293b;border-radius:5px;padding:6px 8px;font-size:8px;color:#94a3b8;line-height:1.5;white-space:normal;margin-left:6px;}
+.bar-row:hover .region-desc{display:block;}
 
 /* -- VISION -- */
 #vision-canvas{width:100%;height:100%;display:block;image-rendering:pixelated;}
@@ -270,26 +300,34 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);
     </div>
   </div>
 
-  <!-- COL 3: Neural State (spans both rows) -->
-  <div class="panel" style="grid-row:1/3;grid-column:3;overflow:auto;">
-    <div class="panel-title">? Neural State</div>
-    <div class="panel-body" id="neural-state-panel">
+  <!-- COL 3: Tabbed info panel -->
+  <div class="panel" style="grid-row:1/3;grid-column:3;overflow:hidden;display:flex;flex-direction:column;">
+    <!-- Tab bar -->
+    <div style="display:flex;border-bottom:1px solid var(--border);flex-shrink:0;">
+      <button class="info-tab active" data-tab="brain"    onclick="switchTab('brain')">🧠 Brain</button>
+      <button class="info-tab"        data-tab="activity" onclick="switchTab('activity')">⚡ Activity</button>
+      <button class="info-tab"        data-tab="memory"   onclick="switchTab('memory')">💾 Memory</button>
+      <button class="info-tab"        data-tab="knowme"   onclick="switchTab('knowme')">👤 Know Me</button>
+    </div>
+
+    <!-- TAB: Brain State -->
+    <div id="tab-brain" class="tab-pane active" style="overflow-y:auto;flex:1;padding:6px 8px;">
 
       <!-- Emotion -->
       <div class="neuro-section">
         <div class="neuro-title">Emotional State</div>
         <div class="emotion-ring">
-          <div class="e-circle" id="e-circle">
-            <span id="e-name">...</span>
-          </div>
+          <div class="e-circle" id="e-circle"><span id="e-name">...</span></div>
           <div class="e-label" id="e-label">neutral</div>
           <div class="e-coords" id="e-coords">v:0 a:0 i:0</div>
         </div>
       </div>
 
-      <!-- Neuromodulators -->
+      <!-- Neuromodulators with descriptions -->
       <div class="neuro-section">
-        <div class="neuro-title">Neuromodulators</div>
+        <div class="neuro-title">Neuromodulators
+          <span class="section-hint">Chemical signals shaping cognition</span>
+        </div>
         <div id="nm-bars"></div>
       </div>
 
@@ -299,24 +337,63 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);
         <div id="trait-bars"></div>
       </div>
 
-      <!-- Top clusters -->
+      <!-- Region Activity with descriptions -->
       <div class="neuro-section">
-        <div class="neuro-title">Active Clusters</div>
-        <div id="cluster-bars"></div>
-      </div>
-
-      <!-- Regions -->
-      <div class="neuro-section">
-        <div class="neuro-title">Region Activity</div>
+        <div class="neuro-title">Brain Regions
+          <span class="section-hint">Hover for description</span>
+        </div>
         <div id="region-bars"></div>
       </div>
 
-      <!-- User Profile -->
+      <!-- Top clusters -->
       <div class="neuro-section">
-        <div class="neuro-title" style="color:#a78bfa;">Know Me <span id="profile-turns" style="font-size:7px;color:#6b7280;margin-left:4px;"></span></div>
-        <div id="user-profile-panel" style="font-size:8.5px;color:#c4b5fd;line-height:1.7;"></div>
+        <div class="neuro-title">Active Clusters
+          <span class="section-hint">Top firing neuron groups</span>
+        </div>
+        <div id="cluster-bars"></div>
       </div>
+    </div>
 
+    <!-- TAB: Activity Feed -->
+    <div id="tab-activity" class="tab-pane" style="overflow-y:auto;flex:1;display:none;padding:6px 8px;">
+      <div class="neuro-title" style="margin-bottom:6px;">Live Neural Events
+        <span class="section-hint">Real-time brain activity log</span>
+      </div>
+      <div id="activity-feed" style="display:flex;flex-direction:column;gap:4px;"></div>
+    </div>
+
+    <!-- TAB: Memory -->
+    <div id="tab-memory" class="tab-pane" style="overflow-y:auto;flex:1;display:none;padding:6px 8px;">
+      <div class="neuro-title" style="margin-bottom:6px;">Memory System
+        <span class="section-hint">What AXON has learned and retained</span>
+      </div>
+      <!-- Memory stats row -->
+      <div id="mem-stats" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;"></div>
+      <!-- Semantic facts -->
+      <div class="neuro-section">
+        <div class="neuro-title">Known Facts</div>
+        <div id="mem-facts"></div>
+      </div>
+      <!-- Strongest pathways -->
+      <div class="neuro-section">
+        <div class="neuro-title">Strongest Neural Pathways
+          <span class="section-hint">Hebbian connections — fire together, wire together</span>
+        </div>
+        <div id="mem-pathways"></div>
+      </div>
+      <!-- Top topics -->
+      <div class="neuro-section">
+        <div class="neuro-title">Topics Learned</div>
+        <div id="mem-topics"></div>
+      </div>
+    </div>
+
+    <!-- TAB: Know Me -->
+    <div id="tab-knowme" class="tab-pane" style="overflow-y:auto;flex:1;display:none;padding:6px 8px;">
+      <div class="neuro-title" style="margin-bottom:6px;">User Model
+        <span class="section-hint">What AXON has inferred about you  <span id="profile-turns" style="color:#6b7280;font-weight:400;"></span></span>
+      </div>
+      <div id="user-profile-panel" style="font-size:8.5px;color:#c4b5fd;line-height:1.7;"></div>
     </div>
   </div>
 
@@ -886,10 +963,26 @@ const NM_COLORS = {
 };
 
 function updateNeuralPanel(state) {
-  // Neuromod
+  // Neuromodulators with role descriptions
+  const NM_DESC = {
+    dopamine:       'Reward, motivation, goal pursuit',
+    serotonin:      'Mood stability, patience, contentment',
+    norepinephrine: 'Alertness, arousal, stress response',
+    acetylcholine:  'Attention, learning, memory encoding',
+    gaba:           'Inhibition, calm, noise reduction',
+    glutamate:      'Excitation, plasticity, energy',
+  };
   let nm = '';
   for (const [k,v] of Object.entries(state.neuromod||{})) {
-    nm += makeBar(k, v, `nm-${k}`, NM_COLORS[k]||'');
+    const pct  = Math.round((v||0)*100);
+    const col  = NM_COLORS[k] || '#64748b';
+    const desc = NM_DESC[k] || '';
+    nm += `<div class="bar-row" style="position:relative;">
+      <div class="bar-label">${k}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${col}"></div></div>
+      <div class="bar-val">${pct}%</div>
+      ${desc ? `<div class="region-desc"><strong style="color:#e2e8f0;">${k}</strong><br>${desc}</div>` : ''}
+    </div>`;
   }
   document.getElementById('nm-bars').innerHTML = nm;
 
@@ -900,32 +993,82 @@ function updateNeuralPanel(state) {
   }
   document.getElementById('trait-bars').innerHTML = traits;
 
-  // Top clusters
+  // Top clusters with descriptions
+  const CLUSTER_DESC = {
+    working_memory:'Holds information in mind right now for active use.',
+    executive_control:'Manages goals, switches tasks, overrides impulses.',
+    decision_making:'Weighs options and selects actions.',
+    planning:'Sequences future actions toward a goal.',
+    inhibitory_control:'Suppresses irrelevant responses.',
+    action_selection:'Picks the best action from candidates.',
+    hippocampus_encode:'Writes new experiences into long-term memory.',
+    hippocampus_retrieve:'Reads and reconstructs past memories.',
+    episodic_memory:'Stores autobiographical event memories.',
+    spatial_memory:'Tracks position, maps, and navigation context.',
+    pattern_completion:'Reconstructs full memories from partial cues.',
+    pattern_separation:'Keeps similar memories distinct and non-overlapping.',
+    amygdala_fear:'Processes fear signals and threat responses.',
+    amygdala_reward:'Tracks reward expectation and emotional valence.',
+    threat_detection:'Rapid detection of danger or negative stimuli.',
+    reward_anticipation:'Anticipates positive outcomes and drives motivation.',
+    primary_visual:'Raw pixel-level visual processing.',
+    object_recognition:'Identifies and categorizes objects in view.',
+    speech_perception:'Converts incoming speech sounds to meaning.',
+    language_comprehension:'Understands the meaning of words and sentences.',
+    semantic_memory:'Stores facts about the world.',
+    creativity:'Generates novel combinations and unexpected ideas.',
+    conceptual_blending:'Merges two concepts into something new.',
+    social_cognition:'Models other people's mental states.',
+    empathy:'Shares and responds to emotional states of others.',
+    metacognition:'Monitors its own thinking processes and confidence.',
+    self_awareness:'Maintains a model of itself as a distinct entity.',
+    consciousness_gate:'Regulates what reaches conscious attention.',
+    attention_filter:'Suppresses distracting signals, boosts relevant ones.',
+    curiosity_drive:'Generates motivation to explore unknowns.',
+    identity_core:'Stable self-representation — who AXON understands itself to be.',
+  };
   let clusters = '';
   (state.top_clusters||[]).slice(0,12).forEach(c => {
-    const hot = c.activation > 0.5 ? 'hot' : '';
-    clusters += makeBar(c.name.replace(/_/g,' '), c.activation, `cluster-bar ${hot}`);
+    const hot  = c.activation > 0.5 ? 'hot' : '';
+    const pct  = Math.round((c.activation||0)*100);
+    const desc = CLUSTER_DESC[c.name] || '';
+    const lbl  = c.name.replace(/_/g,' ');
+    clusters += `<div class="bar-row cluster-bar ${hot}" style="position:relative;">
+      <div class="bar-label" style="cursor:${desc?'help':'default'};">${lbl}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct}%;"></div></div>
+      <div class="bar-val">${pct}%</div>
+      ${desc ? `<div class="region-desc"><strong style="color:#e2e8f0;">${lbl}</strong><br>${desc}</div>` : ''}
+    </div>`;
   });
   document.getElementById('cluster-bars').innerHTML = clusters;
 
-  // Regions
-  let regions = '';
-  const regionColors = {
-    prefrontal:   '#00d4ff',
-    hippocampus:  '#a855f7',
-    amygdala:     '#ff6b35',
-    visual:       '#ffcc00',
-    auditory:     '#00ff88',
-    language:     '#ff006e',
-    default_mode: '#4ade80',
-    thalamus:     '#f9a8d4',
-    cerebellum:   '#7ec8e3',
-    association:  '#fb923c',
-    social:       '#c084fc',
-    metacognition:'#ff4060',
+  // Regions with descriptions
+  const REGION_INFO = {
+    prefrontal:   { color:'#00d4ff', desc:'Decision-making, planning, working memory. The "CEO" — coordinates all other regions.' },
+    hippocampus:  { color:'#a855f7', desc:'Encodes new memories, spatial navigation, pattern completion. Active when learning something new.' },
+    amygdala:     { color:'#ff6b35', desc:'Emotional processing, threat detection, reward signals. Fires on emotionally significant events.' },
+    visual:       { color:'#ffcc00', desc:'Processes everything seen — color, motion, objects, faces, depth perception.' },
+    auditory:     { color:'#00ff88', desc:'Speech perception, sound processing, phoneme detection. Primary gateway for voice input.' },
+    language:     { color:'#c084fc', desc:'Language comprehension, semantics, syntax, meaning construction. Active during every conversation.' },
+    default_mode: { color:'#4ade80', desc:'Self-reflection, mind-wandering, future simulation. Most active during rest and introspection.' },
+    thalamus:     { color:'#f9a8d4', desc:'The sensory relay hub — filters and routes signals to the right cortical regions. Consciousness gatekeeper.' },
+    cerebellum:   { color:'#7ec8e3', desc:'Timing, prediction, motor coordination, error correction. Keeps cognitive rhythms smooth.' },
+    association:  { color:'#fb923c', desc:'Creativity, analogy-formation, conceptual blending. Where novel ideas emerge.' },
+    social:       { color:'#ff006e', desc:'Empathy, face recognition, mentalizing (understanding others\' minds), social pain.' },
+    metacognition:{ color:'#ff4060', desc:'Thinking about thinking. Self-awareness, confidence monitoring, uncertainty detection.' },
   };
+  let regions = '';
   for (const [r,v] of Object.entries(state.regions||{})) {
-    regions += makeBar(r.replace(/_/g,' '), v, '', regionColors[r]||'');
+    const info  = REGION_INFO[r] || { color:'#64748b', desc:'' };
+    const pct   = Math.round((v||0)*100);
+    const fill  = `background:${info.color}`;
+    const label = r.replace(/_/g,' ');
+    regions += `<div class="bar-row" style="position:relative;">
+      <div class="bar-label">${label}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct}%;${fill}"></div></div>
+      <div class="bar-val">${pct}%</div>
+      ${info.desc ? `<div class="region-desc"><strong style="color:#e2e8f0;">${label}</strong><br>${info.desc}</div>` : ''}
+    </div>`;
   }
   document.getElementById('region-bars').innerHTML = regions;
 
@@ -1257,6 +1400,165 @@ setInterval(renderProfile, 8000);
 // Auto-scan cameras and mics on load
 scanCameras();
 scanMics();
+
+// ── Tab switcher ─────────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.info-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  document.querySelectorAll('.tab-pane').forEach(p => {
+    p.style.display = p.id === 'tab-' + name ? 'block' : 'none';
+  });
+  if (name === 'memory') refreshMemoryPanel();
+}
+
+// ── Activity Feed ─────────────────────────────────────────────────────────────
+const MAX_FEED_ITEMS = 60;
+let feedItems = [];
+
+function addFeedEvent(icon, label, detail, colorClass) {
+  const now = new Date().toLocaleTimeString('en', {hour12:false, hour:'2-digit', minute:'2-digit', second:'2-digit'});
+  feedItems.unshift({ icon, label, detail, time: now, colorClass: colorClass||'' });
+  if (feedItems.length > MAX_FEED_ITEMS) feedItems.pop();
+  renderFeed();
+}
+
+function renderFeed() {
+  const el = document.getElementById('activity-feed');
+  if (!el) return;
+  el.innerHTML = feedItems.map(f => `
+    <div class="feed-item">
+      <span class="feed-icon">${f.icon}</span>
+      <div class="feed-body">
+        <div class="feed-label" style="${f.colorClass ? 'color:'+f.colorClass+';' : ''}">${f.label}</div>
+        ${f.detail ? `<div class="feed-detail">${f.detail}</div>` : ''}
+      </div>
+      <span class="feed-time">${f.time}</span>
+    </div>`).join('');
+}
+
+// ── Memory Panel ──────────────────────────────────────────────────────────────
+function refreshMemoryPanel() {
+  fetch('/api/memory_summary').then(r => r.json()).then(data => {
+    // Stats
+    const statsEl = document.getElementById('mem-stats');
+    if (statsEl) {
+      statsEl.innerHTML = [
+        ['Episodes', (data.episodes||0).toLocaleString()],
+        ['Facts', Object.keys(data.facts||{}).length],
+        ['Pathways', (data.top_connections||[]).length + '+'],
+        ['Topics', (data.top_topics||[]).length],
+      ].map(([l,v]) => `<div class="mem-stat-box"><div class="mem-stat-val">${v}</div><div class="mem-stat-lbl">${l}</div></div>`).join('');
+    }
+
+    // Facts
+    const factsEl = document.getElementById('mem-facts');
+    if (factsEl) {
+      const SKIP = new Set(['_user_profile_v1']);
+      const facts = Object.entries(data.facts||{})
+        .filter(([k]) => !SKIP.has(k) && !k.startsWith('_'))
+        .slice(0, 20);
+      if (facts.length === 0) {
+        factsEl.innerHTML = '<div style="color:#4b5563;font-size:8px;">No facts stored yet — talk to AXON to build memory.</div>';
+      } else {
+        factsEl.innerHTML = facts.map(([k,v]) =>
+          `<div class="fact-row"><span class="fact-key">${k.replace(/_/g,' ')}</span><span class="fact-val">${String(v).slice(0,80)}</span></div>`
+        ).join('');
+      }
+    }
+
+    // Pathways
+    const pathEl = document.getElementById('mem-pathways');
+    if (pathEl) {
+      const conns = (data.top_connections||[]).slice(0,15);
+      if (conns.length === 0) {
+        pathEl.innerHTML = '<div style="color:#4b5563;font-size:8px;">No pathways yet — interactions form them.</div>';
+      } else {
+        pathEl.innerHTML = conns.map(c => {
+          const pct = Math.round(c.weight * 100);
+          const bar = `<div style="flex:1;height:3px;background:#0f172a;border-radius:2px;overflow:hidden;"><div style="width:${pct}%;height:100%;background:#a855f7;border-radius:2px;"></div></div>`;
+          return `<div class="pathway-row">
+            <span class="pathway-nodes" title="${c.a} ↔ ${c.b}">${c.a.replace(/_/g,' ')} ↔ ${c.b.replace(/_/g,' ')}</span>
+            ${bar}
+            <span class="pathway-strength">${pct}%</span>
+            <span style="font-size:7px;color:#374151;margin-left:3px;" title="Times fired">${c.fires}×</span>
+          </div>`;
+        }).join('');
+      }
+    }
+
+    // Topics
+    const topicEl = document.getElementById('mem-topics');
+    if (topicEl) {
+      const topics = (data.top_topics||[]).slice(0,15);
+      if (topics.length === 0) {
+        topicEl.innerHTML = '<div style="color:#4b5563;font-size:8px;">No topics tracked yet.</div>';
+      } else {
+        topicEl.innerHTML = topics.map(t =>
+          `<span class="topic-chip" title="${t.count} mentions">${t.topic} <span style="color:#4338ca">${t.count}</span></span>`
+        ).join('');
+      }
+    }
+  }).catch(()=>{});
+}
+// Refresh memory tab every 10s if visible
+setInterval(() => {
+  const tab = document.querySelector('.info-tab.active');
+  if (tab && tab.dataset.tab === 'memory') refreshMemoryPanel();
+}, 10000);
+
+// ── Hook into existing events to populate activity feed ────────────────────
+// Intercept socket events for feed logging
+const _origSysLog = sysLog;
+
+// ── Activity feed hooks ───────────────────────────────────────────────────
+socket.on('hebbian_event', data => {
+  // data: {type:'new'|'strengthen', a, b, weight, fires}
+  const icon  = data.type === 'new' ? '🔗' : '⚡';
+  const color = data.type === 'new' ? '#00d4ff' : '#a855f7';
+  const pct   = Math.round((data.weight||0)*100);
+  const label = data.type === 'new'
+    ? `New pathway formed: ${(data.a||'').replace(/_/g,' ')} ↔ ${(data.b||'').replace(/_/g,' ')}`
+    : `Pathway strengthened: ${(data.a||'').replace(/_/g,' ')} ↔ ${(data.b||'').replace(/_/g,' ')}`;
+  addFeedEvent(icon, label, `Strength: ${pct}% · fired ${data.fires||1}×`, color);
+});
+
+socket.on('memory_event', data => {
+  // data: {type:'episode'|'fact', label, detail}
+  const icons = { episode:'💾', fact:'📌', topic:'🏷️' };
+  const colors = { episode:'#00ff88', fact:'#ffcc00', topic:'#fb923c' };
+  addFeedEvent(icons[data.type]||'💾', data.label, data.detail||'', colors[data.type]||'#64748b');
+});
+
+socket.on('region_spike', data => {
+  // data: {region, activation, reason}
+  const REGION_COLORS = {
+    prefrontal:'#00d4ff', hippocampus:'#a855f7', amygdala:'#ff6b35',
+    visual:'#ffcc00', auditory:'#00ff88', language:'#c084fc',
+    default_mode:'#4ade80', thalamus:'#f9a8d4', cerebellum:'#7ec8e3',
+    association:'#fb923c', social:'#ff006e', metacognition:'#ff4060',
+  };
+  if (data.activation > 0.5) {
+    const col = REGION_COLORS[data.region] || '#64748b';
+    addFeedEvent('🧠', `${(data.region||'').replace(/_/g,' ')} surging`, data.reason||`Activation: ${Math.round(data.activation*100)}%`, col);
+  }
+});
+
+// Intercept existing socket events
+const _origResponse = null;
+socket.on('thinking', d => {
+  if (d.state) addFeedEvent('⚙️', 'Processing input…', 'Neural fabric integrating stimulus', '#64748b');
+});
+socket.on('response', () => {
+  addFeedEvent('💬', 'Response generated', 'Language + prefrontal cortex output', '#00d4ff');
+});
+socket.on('transcript', d => {
+  addFeedEvent('🎤', 'Voice input received', `"${(d.text||'').slice(0,50)}${d.text&&d.text.length>50?'…':''}"`, '#00ff88');
+  addSynapseEvent('auditory', 'language', 0.6, 'strengthen');
+});
+socket.on('face', d => {
+  if (d.emotion && d.emotion !== 'neutral') {
+    addFeedEvent('😶', `Face: ${d.emotion}`, `Confidence: ${Math.round((d.confidence||0)*100)}%`, '#ff6b35');
+  }
+});
 
 socket.on('synapse_count', data => {
   const el = document.getElementById('conn-count');

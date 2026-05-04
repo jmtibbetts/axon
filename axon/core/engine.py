@@ -200,6 +200,32 @@ class AxonEngine:
                 self.fabric.stimulate_for_input("language_out", 0.78)
                 self.fabric.stimulate_for_input("thinking",     0.55)
                 self.fabric.neuromod.reward(0.08)
+                # Emit memory event for activity feed
+                ep_count = self.memory.count_episodes()
+                self._emit("memory_event", {
+                    "type":   "episode",
+                    "label":  f"Episode #{ep_count} stored",
+                    "detail": f"User input encoded to episodic memory",
+                })
+                # Emit top hebbian connections so UI can show pathway changes
+                top = self.memory.top_connections(5)
+                for conn in top[:3]:
+                    self._emit("hebbian_event", {
+                        "type":   "strengthen",
+                        "a":      conn["a"],
+                        "b":      conn["b"],
+                        "weight": conn["weight"],
+                        "fires":  conn["fires"],
+                    })
+                # Emit active region spikes for activity feed
+                state_snap = self.fabric.get_state_snapshot()
+                for region, act in (state_snap.get("regions") or {}).items():
+                    if act > 0.55:
+                        self._emit("region_spike", {
+                            "region":     region,
+                            "activation": round(act, 3),
+                            "reason":     "High activation during response generation",
+                        })
             except Exception as e:
                 self._emit("log",      {"msg": f"⚠ Think error: {e}"})
                 self._emit("thinking", {"state": False})

@@ -205,10 +205,10 @@ class MemorySystem:
 
     # ── Hebbian pathway learning ─────────────────────────────────────────────
 
-    def coactivate(self, neuron_a: str, neuron_b: str):
-        """Fire together → wire together. Strengthens the connection."""
+    def coactivate(self, neuron_a: str, neuron_b: str) -> dict:
+        """Fire together → wire together. Returns {is_new, weight, fires}."""
         if neuron_a == neuron_b:
-            return
+            return {"is_new": False, "weight": 0, "fires": 0}
         # Canonical ordering so (a,b) and (b,a) are the same link
         if neuron_a > neuron_b:
             neuron_a, neuron_b = neuron_b, neuron_a
@@ -227,12 +227,15 @@ class MemorySystem:
                     "UPDATE hebbian SET weight=?,last_fired=?,fire_count=? WHERE neuron_a=? AND neuron_b=?",
                     (w_new, now, cnt+1, neuron_a, neuron_b)
                 )
+                self.conn.commit()
+                return {"is_new": False, "weight": round(w_new, 4), "fires": cnt+1, "a": neuron_a, "b": neuron_b}
             else:
                 self.conn.execute(
                     "INSERT INTO hebbian(neuron_a,neuron_b,weight,last_fired,fire_count) VALUES(?,?,?,?,1)",
                     (neuron_a, neuron_b, DELTA, now)
                 )
-            self.conn.commit()
+                self.conn.commit()
+                return {"is_new": True, "weight": round(DELTA, 4), "fires": 1, "a": neuron_a, "b": neuron_b}
 
     def get_weight(self, neuron_a: str, neuron_b: str) -> float:
         if neuron_a > neuron_b:

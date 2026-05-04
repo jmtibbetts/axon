@@ -76,6 +76,12 @@ def user_profile():
         return jsonify(_engine.language.user_model.get_profile())
     return jsonify({})
 
+@app.route("/api/memory_summary")
+def memory_summary():
+    if _engine and hasattr(_engine, "memory"):
+        return jsonify(_engine.memory.memory_summary())
+    return jsonify({"episodes": 0, "facts": {}, "top_topics": [], "top_connections": []})
+
 @socketio.on("connect")
 def on_connect():
     emit("log", {"msg": "Connected to AXON."})
