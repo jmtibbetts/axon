@@ -381,12 +381,31 @@ class OpticSystem:
             if self.frame_count % 4 == 0 and self._models_ready:
                 face_data = self._detect_face(frame)
                 if face_data:
-                    self.face_present    = True
-                    self.last_emotion    = face_data['emotion']
+                    self.face_present       = True
+                    self._no_face_streak    = 0
+                    self.last_emotion       = face_data['emotion']
                     self.last_emotion_probs = face_data.get('emotion_probs', {})
                     self.on_face(face_data)
                 else:
-                    self.face_present = False
+                    # Track consecutive misses
+                    if not hasattr(self, '_no_face_streak'):
+                        self._no_face_streak = 0
+                    self._no_face_streak += 1
+                    # After 8 consecutive misses (~2s) mark as no-face
+                    # and emit an update so the UI badge clears properly
+                    if self._no_face_streak == 8:
+                        self.face_present = False
+                        self.on_face({
+                            "emotion": "neutral",
+                            "emotion_probs": {},
+                            "emoji": "😐",
+                            "confidence": 0.0,
+                            "eyes_open": False,
+                            "smiling": False,
+                            "face_brightness": 0.5,
+                            "detector": "none",
+                            "no_face": True,
+                        })
 
             elapsed = time.time() - t0
             time.sleep(max(0.0, interval - elapsed))
@@ -401,7 +420,8 @@ class OpticSystem:
     def _detect_yolo(self, frame_bgr: np.ndarray) -> Optional[dict]:
         try:
             H, W = frame_bgr.shape[:2]
-            results = self._yolo(frame_bgr, verbose=False, device=DEVICE)
+            # conf=0.25 is more lenient — catches partial/angled faces
+            results = self._yolo(frame_bgr, verbose=False, device=DEVICE, conf=0.25)
             boxes = results[0].boxes
             if boxes is None or len(boxes) == 0:
                 return None
@@ -409,6 +429,9 @@ class OpticSystem:
             if len(confs) == 0:
                 return None
             best  = int(confs.argmax())
+            # Require at least 20% confidence to avoid phantom detections
+            if float(confs[best]) < 0.20:
+                return None
             x1,y1,x2,y2 = boxes.xyxy[best].cpu().numpy().astype(int)
             x1,y1 = max(0,x1), max(0,y1)
             x2,y2 = min(W,x2), min(H,y2)

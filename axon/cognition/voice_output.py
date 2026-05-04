@@ -46,10 +46,33 @@ except Exception as e:
         except ImportError:
             print("  [Voice] No audio playback available — voice output disabled")
 
-# ── Voice config ─────────────────────────────────────────────
-VOICE = "en-US-AriaNeural"
-RATE  = "-5%"
-PITCH = "-3Hz"
+# ── Voice catalogue ─────────────────────────────────────────
+VOICE_CATALOGUE = [
+    # Neural English (US)
+    {"id": "en-US-AriaNeural",     "label": "Aria",     "lang": "en-US", "gender": "F", "style": "natural"},
+    {"id": "en-US-GuyNeural",      "label": "Guy",      "lang": "en-US", "gender": "M", "style": "natural"},
+    {"id": "en-US-JennyNeural",    "label": "Jenny",    "lang": "en-US", "gender": "F", "style": "friendly"},
+    {"id": "en-US-DavisNeural",    "label": "Davis",    "lang": "en-US", "gender": "M", "style": "casual"},
+    {"id": "en-US-NancyNeural",    "label": "Nancy",    "lang": "en-US", "gender": "F", "style": "calm"},
+    {"id": "en-US-TonyNeural",     "label": "Tony",     "lang": "en-US", "gender": "M", "style": "formal"},
+    {"id": "en-US-SaraNeural",     "label": "Sara",     "lang": "en-US", "gender": "F", "style": "upbeat"},
+    # Neural English (GB)
+    {"id": "en-GB-SoniaNeural",    "label": "Sonia (UK)","lang": "en-GB","gender": "F", "style": "natural"},
+    {"id": "en-GB-RyanNeural",     "label": "Ryan (UK)", "lang": "en-GB","gender": "M", "style": "natural"},
+    {"id": "en-GB-LibbyNeural",    "label": "Libby (UK)","lang": "en-GB","gender": "F", "style": "warm"},
+    # Neural English (AU)
+    {"id": "en-AU-NatashaNeural",  "label": "Natasha (AU)","lang":"en-AU","gender":"F", "style": "natural"},
+    {"id": "en-AU-WilliamNeural",  "label": "William (AU)","lang":"en-AU","gender":"M", "style": "natural"},
+    # Deep / synthetic vibes
+    {"id": "en-US-ChristopherNeural","label":"Christopher","lang":"en-US","gender":"M","style":"authoritative"},
+    {"id": "en-US-EricNeural",     "label": "Eric",     "lang": "en-US", "gender": "M", "style": "calm"},
+    {"id": "en-US-SteffanNeural",  "label": "Steffan",  "lang": "en-US", "gender": "M", "style": "emotional"},
+]
+
+# ── Default voice config ─────────────────────────────────────
+DEFAULT_VOICE = "en-US-AriaNeural"
+DEFAULT_RATE  = "-5%"
+DEFAULT_PITCH = "-3Hz"
 
 
 class VoiceOutput:
@@ -57,9 +80,36 @@ class VoiceOutput:
         self._queue  = queue.Queue()
         self.enabled = EDGE_TTS_OK and (PLAYBACK is not None)
         self.speaking = False
-        self._thread = threading.Thread(target=self._worker, daemon=True)
+        # Runtime-configurable voice settings
+        self.voice    = DEFAULT_VOICE
+        self.rate     = DEFAULT_RATE
+        self.pitch    = DEFAULT_PITCH
+        self._thread  = threading.Thread(target=self._worker, daemon=True)
         self._thread.start()
         print(f"  [Voice] edge-tts={EDGE_TTS_OK}, playback={PLAYBACK}, enabled={self.enabled}")
+
+    def set_voice(self, voice_id: str = None, rate: str = None, pitch: str = None):
+        """Change voice, rate, or pitch at runtime. Takes effect on next utterance."""
+        if voice_id is not None:
+            # Validate
+            valid_ids = [v["id"] for v in VOICE_CATALOGUE]
+            if voice_id in valid_ids:
+                self.voice = voice_id
+                print(f"  [Voice] Voice set to: {voice_id}")
+            else:
+                print(f"  [Voice] Unknown voice id: {voice_id}")
+        if rate is not None:
+            self.rate  = rate
+        if pitch is not None:
+            self.pitch = pitch
+
+    def get_voice_config(self) -> dict:
+        return {
+            "voice":     self.voice,
+            "rate":      self.rate,
+            "pitch":     self.pitch,
+            "catalogue": VOICE_CATALOGUE,
+        }
 
     def speak(self, text: str, interrupt: bool = False):
         """Queue text and BLOCK until it has finished playing."""
@@ -97,7 +147,7 @@ class VoiceOutput:
         if not EDGE_TTS_OK:
             return
 
-        communicate = edge_tts.Communicate(text, VOICE, rate=RATE, pitch=PITCH)
+        communicate = edge_tts.Communicate(text, self.voice, rate=self.rate, pitch=self.pitch)
         tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
         tmp.close()
 
@@ -184,7 +234,9 @@ class VoiceOutput:
         return {
             "enabled":  self.enabled,
             "speaking": self.speaking,
-            "voice":    VOICE,
+            "voice":    self.voice,
+            "rate":     self.rate,
+            "pitch":    self.pitch,
             "playback": PLAYBACK or "none",
             "queue":    self._queue.qsize(),
         }

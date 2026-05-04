@@ -176,6 +176,38 @@ def on_diagnostic():
         import traceback
         emit("diagnostic_result", {"error": str(e) + "\n" + traceback.format_exc()[-800:]})
 
+
+@socketio.on("get_voice_config")
+def on_get_voice_config():
+    global _engine
+    if not _engine or not _engine.voice:
+        emit("voice_config", {"voice": "en-US-AriaNeural", "rate": "-5%",
+                               "pitch": "-3Hz", "catalogue": []})
+        return
+    emit("voice_config", _engine.voice.get_voice_config())
+
+
+@socketio.on("set_voice")
+def on_set_voice(data):
+    global _engine
+    if not _engine or not _engine.voice:
+        emit("voice_config_ack", {"ok": False, "error": "Engine not running"})
+        return
+    voice_id = data.get("voice_id")
+    rate     = data.get("rate")
+    pitch    = data.get("pitch")
+    _engine.voice.set_voice(voice_id=voice_id, rate=rate, pitch=pitch)
+    cfg = _engine.voice.get_voice_config()
+    emit("voice_config_ack", {"ok": True, **cfg})
+    # Confirm with a test phrase
+    if data.get("test", False) and voice_id:
+        label = next((v["label"] for v in cfg["catalogue"] if v["id"] == voice_id), voice_id)
+        import threading
+        threading.Thread(
+            target=lambda: _engine.voice.speak(f"Hello, I'm {label}. This is my voice.", interrupt=True),
+            daemon=True
+        ).start()
+
 if __name__ == "__main__":
     import signal, sys
 

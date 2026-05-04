@@ -359,6 +359,7 @@ canvas.spark{display:block;}
       <button class="info-tab"        data-tab="activity" onclick="switchTab('activity')">⚡ Activity</button>
       <button class="info-tab"        data-tab="memory"   onclick="switchTab('memory')">💾 Memory</button>
       <button class="info-tab"        data-tab="knowme"   onclick="switchTab('knowme')">👤 Know Me</button>
+      <button class="info-tab"        data-tab="voice"    onclick="switchTab('voice')">🎙️ Voice</button>
     </div>
 
     <!-- TAB: Brain State -->
@@ -500,6 +501,59 @@ canvas.spark{display:block;}
         <span class="section-hint">What AXON has inferred about you  <span id="profile-turns" style="color:#6b7280;font-weight:400;"></span></span>
       </div>
       <div id="user-profile-panel" style="font-size:8.5px;color:#c4b5fd;line-height:1.7;"></div>
+    </div>
+
+    <!-- TAB: Voice Switcher -->
+    <div id="tab-voice" class="tab-pane" style="overflow-y:auto;flex:1;display:none;padding:8px;">
+      <div class="neuro-title" style="margin-bottom:8px;">🎙️ Voice Customizer</div>
+
+      <!-- Current voice info -->
+      <div style="background:#0a0f1a;border:1px solid #1e3a5f;border-radius:6px;padding:8px 10px;margin-bottom:10px;">
+        <div style="font-size:9px;color:#64748b;margin-bottom:4px;">CURRENT VOICE</div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:18px;">🎙️</span>
+          <div>
+            <div id="voice-current-label" style="font-size:11px;color:#e2e8f0;font-weight:600;">Aria</div>
+            <div id="voice-current-id"    style="font-size:8px;color:#64748b;">en-US-AriaNeural</div>
+          </div>
+          <button onclick="testCurrentVoice()" style="
+            margin-left:auto;background:#0f172a;border:1px solid #1e3a5f;
+            color:#7dd3fc;font-size:8px;font-family:var(--font);
+            padding:4px 8px;border-radius:4px;cursor:pointer;
+          ">▶ Test</button>
+        </div>
+      </div>
+
+      <!-- Rate + Pitch sliders -->
+      <div style="background:#0a0f1a;border:1px solid #1e3a5f;border-radius:6px;padding:8px 10px;margin-bottom:10px;">
+        <div style="font-size:9px;color:#64748b;margin-bottom:8px;">SPEED & PITCH</div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
+              <span style="font-size:9px;color:#94a3b8;">Speed</span>
+              <span id="rate-val" style="font-size:9px;color:#7dd3fc;">-5%</span>
+            </div>
+            <input type="range" id="rate-slider" min="-50" max="50" value="-5"
+              style="width:100%;accent-color:#6366f1;"
+              oninput="document.getElementById('rate-val').textContent=(this.value>0?'+':'')+this.value+'%';"
+              onchange="applyVoiceModulator()">
+          </div>
+          <div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
+              <span style="font-size:9px;color:#94a3b8;">Pitch</span>
+              <span id="pitch-val" style="font-size:9px;color:#7dd3fc;">-3Hz</span>
+            </div>
+            <input type="range" id="pitch-slider" min="-20" max="20" value="-3"
+              style="width:100%;accent-color:#a855f7;"
+              oninput="document.getElementById('pitch-val').textContent=(this.value>0?'+':'')+this.value+'Hz';"
+              onchange="applyVoiceModulator()">
+          </div>
+        </div>
+      </div>
+
+      <!-- Voice list -->
+      <div style="font-size:9px;color:#64748b;margin-bottom:6px;">AVAILABLE VOICES</div>
+      <div id="voice-list" style="display:flex;flex-direction:column;gap:4px;"></div>
     </div>
   </div>
 
@@ -2612,19 +2666,24 @@ const EMO_EMOJI = {
 };
 
 function updateEmotionUI(faceData) {
+  const noFace  = faceData.no_face === true || (faceData.confidence === 0 && faceData.detector === 'none');
   const emotion = faceData.emotion || 'neutral';
   const probs   = faceData.emotion_probs || {};
   const conf    = probs[emotion] || faceData.confidence || 0;
-  const emoji   = EMO_EMOJI[emotion] || '😐';
+  const emoji   = noFace ? '😶' : (EMO_EMOJI[emotion] || '😐');
   const confPct = Math.round(conf * 100) + '%';
+  const detector = faceData.detector || '';
 
   // Overlay on camera feed
   const overlay = document.getElementById('emotion-overlay');
   if (overlay) {
-    overlay.style.display = 'block';
-    document.getElementById('emo-emoji').textContent  = emoji;
-    document.getElementById('emo-label').textContent  = emotion;
-    document.getElementById('emo-conf').textContent   = confPct;
+    overlay.style.display = noFace ? 'none' : 'block';
+    const emoE = document.getElementById('emo-emoji');
+    const emoL = document.getElementById('emo-label');
+    const emoC = document.getElementById('emo-conf');
+    if (emoE) emoE.textContent = emoji;
+    if (emoL) emoL.textContent = emotion;
+    if (emoC) emoC.textContent = confPct;
   }
 
   // Big emotion panel
@@ -2632,30 +2691,50 @@ function updateEmotionUI(faceData) {
   const bigLabel = document.getElementById('emo-big-label');
   const bigConf  = document.getElementById('emo-big-conf');
   if (bigEmoji) bigEmoji.textContent = emoji;
-  if (bigLabel) bigLabel.textContent = emotion;
-  if (bigConf)  bigConf.textContent  = `${confPct} confidence`;
+  if (bigLabel) {
+    bigLabel.textContent = noFace ? 'no face' : emotion;
+    bigLabel.style.color = noFace ? '#475569' : '#e2e8f0';
+  }
+  if (bigConf) {
+    if (noFace) {
+      bigConf.textContent = 'waiting for face…';
+      bigConf.style.color = '#475569';
+    } else {
+      bigConf.textContent = `${confPct} · ${detector}`;
+      bigConf.style.color = '#94a3b8';
+    }
+  }
 
-  // Probability bars
+  // Probability bars — clear when no face
   const barsEl = document.getElementById('emo-prob-bars');
-  if (barsEl && Object.keys(probs).length > 0) {
-    const sorted = Object.entries(probs).sort((a,b) => b[1]-a[1]).slice(0,5);
-    barsEl.innerHTML = sorted.map(([e, p]) => {
-      const pct = Math.round(p * 100);
-      const col = EMO_COLORS[e] || '#94a3b8';
-      return `<div style="display:flex;align-items:center;gap:4px;">
-        <span style="font-size:9px;width:10px;">${EMO_EMOJI[e]||''}</span>
-        <span style="font-size:8px;color:#94a3b8;width:52px;flex-shrink:0;">${e}</span>
-        <div style="flex:1;height:4px;background:#0f172a;border-radius:2px;overflow:hidden;">
-          <div style="width:${pct}%;height:100%;background:${col};border-radius:2px;transition:width .4s;"></div>
-        </div>
-        <span style="font-size:8px;color:#64748b;width:24px;text-align:right;">${pct}%</span>
-      </div>`;
-    }).join('');
+  if (barsEl) {
+    if (noFace || Object.keys(probs).length === 0) {
+      barsEl.innerHTML = '<div style="font-size:8px;color:#475569;padding:4px 0;">no emotion data</div>';
+    } else {
+      const sorted = Object.entries(probs).sort((a,b) => b[1]-a[1]).slice(0,7);
+      barsEl.innerHTML = sorted.map(([e, p]) => {
+        const pct = Math.round(p * 100);
+        const col = EMO_COLORS[e] || '#94a3b8';
+        const isTop = e === emotion;
+        return `<div style="display:flex;align-items:center;gap:4px;${isTop?'opacity:1':'opacity:0.7'}">
+          <span style="font-size:9px;width:10px;">${EMO_EMOJI[e]||''}</span>
+          <span style="font-size:8px;color:${isTop?'#e2e8f0':'#94a3b8'};width:52px;flex-shrink:0;font-weight:${isTop?600:400};">${e}</span>
+          <div style="flex:1;height:${isTop?5:4}px;background:#0f172a;border-radius:2px;overflow:hidden;">
+            <div style="width:${pct}%;height:100%;background:${col};border-radius:2px;transition:width .4s;"></div>
+          </div>
+          <span style="font-size:8px;color:#64748b;width:24px;text-align:right;">${pct}%</span>
+        </div>`;
+      }).join('');
+    }
   }
 }
 
 socket.on('face', d => {
   updateEmotionUI(d);
+  // Also fire the activity feed for non-neutral detections
+  if (d.emotion && d.emotion !== 'neutral' && !d.no_face) {
+    addFeedEvent('😶', `Face: ${d.emotion}`, `Confidence: ${Math.round((d.confidence||0)*100)}%`, '#ff6b35');
+  }
 });
 
 socket.on('transcript', d => {
@@ -2894,11 +2973,7 @@ socket.on('transcript', d => {
   addFeedEvent('🎤', 'Voice input received', `"${(d.text||'').slice(0,50)}${d.text&&d.text.length>50?'…':''}"`, '#00ff88');
   addSynapseEvent('auditory', 'language', 0.6, 'strengthen');
 });
-socket.on('face', d => {
-  if (d.emotion && d.emotion !== 'neutral') {
-    addFeedEvent('😶', `Face: ${d.emotion}`, `Confidence: ${Math.round((d.confidence||0)*100)}%`, '#ff6b35');
-  }
-});
+
 
 socket.on('synapse_count', data => {
   const el = document.getElementById('conn-count');
@@ -2953,6 +3028,105 @@ window.addEventListener('load', () => {
   buildLegend();
   drawNeural();
 });
+
+// ── Voice Switcher ────────────────────────────────────────────────────────────
+let _voiceCatalogue = [];
+let _selectedVoiceId = 'en-US-AriaNeural';
+
+socket.on('voice_config', cfg => {
+  _voiceCatalogue   = cfg.catalogue || [];
+  _selectedVoiceId  = cfg.voice || 'en-US-AriaNeural';
+  const rate  = (cfg.rate  || '-5%').replace('%','');
+  const pitch = (cfg.pitch || '-3Hz').replace('Hz','');
+  document.getElementById('rate-slider').value  = parseInt(rate)  || -5;
+  document.getElementById('pitch-slider').value = parseInt(pitch) || -3;
+  document.getElementById('rate-val').textContent  = cfg.rate  || '-5%';
+  document.getElementById('pitch-val').textContent = cfg.pitch || '-3Hz';
+  renderVoiceList();
+  updateVoiceCurrentLabel();
+});
+
+socket.on('voice_config_ack', cfg => {
+  if (!cfg.ok) { console.warn('Voice set failed:', cfg.error); return; }
+  _selectedVoiceId = cfg.voice;
+  updateVoiceCurrentLabel();
+  renderVoiceList();
+  sysLog(`🎙️ Voice changed to: ${cfg.voice}`);
+});
+
+function renderVoiceList() {
+  const el = document.getElementById('voice-list');
+  if (!el || !_voiceCatalogue.length) return;
+  el.innerHTML = _voiceCatalogue.map(v => {
+    const isActive = v.id === _selectedVoiceId;
+    const genderIcon = v.gender === 'F' ? '👩' : '👨';
+    return `<div onclick="selectVoice('${v.id}')" style="
+      display:flex;align-items:center;gap:8px;
+      padding:6px 8px;border-radius:5px;cursor:pointer;
+      border:1px solid ${isActive ? '#6366f1' : '#1e3a5f'};
+      background:${isActive ? '#0f172a' : '#050810'};
+      transition:all .2s;
+    ">
+      <span style="font-size:14px;">${genderIcon}</span>
+      <div style="flex:1;">
+        <div style="font-size:10px;color:${isActive ? '#e2e8f0' : '#94a3b8'};font-weight:${isActive ? 600 : 400};">${v.label}</div>
+        <div style="font-size:8px;color:#475569;">${v.lang} · ${v.style}</div>
+      </div>
+      ${isActive ? '<span style="font-size:9px;color:#6366f1;">● ACTIVE</span>' :
+        `<button onclick="event.stopPropagation();previewVoice('${v.id}','${v.label}')" style="
+          background:#0f172a;border:1px solid #1e3a5f;color:#64748b;
+          font-size:8px;font-family:var(--font);padding:2px 6px;
+          border-radius:3px;cursor:pointer;">▶</button>`}
+    </div>`;
+  }).join('');
+}
+
+function updateVoiceCurrentLabel() {
+  const v = _voiceCatalogue.find(x => x.id === _selectedVoiceId);
+  const label = v ? v.label : _selectedVoiceId;
+  const el = document.getElementById('voice-current-label');
+  const idEl = document.getElementById('voice-current-id');
+  if (el)   el.textContent = label;
+  if (idEl) idEl.textContent = _selectedVoiceId;
+}
+
+function selectVoice(voiceId) {
+  _selectedVoiceId = voiceId;
+  applyVoiceModulator(true);
+}
+
+function previewVoice(voiceId, label) {
+  const rateEl  = document.getElementById('rate-slider');
+  const pitchEl = document.getElementById('pitch-slider');
+  const rate    = (rateEl  ? (parseInt(rateEl.value)  > 0 ? '+' : '') + rateEl.value  + '%'  : '-5%');
+  const pitch   = (pitchEl ? (parseInt(pitchEl.value) > 0 ? '+' : '') + pitchEl.value + 'Hz' : '-3Hz');
+  socket.emit('set_voice', { voice_id: voiceId, rate, pitch, test: true });
+}
+
+function testCurrentVoice() {
+  socket.emit('set_voice', { voice_id: _selectedVoiceId, test: true });
+}
+
+function applyVoiceModulator(andTest = false) {
+  const rateEl  = document.getElementById('rate-slider');
+  const pitchEl = document.getElementById('pitch-slider');
+  const rateN   = rateEl  ? parseInt(rateEl.value)  : -5;
+  const pitchN  = pitchEl ? parseInt(pitchEl.value) : -3;
+  const rate    = (rateN  > 0 ? '+' : '') + rateN  + '%';
+  const pitch   = (pitchN > 0 ? '+' : '') + pitchN + 'Hz';
+  socket.emit('set_voice', {
+    voice_id: _selectedVoiceId,
+    rate, pitch,
+    test: andTest,
+  });
+  renderVoiceList();
+}
+
+// Request voice config on connect
+socket.on('connect', () => {
+  setTimeout(() => socket.emit('get_voice_config'), 1200);
+});
+
 </script>
 </body>
 </html>
