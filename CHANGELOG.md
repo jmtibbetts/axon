@@ -4,6 +4,20 @@ All notable changes to AXON are documented here.
 
 ---
 
+## [1.1.0] — 2026-05-04
+
+### Added
+- **Winner/Loser Dominance Visualization** — top 20% active regions classified as winners every 8 frames. Winners: enlarged nodes (+70% size), brighter halos, faster pulse rings, glowing label pills, ▲ crown marker. Losers: dimmed to 45% alpha, reduced size, faint cross-out.
+- **Conflict Tension Arcs** — competing high-activation regions get dual jittering arcs between them showing visible tension. Each region's color fights the other; arcs wiggle via sin wave. White spark at midpoint. Auto-fade after 1.2s.
+- **Learning Bursts** — ripple animations fire at region centroids on surprise (>0.12) and reward delta (>0.08). Types: surprise (white, 3 rings), reward (green), penalty (red), weight_update (purple). Rings expand and fade.
+- **Activation Trails** — comet-tail trail dots left by neurons firing >0.55. Sampled every 12 frames, fade over ~2.5s. Gives visual continuity of thought.
+- **Ghost Paths** — dashed arcs between top-2 active regions showing memory-biased learned routes. Midpoint dot, semi-transparent, fade over 2s. "This decision came from experience."
+- **Cluster Fatigue Overlay** — fatigueMap updated from `cluster_wear`. Dims neurons proportional to overuse, adds fragmentation shimmer, ⚡ label suffix.
+- **Exploration vs Exploitation Mode** — explore mode fires random loser flares; exploit mode draws thick arcs between winner regions. Mode badge shows live mood + epsilon % with color coding.
+- **Decision Playback Mode** — ring buffer of last 10 activation frames. ⏮ PLAYBACK button + ◀ ▶ scrubber to step through. Shows which clusters dominated each step with burst highlights. EXIT restores live state.
+
+---
+
 ## [1.0.0] — 2026-05-04
 
 ### Added
