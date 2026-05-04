@@ -3022,7 +3022,8 @@ function renderProfile() {
   }).catch(()=>{});
 }
 renderProfile();
-setInterval(renderProfile, 8000);
+setInterval(renderProfile, 60000);  // fallback — normally driven by profile_update event
+socket.on('profile_update', () => renderProfile());
 
 // Auto-scan cameras and mics on load
 scanCameras();

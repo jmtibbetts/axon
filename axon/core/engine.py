@@ -557,6 +557,11 @@ class AxonEngine:
                 response = self.language.think(user_input, visual_context=visual_ctx)
                 self._emit("response",  {"text": response})
                 self._emit("thinking",  {"state": False})
+                # Push fresh profile to UI after each turn (user_model.ingest ran inside language.think)
+                try:
+                    self._emit("profile_update", self.language.user_model.get_profile())
+                except Exception:
+                    pass
                 # Voice output
                 self._emit("voice_speaking", {
                     "speaking": True,
