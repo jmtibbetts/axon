@@ -3,7 +3,7 @@
 # 🧠 AXON
 ### Emerging Artificial Intelligence
 
-*A biologically-inspired AI that sees, hears, speaks, learns, and remembers — running entirely on your own hardware.*
+*A biologically-inspired AI that sees, hears, speaks, learns, remembers — and now competes, adapts, and questions itself — running entirely on your own hardware.*
 
 [![Python](https://img.shields.io/badge/Python-3.12-blue?style=flat-square&logo=python)](https://python.org)
 [![PyTorch](https://img.shields.io/badge/PyTorch-CUDA%2012.8-orange?style=flat-square&logo=pytorch)](https://pytorch.org)
@@ -20,6 +20,8 @@
 AXON is not a chatbot wrapper. It is a persistent, biologically-inspired intelligence with **2.342 billion virtual neurons** organized into 12 functional brain regions, running fully on your local GPU. It has real-time vision (YOLOv8 face detection + FER emotion recognition), voice input (Whisper), voice output (edge-tts), a Hebbian learning memory system, a 6-chemical neuromodulator engine, and a live neural dashboard you can watch firing in real time.
 
 It talks to a local LLM via [LM Studio](https://lmstudio.ai) — no cloud, no API keys required.
+
+What separates AXON from other "neural" AI projects is that it now has **genuine internal conflict**. Clusters fight for dominance, past winners decay if they stop proving themselves, and the system can hesitate, feel regret, and re-route when its own internal critic disagrees with its decisions.
 
 ---
 
@@ -42,10 +44,19 @@ It talks to a local LLM via [LM Studio](https://lmstudio.ai) — no cloud, no AP
                         │         ↓                ↓                  │
                         │   NEUROMODULATORS ─────────────────────────▶│
                         │  (dopamine, serotonin, norepinephrine,      │
-                        │   acetylcholine, cortisol, oxytocin)        │
+                        │   acetylcholine, GABA, glutamate)           │
                         │                                             │
                         │   DEFAULT MODE   CEREBELLUM   METACOGNITION │
                         │   ASSOCIATION    SOCIAL BRAIN               │
+                        │                                             │
+                        │   ┌─────────────────────────────────────┐  │
+                        │   │  CONFLICT ENGINE                     │  │
+                        │   │  (lateral inhibition · dominance)    │  │
+                        │   │  COGNITIVE STATE                     │  │
+                        │   │  (confidence · uncertainty · urgency)│  │
+                        │   │  INTERNAL CRITIC                     │  │
+                        │   │  (self-eval · hesitation · regret)   │  │
+                        │   └─────────────────────────────────────┘  │
                         └──────────────────────────┬──────────────────┘
                                                    │
                                              ┌─────▼──────┐
@@ -77,93 +88,196 @@ It talks to a local LLM via [LM Studio](https://lmstudio.ai) — no cloud, no AP
 
 ## Neuromodulator System
 
-AXON runs 6 simulated brain chemicals that continuously shape cognition:
-
 | Chemical | Role |
 |---|---|
 | **Dopamine** | Reward signal — spikes on success, drives motivation and curiosity |
-| **Serotonin** | Mood stabilizer — keeps tone calm and socially engaged |
-| **Norepinephrine** | Arousal + alertness — sharpens focus under demand |
-| **Acetylcholine** | Learning gate — surges during new information to enable encoding |
-| **Cortisol** | Stress response — elevated by threat detection, impairs memory at high levels |
-| **Oxytocin** | Social bonding — rises during positive interactions, enhances empathy |
+| **Serotonin** | Mood stabilizer — keeps tone calm, slows activation decay |
+| **Norepinephrine** | Arousal + alertness — sharpens competition temperature under stress |
+| **Acetylcholine** | Learning gate — surges during new input, scales Hebbian learning rate |
+| **GABA** | Inhibition — silences weak clusters, forces sharper decisions |
+| **Glutamate** | Excitation — boosts propagation energy and synaptic plasticity |
 
-These values directly influence Hebbian weight updates, LLM temperature, and emotional state outputs.
+---
+
+## Conflict Engine
+
+The most important architectural addition. **Clusters don't cooperate — they compete.**
+
+Every tick, the top 20% of active clusters suppress the rest via lateral inhibition. A softmax competition weighted by each cluster's **dominance history** and **confidence track record** determines which ones actually propagate their signal forward.
+
+Key behaviors:
+
+- **"Use it or lose it"** — all clusters bleed dominance continuously. Dominant ones (>82%) bleed 3× faster. A cluster that stops proving itself *loses its position*.
+- **Stagnation breaker** — if the same winners hold for 3+ seconds, an underdog boost fires automatically, plus a random non-winner gets spiked to create genuine challenge.
+- **GABA gating** — when GABA is high, weak clusters are silenced entirely.
+- **NE-scaled temperature** — stress tightens the softmax (winner-takes-all). Calm states allow broader spread.
+
+---
+
+## Prediction Error & Continuous Learning
+
+AXON maintains a running expectation of itself and learns from the gap — every 5 ticks:
+
+```
+error = actual_activation - predicted_activation
+Δw_ij ∝ spike_i × error_j
+```
+
+AXON also tracks **structural paths** (route-level, not just node-level):
+
+- Active `(src → dst)` co-firing pairs are recorded every tick
+- After every 10-step sequence, `reinforce_routes()` adjusts entire pathways based on outcome
+- The `route_success[N,N]` matrix stores each path's cumulative performance history
+- Top learned routes are surfaced in the UI in real time
+
+---
+
+## Temporal Reward & Novelty
+
+No instant gratification. **Reward fires after 10 steps.**
+
+After each horizon window:
+1. Valence trajectory evaluated — did things actually get better?
+2. **Novelty bonus** — path is fingerprinted and compared to last 20 paths. Novel paths earn +15% reward. Worn grooves get penalized.
+3. **Regret signal** — compares actual final valence to the best valence seen anywhere in the window. Leaving reward on the table = penalty.
+4. Dominant clusters across the window get credited or blamed.
+
+The system must *sustain* good outcomes across a sequence, not spike once and coast.
+
+---
+
+## Cognitive State
+
+Three slow-moving global variables that shape all downstream behavior:
+
+| Variable | Tracks | Effect |
+|---|---|---|
+| **Confidence** | How sure AXON is about its current direction | High → sharper competition, less exploration |
+| **Uncertainty** | Epistemic — how much it doesn't know | High → more exploration, softer competition |
+| **Urgency** | Temporal pressure from unmet goals | High → amplified reward sensitivity, reckless exploration |
+
+When AXON has been wrong repeatedly, uncertainty rises, it explores wider, competition softens. When under sustained negative valence, urgency builds and it starts trying increasingly novel paths.
+
+---
+
+## Internal Critic & Regret
+
+Before each evaluation, two competing self-assessments run:
+
+- **Fast eval** — cosine alignment of current activation vs running expected baseline. "Are we doing what we usually do?"
+- **Slow eval** — mean `route_success` score for active pairs. "Have these routes historically worked?"
+
+When fast and slow **disagree by more than 35%**, a **hesitation** is recorded.
+
+**Regret** fires when confidence was high but outcome was bad:
+```
+regret = (confidence - 0.6) × max(0, -score)
+```
+Those pathways get de-weighted. The regret log is visible in the UI.
 
 ---
 
 ## Memory System
 
-AXON uses a **SQLite-backed dual-memory architecture**:
+- **Episodic Memory** — timestamped records of every conversation and event
+- **Semantic Memory** — factual knowledge extracted over time
+- **Hebbian Learning** — `fire together → wire together`
+- **Ebbinghaus Forgetting** — 3-day decay constant, fades unless reinforced
+- **User Model** — passively learns your name, preferences, and personality
+- **Memory → Routing** — memory success rates feed into the context bias vector that shapes cluster competition. What worked before gets a thumb on the scale.
 
-- **Episodic Memory** — timestamped records of every conversation, experience, and event
-- **Semantic Memory** — factual knowledge extracted over time (people, concepts, preferences)
-- **Hebbian Learning** — co-firing clusters strengthen their synaptic connections (`fire together → wire together`)
-- **Ebbinghaus Forgetting** — memory strength decays with a 3-day time constant unless reinforced
-- **User Model** — passively learns your name, preferences, personality traits, and interests over sessions
-
-Memory persists across restarts. AXON remembers previous conversations.
+Memory persists across restarts.
 
 ---
 
 ## Sensory Systems
 
-### 👁 Vision — `axon/sensory/optic.py`
-- **YOLOv8-face** running on CUDA at 640×480 / 12 FPS
-- **FER** (Facial Emotion Recognition) — VGG-based model, 7 emotion classes
-- Detected faces and emotions fire directly into Visual Cortex + Social Brain clusters
-- Emotion deltas feed the Hebbian reinforcement loop (positive emotion → dopamine reward)
+### 👁 Vision
+- **YOLOv8-face** on CUDA at 640×480 / 12 FPS
+- **FER** facial emotion recognition — 7 emotion classes
+- Emotion deltas feed Hebbian reinforcement and route learning
 
-### 👂 Hearing — `axon/sensory/auditory.py`
-- **OpenAI Whisper** (`medium` model) running on GPU
-- Continuous microphone capture with VAD silence detection
-- Transcribed speech fires into Auditory Cortex + Language System
+### 👂 Hearing
+- **OpenAI Whisper** `medium` model on GPU
+- Continuous mic capture with VAD silence detection
 
-### 🔊 Voice — `axon/cognition/voice_output.py`
-- **edge-tts** — Microsoft neural voices, fully local, no API
-- Blocking playback via pygame to prevent response overlap
-- Configurable voice, rate, pitch from UI
+### 🔊 Voice
+- **edge-tts** — Microsoft neural voices, fully local
+- Blocking playback via pygame (no overlap)
 
----
-
-## Web Search
-
-AXON can search the internet in real time using DuckDuckGo HTML scraping + Wikipedia API — **no API key needed**.
-
-Triggers automatically on factual questions (`what is...`, `who is...`, `latest...`) and explicit requests (`search for...`, `find me...`). Search results are injected into the LLM context window before generating a response.
-
----
-
-## Diagnostic Mode
-
-Type or say **`diagnostic`** to open the live diagnostic panel, which shows:
-
-- Real-time neuron count, active connections, GPU memory usage
-- Per-region cluster breakdown with neuron counts
-- Neuromodulator bar charts (live values)
-- Emotion state (valence + arousal)
-- Memory stats (episodic count, semantic facts, top Hebbian pathways)
-- Active capabilities (vision, hearing, voice, LLM model)
-- Platform info (Python version, uptime)
-
-You can also ask AXON directly:
-- `"describe your brain"` — full written breakdown of all 12 regions
-- `"tell me about your hippocampus"` — deep dive on any single region
-- `"what are your neuromodulators"` — live chemical levels + descriptions
-- `"describe yourself"` — capability overview
+### 🌐 Web Search
+- DuckDuckGo + Wikipedia API — no API key needed
+- Triggers automatically on factual questions
 
 ---
 
 ## UI Dashboard
 
-The web UI at `http://localhost:7777` features 4 tabs:
-
 | Tab | What you see |
 |---|---|
-| **Brain** | Live neural canvas (2,420-node firing visualization) · emotion badge · valence/arousal scatter · region activation radial chart |
-| **Activity** | Thought stream · Hebbian learning arcs · recent memories |
+| **Brain** | Live 2,420-node neural canvas · color-coded region labels · emotion badge · valence/arousal scatter · Conflict Engine panel |
+| **Activity** | Thought stream · Hebbian arcs · recent memories |
 | **Memory** | Episodic timeline · semantic facts browser |
 | **Know Me** | User model — what AXON has learned about you |
+
+### Conflict Engine Panel (Brain tab)
+
+| Field | Description |
+|---|---|
+| Dominant clusters | Which clusters are winning competition right now |
+| Confidence / Uncertainty / Urgency | Live bars for all three CognitiveState variables |
+| Prediction surprise | How different reality was from expectation |
+| Exploration ε | Current exploration rate (rises with uncertainty/urgency) |
+| Cumulative reward | Total reward accumulated since launch |
+| Regret score | Last regret magnitude |
+| Hesitation count | Times fast/slow eval disagreed |
+| Top learned routes | Strongest `src → dst` pathways by route_success |
+
+---
+
+## Diagnostic Mode
+
+Type or say **`diagnostic`** for the live panel. Or ask:
+- `"describe your brain"` — all 12 regions
+- `"describe your cognitive state"` — confidence, uncertainty, urgency
+- `"what are you uncertain about"` — CognitiveState self-reflection
+
+---
+
+## Architecture Summary
+
+```
+Neural Fabric (GPU, 20Hz tick loop)
+│
+├── ConflictEngine
+│   ├── lateral inhibition (top 20% suppress rest)
+│   ├── softmax competition (temperature = f(NE, uncertainty))
+│   ├── dominance history (winners build track record)
+│   ├── "use it or lose it" decay (0.0003/tick, 3x for calcified)
+│   └── stagnation breaker (underdog rescue after 60 ticks)
+│
+├── PredictionEngine
+│   ├── node-level: Δw ∝ spike_i × error_j  (every 5 ticks)
+│   ├── route_success[N,N] matrix (structural path memory)
+│   └── reinforce_routes() (reward/penalise full pathways)
+│
+├── TemporalRewardBuffer
+│   ├── 10-step horizon (no instant reward)
+│   ├── novelty fingerprint (cosine vs last 20 paths)
+│   ├── anti-repetition penalty (novelty < 0.10)
+│   └── regret signal (actual vs best-possible in window)
+│
+├── CognitiveState
+│   ├── confidence  → competition sharpness
+│   ├── uncertainty → exploration rate
+│   └── urgency     → reward sensitivity + exploration
+│
+└── InternalCritic
+    ├── fast_eval  (cosine alignment vs expected baseline)
+    ├── slow_eval  (mean route_success for active pairs)
+    ├── hesitation (fast/slow disagreement > 35%)
+    └── regret log (confidence was high, outcome was bad)
+```
 
 ---
 
@@ -191,7 +305,7 @@ The launch script will:
 3. Start the AXON web server
 4. Open `http://localhost:7777` in your browser
 
-> **First run:** Make sure LM Studio is running with a model loaded on `http://localhost:1234`. AXON auto-detects the model.
+> **First run:** Make sure LM Studio is running with a model loaded on `http://localhost:1234`.
 
 ---
 
@@ -201,23 +315,26 @@ The launch script will:
 axon/
 ├── axon/
 │   ├── core/
-│   │   └── engine.py          # Master orchestrator — wires all systems together
+│   │   └── engine.py          # Master orchestrator
 │   ├── cognition/
-│   │   ├── neural_fabric.py   # 2.34B neuron GPU tensor engine (PyTorch CUDA)
-│   │   ├── language.py        # LLM interface + web search + system prompt
-│   │   ├── memory.py          # SQLite episodic + semantic + Hebbian memory
-│   │   ├── user_model.py      # Passive user preference learning
-│   │   └── voice_output.py    # edge-tts + pygame playback
+│   │   ├── neural_fabric.py   # 2.34B neuron GPU engine
+│   │   │                      #   ConflictEngine · PredictionEngine
+│   │   │                      #   TemporalRewardBuffer · CognitiveState
+│   │   │                      #   InternalCritic · PersonalityMatrix
+│   │   ├── language.py        # LLM interface + web search
+│   │   ├── memory.py          # SQLite episodic + semantic + Hebbian
+│   │   ├── user_model.py      # Passive user learning
+│   │   └── voice_output.py    # edge-tts + pygame
 │   ├── sensory/
-│   │   ├── optic.py           # YOLOv8-face + FER vision pipeline
-│   │   └── auditory.py        # Whisper GPU speech-to-text
+│   │   ├── optic.py           # YOLOv8-face + FER
+│   │   └── auditory.py        # Whisper GPU STT
 │   └── ui/
-│       └── app.py             # Flask-SocketIO web server
+│       └── app.py             # Flask-SocketIO server
 ├── web/
 │   └── templates/
-│       └── index.html         # Full single-page dashboard UI
+│       └── index.html         # Single-page dashboard
 ├── scripts/
-│   └── launch.ps1             # One-click Windows installer + launcher
+│   └── launch.ps1             # One-click installer + launcher
 ├── requirements.txt
 └── README.md
 ```
@@ -226,9 +343,13 @@ axon/
 
 ## Philosophy
 
-AXON isn't trying to replicate a human brain exactly — it's drawing inspiration from neuroscience to build something that *behaves* more like a mind than a chatbot. The Hebbian learning means repeated topics genuinely strengthen pathways. The neuromodulators mean context and emotional state affect how AXON responds. The forgetting curve means memories fade unless reinforced. The default mode network means AXON has background activity even when idle.
+AXON draws inspiration from neuroscience to build something that *behaves* more like a mind than a chatbot. Hebbian learning means repeated topics genuinely strengthen pathways. Neuromodulators mean emotional state affects responses. The forgetting curve means memories fade unless reinforced. The default mode network means AXON has background activity even when idle.
 
-The goal: an intelligence that grows with you over time.
+The conflict and cognitive systems push this further: AXON doesn't just process — it *struggles*. Clusters compete for influence. Winners calcify and get dethroned. The system discovers novel paths, regrets wasted opportunities, and hesitates when it isn't sure.
+
+**No tension = no adaptation = no intelligence.**
+
+The goal: an intelligence that grows with you over time — and earns its behaviors rather than being given them.
 
 ---
 
