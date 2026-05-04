@@ -118,37 +118,79 @@ class FERDetector:
         self._ready = False
 
     def load(self):
+        # Try fer library first, then deepface as fallback
         try:
             from fer import FER
-            self._fer = FER(mtcnn=False)   # mtcnn=False = use OpenCV detector (faster)
+            self._fer = FER(mtcnn=False)
             self._ready = True
+            self._backend = "fer"
             print("  [Optic] FER emotion detector loaded (FER2013 pretrained)")
+            return
         except Exception as e:
-            print(f"  [Optic] FER unavailable ({e}) — using heuristic fallback")
-            print(f"  [Optic] FIX: run  .venv\\Scripts\\pip install fer tensorflow  then restart")
-            self._ready = False
+            print(f"  [Optic] fer import failed ({e}), trying deepface...")
+
+        try:
+            from deepface import DeepFace
+            # Warm up — verify it works
+            import numpy as np
+            DeepFace.analyze(np.zeros((48,48,3), dtype=np.uint8), actions=["emotion"],
+                             enforce_detection=False, silent=True)
+            self._fer = None
+            self._ready = True
+            self._backend = "deepface"
+            print("  [Optic] DeepFace emotion detector ready")
+            return
+        except Exception as e2:
+            print(f"  [Optic] DeepFace unavailable ({e2}) — using heuristic fallback")
+
+        self._ready = False
+        self._backend = "heuristic"
 
     def predict(self, face_bgr: np.ndarray) -> tuple[str, dict]:
         """
         Returns (dominant_emotion, {emotion: probability, ...})
         face_bgr: cropped face region in BGR color
         """
-        if not self._ready or self._fer is None:
+        if not self._ready:
             return self._heuristic(face_bgr)
 
-        try:
-            # FER expects BGR numpy array — resize to at least 48x48
-            face = cv2.resize(face_bgr, (96, 96))
-            result = self._fer.detect_emotions(face)
-            if not result:
-                return 'neutral', {e: 0.0 for e in EMOTION_LABELS}
+        backend = getattr(self, "_backend", "heuristic")
 
-            emotions = result[0]['emotions']  # {'angry': 0.1, 'happy': 0.8, ...}
-            dominant = max(emotions, key=emotions.get)
-            return dominant, emotions
-        except Exception as e:
-            print(f"  [Optic] FER predict error: {e}")
-            return self._heuristic(face_bgr)
+        # ── fer backend ───────────────────────────────────────────────────────
+        if backend == "fer" and self._fer is not None:
+            try:
+                face = cv2.resize(face_bgr, (96, 96))
+                result = self._fer.detect_emotions(face)
+                if not result:
+                    return "neutral", {e: 0.0 for e in EMOTION_LABELS}
+                emotions = result[0]["emotions"]
+                dominant = max(emotions, key=emotions.get)
+                return dominant, emotions
+            except Exception as e:
+                print(f"  [Optic] FER predict error: {e}")
+                return self._heuristic(face_bgr)
+
+        # ── deepface backend ──────────────────────────────────────────────────
+        if backend == "deepface":
+            try:
+                from deepface import DeepFace
+                face = cv2.resize(face_bgr, (96, 96))
+                result = DeepFace.analyze(face, actions=["emotion"],
+                                          enforce_detection=False, silent=True)
+                # result is a list; take first entry
+                if isinstance(result, list):
+                    result = result[0]
+                raw_emo = result.get("emotion", {})
+                # normalize to 0–1 range (deepface returns percentages)
+                total = sum(raw_emo.values()) or 1.0
+                emotions = {k: v / total for k, v in raw_emo.items()}
+                dominant = result.get("dominant_emotion", max(emotions, key=emotions.get))
+                return dominant, emotions
+            except Exception as e:
+                print(f"  [Optic] DeepFace predict error: {e}")
+                return self._heuristic(face_bgr)
+
+        return self._heuristic(face_bgr)
 
     def _heuristic(self, face_gray_or_bgr: np.ndarray) -> tuple[str, dict]:
         """Simple brightness/variance heuristic when FER unavailable."""
@@ -248,12 +290,19 @@ class OpticSystem:
     def _load_models(self):
         try:
             from ultralytics import YOLO
-            self._yolo = YOLO("yolov8n-face.pt")
+            import urllib.request, os
+            # yolov8n-face.pt is not on the Ultralytics hub — download from GitHub release
+            model_path = "yolov8n-face.pt"
+            if not os.path.exists(model_path):
+                url = "https://github.com/akanametov/yolo-face/releases/download/v0.0.0/yolov8n-face.pt"
+                print(f"  [Optic] Downloading yolov8n-face.pt from {url} ...")
+                urllib.request.urlretrieve(url, model_path)
+                print(f"  [Optic] Download complete.")
+            self._yolo = YOLO(model_path)
             self._yolo.to(DEVICE)
             print(f"  [Optic] YOLOv8-face loaded on {DEVICE}")
         except Exception as e:
             print(f"  [Optic] YOLOv8 unavailable ({e}), using Haar fallback")
-            print(f"  [Optic] FIX: run  .venv\\Scripts\\pip install ultralytics  then restart")
             self._yolo = None
 
         self._fer.load()
