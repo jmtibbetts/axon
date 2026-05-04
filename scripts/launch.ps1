@@ -112,13 +112,12 @@ if ($tfkOk -ne "ok") {
 
 $ferOk = & $venvPy -c "from fer import FER; print('ok')" 2>$null
 if ($ferOk -ne "ok") {
-    Write-Host "  Installing fer..." -ForegroundColor Cyan
-    & $venvPip install fer --quiet
-    # fer drags in facenet-pytorch which hard-pins numpy<2 -- remove it first
-    Write-Host "  Removing facenet-pytorch (pins numpy<2)..." -ForegroundColor Cyan
-    & $venvPip uninstall facenet-pytorch -y --quiet 2>$null
-    # now re-pin numpy back to 2.x
-    Write-Host "  Re-pinning numpy>=2.0 after fer install..." -ForegroundColor Cyan
+    Write-Host "  Installing fer (--no-deps to avoid facenet-pytorch)..." -ForegroundColor Cyan
+    # Install fer without its dep tree -- facenet-pytorch hard-pins numpy<2
+    # fer itself only needs tensorflow/keras + opencv, both already installed
+    & $venvPip install fer --no-deps --quiet
+    # Pull in only the deps fer actually needs at runtime (not facenet)
+    & $venvPip install tensorflow-cpu --quiet 2>$null
     & $venvPip install "numpy>=2.0" --upgrade --quiet
 } else { Write-Host "  [SKIP] fer ok" -ForegroundColor DarkGray }
 
@@ -284,12 +283,20 @@ $preflight_exit = $LASTEXITCODE
 
 if ($preflight_exit -ne 0) {
     Write-Host ""
-    Write-Host "  +------------------------------------------------------+" -ForegroundColor Red
-    Write-Host "  |  AXON CANNOT START -- required dependencies missing  |" -ForegroundColor Red
-    Write-Host "  +------------------------------------------------------+" -ForegroundColor Red
+    # Always dump all preflight output so errors are visible
+    foreach ($line in $preflight_out) {
+        Write-Host "  PREFLIGHT: $line" -ForegroundColor DarkGray
+    }
     Write-Host ""
+
+    $foundMissing = $false
     foreach ($line in $preflight_out) {
         if ($line -match "^REQUIRED_MISSING:(.+)") {
+            $foundMissing = $true
+            Write-Host "  +------------------------------------------------------+" -ForegroundColor Red
+            Write-Host "  |  AXON CANNOT START -- required dependencies missing  |" -ForegroundColor Red
+            Write-Host "  +------------------------------------------------------+" -ForegroundColor Red
+            Write-Host ""
             $items = $Matches[1] -split "\|"
             foreach ($item in $items) {
                 $parts = $item -split "::"
@@ -300,6 +307,10 @@ if ($preflight_exit -ne 0) {
                 Write-Host ""
             }
         }
+    }
+    if (-not $foundMissing) {
+        Write-Host "  [ERROR] Preflight script crashed (exit code $preflight_exit)." -ForegroundColor Red
+        Write-Host "  Check PREFLIGHT lines above for the Python traceback." -ForegroundColor Yellow
     }
     Write-Host "  Re-run launch.ps1 to retry, or fix manually and try again." -ForegroundColor Yellow
     pause
