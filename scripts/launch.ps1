@@ -24,7 +24,8 @@ $venvPip = "$projectRoot\.venv\Scripts\pip.exe"
 
 # ---------------------------------------------------------------------------
 Write-Host "  [1/6] pip..." -ForegroundColor Yellow
-& $venvPip install --upgrade pip setuptools wheel --quiet
+& $venvPip install --upgrade pip wheel --quiet
+& $venvPip install "setuptools<82" --quiet
 
 # ---------------------------------------------------------------------------
 # fer and facenet-pytorch conflict with modern torch + numpy.
@@ -87,9 +88,10 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # Verify deepface can actually run
-$dfTest = & $venvPy -c 'from deepface import DeepFace; print("ok")' 2>$null
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "  [WARN] deepface import failed -- reinstalling..." -ForegroundColor Yellow
+$dfTest = & $venvPy -c 'from deepface import DeepFace; print("ok")' 2>&1
+if ($dfTest -notmatch "ok") {
+    Write-Host "  [WARN] deepface import issue: $dfTest" -ForegroundColor Yellow
+    Write-Host "  Reinstalling deepface..." -ForegroundColor Cyan
     & $venvPip install deepface --quiet
 } else {
     Write-Host "  [OK] deepface ready" -ForegroundColor Green
