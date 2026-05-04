@@ -141,6 +141,18 @@ def on_stop():
         _engine = None
     emit("log", {"msg": "AXON stopped."})
 
+@socketio.on("diagnostic")
+def on_diagnostic():
+    global _engine
+    if not _engine or not _engine.running:
+        emit("diagnostic_result", {"error": "Engine not running."})
+        return
+    try:
+        data = _engine.get_diagnostic()
+        emit("diagnostic_result", data)
+    except Exception as e:
+        emit("diagnostic_result", {"error": str(e)})
+
 if __name__ == "__main__":
     import signal, sys
 

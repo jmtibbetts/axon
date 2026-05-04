@@ -253,6 +253,9 @@ canvas.spark{display:block;}
           <button class="ctrl-btn"        onclick="reprobe()" style="flex:.5">?</button>
           <button class="ctrl-btn danger" onclick="stopAxon()">?</button>
         </div>
+        <div class="settings-row" style="margin-top:4px;">
+          <button class="ctrl-btn" onclick="requestDiagnostic()" style="border-color:#6366f1;color:#6366f1;font-size:8px;letter-spacing:.06em;">⚡ DIAGNOSTIC MODE</button>
+        </div>
         <div id="llm-status" style="font-size:8px;color:var(--muted);margin-top:4px;"></div>
         <div id="gpu-status" style="font-size:8px;color:#00ff88;margin-top:4px;"></div>
       </div>
@@ -435,6 +438,228 @@ canvas.spark{display:block;}
   </div>
 
 </div>
+
+<!-- ── DIAGNOSTIC OVERLAY ─────────────────────────────────── -->
+<div id="diag-overlay" style="
+  display:none;position:fixed;inset:0;z-index:999;
+  background:rgba(0,0,0,0.92);backdrop-filter:blur(6px);
+  overflow-y:auto;padding:24px 16px;font-family:var(--font);">
+  <div style="max-width:680px;margin:0 auto;">
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+      <div>
+        <div style="font-size:11px;color:#6366f1;letter-spacing:3px;text-transform:uppercase;margin-bottom:2px;">⚡ AXON DIAGNOSTIC MODE</div>
+        <div id="diag-timestamp" style="font-size:8px;color:#374151;"></div>
+      </div>
+      <button onclick="closeDiagnostic()" style="background:none;border:1px solid #374151;color:#6b7280;padding:4px 12px;font-family:var(--font);font-size:9px;cursor:pointer;border-radius:3px;letter-spacing:.05em;">✕ CLOSE</button>
+    </div>
+
+    <!-- Neural Architecture -->
+    <div class="diag-section" id="diag-neural"></div>
+
+    <!-- Memory -->
+    <div class="diag-section" id="diag-memory"></div>
+
+    <!-- Senses & Capabilities -->
+    <div class="diag-section" id="diag-caps"></div>
+
+    <!-- Current State -->
+    <div class="diag-section" id="diag-state"></div>
+
+    <!-- Platform -->
+    <div class="diag-section" id="diag-platform"></div>
+
+    <!-- Cluster breakdown -->
+    <div class="diag-section" id="diag-clusters"></div>
+  </div>
+</div>
+
+<style>
+.diag-section{background:#060610;border:1px solid #1e293b;border-radius:6px;padding:14px 16px;margin-bottom:12px;}
+.diag-h{font-size:9px;color:#6366f1;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;
+         border-bottom:1px solid #1e293b;padding-bottom:6px;}
+.diag-row{display:flex;justify-content:space-between;align-items:baseline;
+          padding:3px 0;border-bottom:1px solid #0a0a12;}
+.diag-row:last-child{border-bottom:none;}
+.diag-key{font-size:9px;color:#64748b;letter-spacing:.04em;}
+.diag-val{font-size:10px;color:#e2e8f0;font-weight:600;font-variant-numeric:tabular-nums;text-align:right;max-width:65%;}
+.diag-val.accent{color:#6366f1;}
+.diag-val.green{color:#10b981;}
+.diag-val.red{color:#ef4444;}
+.diag-val.yellow{color:#eab308;}
+.diag-cap{display:inline-flex;align-items:center;gap:4px;background:#0d1117;border:1px solid #1e293b;
+          border-radius:12px;padding:3px 10px;font-size:8.5px;color:#a5b4fc;margin:3px;}
+.diag-cap.active{border-color:#10b981;color:#10b981;}
+.diag-bar-row{display:flex;align-items:center;gap:6px;margin:3px 0;}
+.diag-bar-label{width:120px;font-size:8px;color:#64748b;flex-shrink:0;
+                overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.diag-bar-track{flex:1;height:7px;background:#0a0a18;border-radius:3px;overflow:hidden;}
+.diag-bar-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,#1e1b4b,#6366f1);}
+.diag-bar-val{width:60px;text-align:right;font-size:8px;color:#64748b;font-variant-numeric:tabular-nums;}
+.diag-loading{text-align:center;padding:40px;color:#374151;font-size:10px;letter-spacing:.1em;}
+.diag-pathway{font-size:8.5px;color:#94a3b8;padding:3px 0;border-bottom:1px solid #0a0a12;
+              display:flex;justify-content:space-between;align-items:center;}
+.diag-pathway:last-child{border-bottom:none;}
+.diag-pathway .strength{color:#10b981;font-size:8px;flex-shrink:0;}
+</style>
+
+<script>
+// ── DIAGNOSTIC MODE ─────────────────────────────────────────────
+function requestDiagnostic() {
+  document.getElementById('diag-overlay').style.display = 'block';
+  document.getElementById('diag-neural').innerHTML   = '<div class="diag-loading">⚡ SCANNING NEURAL FABRIC…</div>';
+  document.getElementById('diag-memory').innerHTML   = '';
+  document.getElementById('diag-caps').innerHTML     = '';
+  document.getElementById('diag-state').innerHTML    = '';
+  document.getElementById('diag-platform').innerHTML = '';
+  document.getElementById('diag-clusters').innerHTML = '';
+  socket.emit('diagnostic');
+}
+
+function closeDiagnostic() {
+  document.getElementById('diag-overlay').style.display = 'none';
+}
+
+// Close on Escape
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeDiagnostic();
+});
+
+socket.on('diagnostic_result', function(d) {
+  if (d.error) {
+    document.getElementById('diag-neural').innerHTML =
+      `<div class="diag-loading" style="color:#ef4444;">ERROR: ${d.error}</div>`;
+    return;
+  }
+
+  document.getElementById('diag-timestamp').textContent =
+    'Snapshot: ' + (d.timestamp || '').replace('T',' ').slice(0,19);
+
+  // ── Neural Architecture ──────────────────────────────────────
+  const n = d.neural || {};
+  const gpuPct = n.gpu_mem_total_gb ? Math.round(n.gpu_mem_used_gb / n.gpu_mem_total_gb * 100) : 0;
+  document.getElementById('diag-neural').innerHTML = `
+    <div class="diag-h">🧠 Neural Architecture</div>
+    ${diagRow('Virtual Neurons',        fmt(n.total_neurons),          'accent')}
+    ${diagRow('Active Connections',     fmt(n.total_connections),      'accent')}
+    ${diagRow('Functional Clusters',    n.num_clusters,                'yellow')}
+    ${diagRow('GPU',                    n.gpu || 'unknown',            'green')}
+    ${diagRow('GPU Memory',             (n.gpu_mem_used_gb||0) + ' GB / ' + (n.gpu_mem_total_gb||0) + ' GB  (' + gpuPct + '%)', gpuPct > 80 ? 'red' : 'green')}
+  `;
+
+  // ── Memory ──────────────────────────────────────────────────
+  const m = d.memory || {};
+  let pathHTML = '';
+  (m.top_pathways || []).forEach(p => {
+    const a = p.cluster_a || p[0] || '?';
+    const b = p.cluster_b || p[1] || '?';
+    const s = typeof p.strength !== 'undefined' ? p.strength : (p[2] || 0);
+    pathHTML += `<div class="diag-pathway">
+      <span>${a.replace(/_/g,' ')} ↔ ${b.replace(/_/g,' ')}</span>
+      <span class="strength">${parseFloat(s).toFixed(3)}</span>
+    </div>`;
+  });
+  const oldest = m.oldest_memory
+    ? m.oldest_memory.slice(0,16).replace('T',' ')
+    : 'No memories yet';
+  document.getElementById('diag-memory').innerHTML = `
+    <div class="diag-h">💾 Memory System</div>
+    ${diagRow('Episodic Memories',  fmt(m.episodic_count),   'accent')}
+    ${diagRow('Semantic Facts',     fmt(m.semantic_facts),   'yellow')}
+    ${diagRow('Hebbian Pathways',   fmt(m.hebbian_pathways), 'green')}
+    ${diagRow('Oldest Memory',      oldest)}
+    ${pathHTML ? '<div style="margin-top:8px;font-size:8px;color:#374151;letter-spacing:.05em;margin-bottom:4px;">TOP PATHWAYS</div>' + pathHTML : ''}
+  `;
+
+  // ── Capabilities ─────────────────────────────────────────────
+  const caps = d.capabilities || [];
+  const senses = d.senses || {};
+  let capsHTML = '<div class="diag-h">⚙️ Capabilities</div><div style="padding:4px 0;">';
+  caps.forEach(c => {
+    capsHTML += `<span class="diag-cap active">✓ ${c}</span>`;
+  });
+  capsHTML += '</div>';
+  capsHTML += `
+    <div style="margin-top:10px;">
+    ${diagRow('Camera / Vision', senses.vision ? '✓ ACTIVE — ' + (senses.vision_detector||'') : '✗ Offline', senses.vision ? 'green' : 'red')}
+    ${diagRow('Microphone / STT', senses.auditory ? '✓ ACTIVE' : '✗ Offline', senses.auditory ? 'green' : 'red')}
+    ${diagRow('Voice Output (TTS)', senses.voice_out ? '✓ ACTIVE' : '✗ Offline', senses.voice_out ? 'green' : 'red')}
+    </div>`;
+  document.getElementById('diag-caps').innerHTML = capsHTML;
+
+  // ── Current State ────────────────────────────────────────────
+  const st = d.state || {};
+  const emo = st.emotion || {};
+  const neuro = st.neuromod || {};
+  const pers  = st.personality || {};
+  let neuroHTML = '';
+  Object.entries(neuro).forEach(([k,v]) => {
+    const pct = Math.round((v||0)*100);
+    neuroHTML += `<div class="diag-bar-row">
+      <div class="diag-bar-label">${k}</div>
+      <div class="diag-bar-track"><div class="diag-bar-fill" style="width:${pct}%"></div></div>
+      <div class="diag-bar-val">${pct}%</div>
+    </div>`;
+  });
+  let persHTML = '';
+  Object.entries(pers).forEach(([k,v]) => {
+    const pct = Math.round((v||0)*100);
+    persHTML += `<div class="diag-bar-row">
+      <div class="diag-bar-label">${k.replace(/_/g,' ')}</div>
+      <div class="diag-bar-track"><div class="diag-bar-fill" style="width:${pct}%;background:linear-gradient(90deg,#4c1d95,#a855f7)"></div></div>
+      <div class="diag-bar-val">${pct}%</div>
+    </div>`;
+  });
+  document.getElementById('diag-state').innerHTML = `
+    <div class="diag-h">🌡️ Current Neural State</div>
+    ${diagRow('Emotion',   emo.emotion || 'unknown', 'yellow')}
+    ${diagRow('Valence',   parseFloat(emo.valence||0).toFixed(3))}
+    ${diagRow('Arousal',   parseFloat(emo.arousal||0).toFixed(3))}
+    ${diagRow('Intensity', parseFloat(emo.intensity||0).toFixed(3))}
+    <div style="margin-top:10px;font-size:8px;color:#374151;letter-spacing:.05em;margin-bottom:6px;">NEUROMODULATORS</div>
+    ${neuroHTML}
+    <div style="margin-top:10px;font-size:8px;color:#374151;letter-spacing:.05em;margin-bottom:6px;">PERSONALITY</div>
+    ${persHTML}
+  `;
+
+  // ── Platform ─────────────────────────────────────────────────
+  const plat = d.platform || {};
+  document.getElementById('diag-platform').innerHTML = `
+    <div class="diag-h">🖥️ Platform</div>
+    ${diagRow('Python', plat.python || '?')}
+    ${diagRow('OS',     plat.os     || '?')}
+    ${diagRow('PyTorch', plat.torch || '?')}
+  `;
+
+  // ── Cluster breakdown ─────────────────────────────────────────
+  const clusters = n.clusters || {};
+  const maxSize = Math.max(...Object.values(clusters), 1);
+  let clHTML = '<div class="diag-h">🔬 Cluster Breakdown (' + Object.keys(clusters).length + ' clusters)</div>';
+  Object.entries(clusters)
+    .sort((a,b) => b[1]-a[1])
+    .forEach(([name, size]) => {
+      const pct = Math.round(size / maxSize * 100);
+      clHTML += `<div class="diag-bar-row">
+        <div class="diag-bar-label">${name.replace(/_/g,' ')}</div>
+        <div class="diag-bar-track"><div class="diag-bar-fill" style="width:${pct}%;background:linear-gradient(90deg,#0c4a6e,#0ea5e9)"></div></div>
+        <div class="diag-bar-val">${fmt(size)}</div>
+      </div>`;
+    });
+  document.getElementById('diag-clusters').innerHTML = clHTML;
+});
+
+function diagRow(key, val, cls='') {
+  return `<div class="diag-row">
+    <span class="diag-key">${key}</span>
+    <span class="diag-val ${cls}">${val}</span>
+  </div>`;
+}
+
+function fmt(n) {
+  if (n === null || n === undefined) return '—';
+  return Number(n).toLocaleString();
+}
+</script>
 
 <script>
 const socket = io();
@@ -1342,6 +1567,12 @@ function sendChat() {
   const inp = document.getElementById('chat-in');
   const txt = inp.value.trim();
   if (!txt) return;
+  // Intercept diagnostic keyword
+  if (/^diagnostics?(\s+mode)?$/i.test(txt)) {
+    inp.value = '';
+    requestDiagnostic();
+    return;
+  }
   addMsg(txt, 'user');
   socket.emit('chat', {text: txt});
   inp.value = '';

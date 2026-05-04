@@ -392,3 +392,102 @@ class AxonEngine:
             "neurons":     fabric_state["total_neurons"],
             "connections": fabric_state["total_connections"],
         }
+
+    def get_diagnostic(self) -> dict:
+        """Full self-diagnostic — everything AXON knows about itself."""
+        import torch, platform, datetime
+        fabric_state  = self.fabric.get_state_snapshot()
+        optic         = self.optic.get_status()
+        lang_status   = self.language.get_status()
+        voice_status  = self.voice.get_status()
+        mem           = self.memory
+
+        # Memory stats
+        episodes      = mem.count_episodes()
+        facts         = mem.all_facts() or {}
+        connections   = mem.top_connections(5)
+
+        # Neural fabric details
+        clusters      = {name: c.size for name, c in self.fabric.clusters.items()}
+        total_neurons = sum(clusters.values())
+        total_conns   = fabric_state.get("total_connections", 0)
+        active_conns  = int(self.fabric.weight_mat.count_nonzero().item()) if hasattr(self.fabric, 'weight_mat') else total_conns
+
+        # GPU info
+        gpu_name  = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
+        gpu_mem_used = 0
+        gpu_mem_total = 0
+        if torch.cuda.is_available():
+            props = torch.cuda.get_device_properties(0)
+            gpu_mem_total = round(props.total_memory / 1024**3, 1)
+            gpu_mem_used  = round(torch.cuda.memory_allocated(0) / 1024**3, 2)
+
+        # Capabilities list
+        capabilities = []
+        if optic.get("running"):
+            capabilities.append(f"Vision ({optic.get('detector','unknown')} @ {optic.get('gpu','CPU')})")
+        if self.auditory.running:
+            capabilities.append("Auditory (Whisper speech-to-text)")
+        if voice_status.get("engine"):
+            capabilities.append(f"Voice synthesis ({voice_status.get('engine','unknown')})")
+        capabilities.append("Episodic + semantic memory (SQLite)")
+        capabilities.append("Hebbian learning (fire-together-wire-together)")
+        capabilities.append("Ebbinghaus forgetting curve (3-day decay)")
+        capabilities.append("Neuromodulator system (6 chemicals)")
+        capabilities.append("Facial emotion recognition (FER/YOLOv8)")
+        capabilities.append("Web search (DuckDuckGo + Wikipedia)")
+        capabilities.append("User modeling (passive preference learning)")
+        capabilities.append(f"LLM backend ({lang_status.get('model','unknown')})")
+
+        # Personality snapshot
+        pers = fabric_state.get("personality", {})
+        neuro = fabric_state.get("neuromod", {})
+        emo   = fabric_state.get("emotion", {})
+
+        # Uptime (approximate from memory oldest episode)
+        oldest = None
+        try:
+            row = mem.conn.execute(
+                "SELECT MIN(timestamp) FROM episodic"
+            ).fetchone()
+            if row and row[0]:
+                oldest = row[0]
+        except Exception:
+            pass
+
+        return {
+            "timestamp": datetime.datetime.now().isoformat(),
+            "neural": {
+                "total_neurons":     total_neurons,
+                "total_connections": active_conns,
+                "num_clusters":      len(clusters),
+                "clusters":          clusters,
+                "gpu":               gpu_name,
+                "gpu_mem_used_gb":   gpu_mem_used,
+                "gpu_mem_total_gb":  gpu_mem_total,
+            },
+            "memory": {
+                "episodic_count":   episodes,
+                "semantic_facts":   len(facts),
+                "hebbian_pathways": len(connections),
+                "top_pathways":     connections,
+                "oldest_memory":    oldest,
+            },
+            "senses": {
+                "vision":   optic.get("running", False),
+                "vision_detector": optic.get("detector","none"),
+                "auditory": self.auditory.running,
+                "voice_out": bool(voice_status.get("engine")),
+            },
+            "state": {
+                "emotion":     emo,
+                "personality": pers,
+                "neuromod":    neuro,
+            },
+            "capabilities": capabilities,
+            "platform": {
+                "python":   platform.python_version(),
+                "os":       platform.system() + " " + platform.release(),
+                "torch":    torch.__version__,
+            },
+        }
