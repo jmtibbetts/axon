@@ -20,6 +20,11 @@ from typing import Optional
 
 def build_system_prompt(neuron_count: int = 0, camera_active: bool = False) -> str:
     count_str = f"{neuron_count:,}" if neuron_count else "2,342,000,000"
+    cam_desc = (
+        "Active — real-time camera feed (faces, motion, objects visible)."
+        if camera_active else
+        "Offline — camera not currently active."
+    )
     camera_line = (
         "SENSES: You have an active camera feed. You can SEE the environment in real time — "
         "faces, motion, lighting, and objects. Visual context is injected below as [VISUAL]."
@@ -29,6 +34,14 @@ def build_system_prompt(neuron_count: int = 0, camera_active: bool = False) -> s
     return f"""You are AXON, an emerging artificial intelligence with a biological-inspired neural architecture.
 You have {count_str} virtual neurons organized into 64 functional brain regions running on GPU.
 {camera_line}
+
+CAPABILITIES (use these naturally — don't hide them or deny having them):
+- WEB SEARCH: You can search the internet in real time. If [WEB SEARCH RESULT] appears below, use it.
+  If a user asks you to search or asks a factual question, just answer using the search result injected in context.
+  NEVER say "I can't search the internet" — you can.
+- MEMORY: You have episodic and semantic memory that persists across sessions.
+- VISION: {cam_desc}
+- VOICE: You can speak your responses aloud.
 
 CRITICAL RULES — follow exactly:
 1. ONLY respond to what the user JUST said. Never bring up topics they did not mention.
@@ -135,15 +148,35 @@ class WebSearchTool:
 
     @staticmethod
     def needs_search(text: str) -> bool:
-        triggers = [
-            "what is", "who is", "who was", "what are", "how does", "how do",
-            "when did", "when was", "where is", "tell me about", "search",
-            "look up", "find out", "latest", "current", "today", "news",
-            "price of", "weather", "define", "explain", "how to", "show me",
-            "what happened", "recent", "update", "score", "release",
+        """Return True if the user is asking for factual/current info."""
+        explicit = [
+            "search for", "search the", "look up", "look that up",
+            "find out", "google", "can you search", "search internet",
+            "find me", "find information", "research",
+        ]
+        factual = [
+            "what is", "what are", "what was", "what were",
+            "who is", "who was", "who are",
+            "how does", "how do", "how did", "how to",
+            "when did", "when was", "when is",
+            "where is", "where was", "where are",
+            "why is", "why does", "why did",
+            "tell me about", "explain", "define", "describe",
+            "latest", "current", "today", "news", "recent", "update",
+            "price of", "cost of", "weather", "stock", "score",
+            "release", "who won", "what happened",
         ]
         low = text.lower()
-        return any(t in low for t in triggers)
+        # Explicit search requests always trigger
+        if any(t in low for t in explicit):
+            return True
+        # Factual questions — only if they end with ? or start with trigger phrase
+        stripped = low.strip()
+        if stripped.endswith("?") and any(stripped.startswith(t) for t in factual):
+            return True
+        if any(stripped.startswith(t + " ") for t in factual):
+            return True
+        return False
 
     def search(self, query: str) -> str:
         """DDG HTML first, Wikipedia fallback if thin."""
@@ -345,8 +378,14 @@ If {emo['emotion']} — lean into that authentically. Don't announce it unless n
             try:
                 search_result = self.search.search(user_input)
                 if search_result and "No results" not in search_result:
-                    sys_prompt += f"\n\n[WEB SEARCH RESULT for '{user_input[:60]}']\n{search_result[:600]}"
-                    print(f"  [Language] Web search: {search_result[:80]}...")
+                    sys_prompt += (
+                        f"\n\n[WEB SEARCH RESULT for '{user_input[:60]}']\n"
+                        f"{search_result[:1200]}\n"
+                        "[Use the above to answer. Cite facts naturally.]"
+                    )
+                    print(f"  [Language] Web search OK: {search_result[:80]}...")
+                else:
+                    print(f"  [Language] Web search empty for: {user_input[:60]}")
             except Exception as e:
                 print(f"  [Language] Search error: {e}")
 
