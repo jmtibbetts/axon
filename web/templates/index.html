@@ -360,6 +360,7 @@ canvas.spark{display:block;}
       <button class="info-tab"        data-tab="memory"   onclick="switchTab('memory')">💾 Memory</button>
       <button class="info-tab"        data-tab="knowme"   onclick="switchTab('knowme')">👤 Know Me</button>
       <button class="info-tab"        data-tab="voice"    onclick="switchTab('voice')">🎙️ Voice</button>
+      <button class="info-tab"        data-tab="people"   onclick="switchTab('people')">👥 People</button>
     </div>
 
     <!-- TAB: Brain State -->
@@ -554,6 +555,62 @@ canvas.spark{display:block;}
       <!-- Voice list -->
       <div style="font-size:9px;color:#64748b;margin-bottom:6px;">AVAILABLE VOICES</div>
       <div id="voice-list" style="display:flex;flex-direction:column;gap:4px;"></div>
+    </div>
+
+    <!-- TAB: People / Face Identity -->
+    <div id="tab-people" class="tab-pane" style="overflow-y:auto;flex:1;display:none;padding:8px;">
+      <div class="neuro-title" style="margin-bottom:6px;">👥 People I Know
+        <span class="section-hint">Faces AXON has recognised</span>
+      </div>
+
+      <!-- Currently in frame -->
+      <div style="background:#0a0f1a;border:1px solid #1e3a5f;border-radius:6px;padding:8px;margin-bottom:8px;">
+        <div style="font-size:9px;color:#64748b;margin-bottom:4px;">NOW IN FRAME</div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span id="current-person-avatar" style="font-size:22px;">👤</span>
+          <div>
+            <div id="current-person-name" style="font-size:11px;color:#e2e8f0;font-weight:600;">No one</div>
+            <div id="current-person-meta" style="font-size:8px;color:#64748b;"></div>
+          </div>
+          <div id="new-face-banner" style="display:none;margin-left:auto;padding:4px 8px;
+            background:#7c3aed22;border:1px solid #7c3aed;border-radius:4px;
+            font-size:8px;color:#a78bfa;">❓ Unknown</div>
+        </div>
+      </div>
+
+      <!-- Audio emotion panel -->
+      <div style="background:#0a0f1a;border:1px solid #1e3a5f;border-radius:6px;padding:8px;margin-bottom:8px;">
+        <div style="font-size:9px;color:#64748b;margin-bottom:4px;">🎤 VOICE EMOTION</div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span id="audio-emo-emoji" style="font-size:22px;">😐</span>
+          <div style="flex:1;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+              <span id="audio-emo-label" style="font-size:11px;color:#e2e8f0;font-weight:600;">neutral</span>
+              <span id="audio-emo-conf"  style="font-size:9px;color:#64748b;">not speaking</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:4px;margin-bottom:2px;">
+              <span style="font-size:8px;color:#64748b;width:42px;">arousal</span>
+              <div style="flex:1;height:4px;background:#0f172a;border-radius:2px;">
+                <div id="audio-arousal-bar" style="width:0%;height:100%;background:#f59e0b;border-radius:2px;transition:width .4s;"></div>
+              </div>
+              <span id="audio-arousal-val" style="font-size:8px;color:#64748b;width:28px;text-align:right;">0%</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:4px;">
+              <span style="font-size:8px;color:#64748b;width:42px;">valence</span>
+              <div style="flex:1;height:4px;background:#0f172a;border-radius:2px;position:relative;">
+                <div style="position:absolute;left:50%;top:0;width:1px;height:100%;background:#334155;"></div>
+                <div id="audio-valence-bar" style="height:100%;background:#22c55e;border-radius:2px;transition:all .4s;position:absolute;"></div>
+              </div>
+              <span id="audio-valence-val" style="font-size:8px;color:#64748b;width:28px;text-align:right;">0.0</span>
+            </div>
+          </div>
+        </div>
+        <div id="audio-emo-features" style="margin-top:4px;font-size:8px;color:#334155;"></div>
+      </div>
+
+      <!-- Known people list -->
+      <div style="font-size:9px;color:#64748b;margin-bottom:6px;">KNOWN PEOPLE (<span id="people-count">0</span>)</div>
+      <div id="people-list" style="display:flex;flex-direction:column;gap:5px;"></div>
     </div>
   </div>
 
@@ -3125,6 +3182,164 @@ function applyVoiceModulator(andTest = false) {
 // Request voice config on connect
 socket.on('connect', () => {
   setTimeout(() => socket.emit('get_voice_config'), 1200);
+});
+
+
+// ── People / Face Identity ─────────────────────────────────────────────────
+let _knownPeople = {};
+
+socket.on('new_face', d => {
+  const banner = document.getElementById('new-face-banner');
+  if (banner) banner.style.display = 'block';
+  const nameEl = document.getElementById('current-person-name');
+  const metaEl = document.getElementById('current-person-meta');
+  if (nameEl) nameEl.textContent = 'Unknown Person';
+  if (metaEl) metaEl.textContent = 'AXON is asking who they are…';
+  sysLog('👤 New face — asking for identity');
+});
+
+socket.on('known_face', d => {
+  const p = d.person || {};
+  const banner = document.getElementById('new-face-banner');
+  if (banner) banner.style.display = 'none';
+  updateCurrentPerson(p);
+  if (p.person_id) _knownPeople[p.person_id] = p;
+  renderPeopleList();
+});
+
+socket.on('person_named', d => {
+  const banner = document.getElementById('new-face-banner');
+  if (banner) banner.style.display = 'none';
+  if (d.person_id && d.name) {
+    if (_knownPeople[d.person_id]) {
+      _knownPeople[d.person_id].name = d.name;
+    } else {
+      _knownPeople[d.person_id] = { person_id: d.person_id, name: d.name, visit_count: 1 };
+    }
+    const nameEl = document.getElementById('current-person-name');
+    if (nameEl) nameEl.textContent = d.name;
+    renderPeopleList();
+    sysLog(`👤 Named: ${d.name}`);
+  }
+});
+
+// Enhance face event to show current person in People tab
+const _origUpdateEmotionUI = updateEmotionUI;
+updateEmotionUI = function(faceData) {
+  _origUpdateEmotionUI(faceData);
+  if (!faceData.no_face && faceData.person_name && faceData.person_name !== 'Unknown') {
+    const nameEl = document.getElementById('current-person-name');
+    const metaEl = document.getElementById('current-person-meta');
+    const banner = document.getElementById('new-face-banner');
+    if (nameEl) nameEl.textContent = faceData.person_name;
+    if (metaEl) metaEl.textContent = `Visit #${faceData.person_visits || 1} · ${faceData.emotion || 'neutral'}`;
+    if (banner) banner.style.display = 'none';
+  } else if (faceData.no_face) {
+    const nameEl = document.getElementById('current-person-name');
+    const metaEl = document.getElementById('current-person-meta');
+    const banner = document.getElementById('new-face-banner');
+    if (nameEl) nameEl.textContent = 'No one';
+    if (metaEl) metaEl.textContent = '';
+    if (banner) banner.style.display = 'none';
+  }
+};
+
+function updateCurrentPerson(p) {
+  const nameEl   = document.getElementById('current-person-name');
+  const metaEl   = document.getElementById('current-person-meta');
+  const avatarEl = document.getElementById('current-person-avatar');
+  if (nameEl)   nameEl.textContent   = p.name || 'Unknown';
+  if (metaEl)   metaEl.textContent   = `Visit #${p.visit_count || 1}`;
+  if (avatarEl) avatarEl.textContent = p.name && p.name !== 'Unknown' ? '😊' : '👤';
+}
+
+function renderPeopleList() {
+  const el = document.getElementById('people-list');
+  const cntEl = document.getElementById('people-count');
+  if (!el) return;
+  const people = Object.values(_knownPeople);
+  if (cntEl) cntEl.textContent = people.length;
+  if (!people.length) {
+    el.innerHTML = '<div style="font-size:9px;color:#334155;padding:8px 0;">No one recognised yet.</div>';
+    return;
+  }
+  el.innerHTML = people.map(p => {
+    const isUnknown = !p.name || p.name === 'Unknown';
+    const firstSeen = p.first_seen ? new Date(p.first_seen * 1000).toLocaleDateString() : '';
+    return `<div style="background:#050810;border:1px solid #1e3a5f;border-radius:5px;padding:7px 9px;display:flex;align-items:center;gap:8px;">
+      <span style="font-size:18px;">${isUnknown ? '👤' : '😊'}</span>
+      <div style="flex:1;">
+        <div style="font-size:10px;color:${isUnknown?'#64748b':'#e2e8f0'};font-weight:600;">${p.name || 'Unknown'}</div>
+        <div style="font-size:8px;color:#475569;">Visits: ${p.visit_count || 1}${firstSeen ? ' · First: ' + firstSeen : ''}</div>
+      </div>
+      ${isUnknown ? `<button onclick="promptNamePerson('${p.person_id}')" style="
+        background:#0f172a;border:1px solid #7c3aed;color:#a78bfa;
+        font-size:8px;font-family:var(--font);padding:3px 7px;
+        border-radius:3px;cursor:pointer;">Name</button>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function promptNamePerson(personId) {
+  const name = prompt('What is this person's name?');
+  if (name && name.trim()) {
+    socket.emit('name_person', { person_id: personId, name: name.trim() });
+  }
+}
+
+socket.on('connect', () => {
+  setTimeout(() => socket.emit('get_people'), 1000);
+});
+
+socket.on('people_list', d => {
+  _knownPeople = {};
+  (d.people || []).forEach(p => { _knownPeople[p.person_id] = p; });
+  renderPeopleList();
+});
+
+// ── Audio Emotion ─────────────────────────────────────────────────────────────
+const AUDIO_EMO_EMOJI = {
+  "excited": "🤩", "stressed": "😤", "calm": "😌", "sad": "😢", "neutral": "😐"
+};
+const AUDIO_EMO_COLOR = {
+  "excited": "#f59e0b", "stressed": "#ef4444", "calm": "#22c55e",
+  "sad": "#6366f1", "neutral": "#64748b"
+};
+
+socket.on('audio_emotion', d => {
+  const emoji  = AUDIO_EMO_EMOJI[d.audio_emotion] || '😐';
+  const color  = AUDIO_EMO_COLOR[d.audio_emotion] || '#64748b';
+  const speaking = d.speaking;
+
+  const emojiEl  = document.getElementById('audio-emo-emoji');
+  const labelEl  = document.getElementById('audio-emo-label');
+  const confEl   = document.getElementById('audio-emo-conf');
+  const arousalB = document.getElementById('audio-arousal-bar');
+  const arousalV = document.getElementById('audio-arousal-val');
+  const valenceB = document.getElementById('audio-valence-bar');
+  const valenceV = document.getElementById('audio-valence-val');
+  const featEl   = document.getElementById('audio-emo-features');
+
+  if (emojiEl)  emojiEl.textContent  = emoji;
+  if (labelEl)  { labelEl.textContent = d.audio_emotion || 'neutral'; labelEl.style.color = color; }
+  if (confEl)   confEl.textContent   = speaking ? `${Math.round((d.confidence||0)*100)}% conf · ${d.backend||'basic'}` : 'not speaking';
+
+  if (arousalB) arousalB.style.width = Math.round((d.arousal||0)*100) + '%';
+  if (arousalV) arousalV.textContent = Math.round((d.arousal||0)*100) + '%';
+
+  // Valence bar: negative = red left side, positive = green right side
+  if (valenceB) {
+    const v = d.valence || 0;
+    const pct = Math.abs(v) * 50;
+    valenceB.style.background = v >= 0 ? '#22c55e' : '#ef4444';
+    valenceB.style.width  = pct + '%';
+    valenceB.style.left   = v >= 0 ? '50%' : (50 - pct) + '%';
+  }
+  if (valenceV) valenceV.textContent = (d.valence >= 0 ? '+' : '') + (d.valence||0).toFixed(2);
+
+  if (featEl && speaking) {
+    featEl.textContent = `pitch: ${d.pitch_hz||0}Hz  energy: ${((d.energy||0)*100).toFixed(1)}  zcr: ${(d.zcr||0).toFixed(3)}`;
+  }
 });
 
 </script>

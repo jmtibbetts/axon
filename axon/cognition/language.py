@@ -411,6 +411,41 @@ class LanguageCore:
         )
         return resp.content[0].text.strip()
 
+
+    def respond(self, user_input: str, visual_context: dict = None, system_note: str = None) -> str:
+        """
+        Wrapper around think() that supports:
+        - system_note: injected as extra system context (for face identity prompts)
+        - __face_new__ / __face_known__: skips history recording, pure one-shot
+        """
+        if system_note:
+            # Temporarily inject the note into think via a hacky but clean approach:
+            # we'll use think() but override the user_input with the note as a hidden prompt
+            # so the LLM answers in the right context without polluting history.
+            original = user_input
+            # Build a one-shot prompt without history
+            mem_ctx      = self.memory.build_context_string()
+            user_profile = self.user_model.describe()
+            neuron_count = self.fabric.get_state_snapshot().get("total_neurons", 0) if self.fabric else 0
+            cam_active   = bool(visual_context and visual_context.get("camera_running"))
+            sys_prompt   = build_system_prompt(neuron_count, camera_active=cam_active) + "\n\n" + mem_ctx
+            if user_profile:
+                sys_prompt += "\n\n" + user_profile
+            sys_prompt   += "\n\n[SYSTEM OBSERVATION]: " + system_note
+
+            messages = [{"role": "user", "content": "Respond naturally based on the system observation above."}]
+            try:
+                # Use LM Studio or Claude depending on availability
+            if self._lm_studio_available():
+                return self._call_lm_studio(messages, sys_prompt)
+            elif self.client:
+                return self._call_claude(messages, sys_prompt)
+            return ""
+            except Exception as e:
+                print(f"  [Language] respond() error: {e}")
+                return ""
+        return self.think(user_input, visual_context=visual_context)
+
     # ── Main think method ──────────────────────────────────────
 
     def think(self, user_input: str, visual_context: dict = None) -> str:
@@ -439,19 +474,34 @@ class LanguageCore:
             vis_lines = []
 
             if face:
-                emotion = visual_context.get("emotion", "neutral")
-                conf    = int(visual_context.get("emotion_conf", 0.5) * 100)
-                trend   = visual_context.get("emotion_trend", "stable")
+                emotion      = visual_context.get("emotion", "neutral")
+                conf         = int(visual_context.get("emotion_conf", 0.5) * 100)
+                trend        = visual_context.get("emotion_trend", "stable")
+                person_name  = visual_context.get("person_name", "")
+                person_match = visual_context.get("person_matched", False)
                 trend_note = {
                     "improving": "Their mood is improving as we talk.",
                     "declining": "Their mood is declining — be gentler.",
                     "stable":    "Their emotional state is stable.",
                 }.get(trend, "")
-                vis_lines.append(
-                    f"I can see the user's face. They appear {emotion} ({conf}% confidence). {trend_note}"
-                )
+                if person_match and person_name and person_name != "Unknown":
+                    vis_lines.append(
+                        f"I recognise the person in front of me — it is {person_name}. They appear {emotion} ({conf}% confidence). {trend_note}"
+                    )
+                else:
+                    vis_lines.append(
+                        f"I can see a face but I don't recognise this person yet. They appear {emotion} ({conf}% confidence). {trend_note}"
+                    )
             else:
                 vis_lines.append("Camera is active but no face is detected right now — the user may have stepped away or is off-camera.")
+
+            # Audio emotion from voice prosody
+            audio_emo = visual_context.get("audio_emotion", "")
+            audio_arousal = visual_context.get("audio_arousal", 0.0)
+            if audio_emo and audio_emo not in ("neutral", ""):
+                vis_lines.append(
+                    f"Their voice sounds {audio_emo} (arousal {int(audio_arousal*100)}%) — this is independent of their facial expression."
+                )
 
             if motion > 0.15:
                 vis_lines.append(f"I detect movement in the scene (motion level: {motion:.2f}).")

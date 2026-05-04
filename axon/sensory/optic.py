@@ -461,6 +461,7 @@ class OpticSystem:
                                    if face_crop.size > 0 else 0.5,
                 "confidence":    round(float(confs[best]), 3),
                 "detector":      "yolo-gpu",
+                "_crop":         face_crop,   # raw BGR crop for face_identity
             }
         except Exception as e:
             print(f"  [Optic] YOLO error: {e}")

@@ -16,3 +16,8 @@ tf-keras
 fer
 tensorflow
 deepface
+# Face recognition (person identity)
+face_recognition
+# Audio emotion (MFCC/prosody analysis)
+librosa
+soundfile

@@ -14,7 +14,9 @@ from axon.sensory.auditory import AuditorySystem
 from axon.cognition.language    import LanguageCore
 from axon.cognition.memory      import MemorySystem
 from axon.cognition.neural_fabric import NeuralFabric
-from axon.cognition.voice_output  import VoiceOutput
+from axon.cognition.voice_output   import VoiceOutput
+from axon.cognition.face_identity  import FaceIdentitySystem
+from axon.sensory.audio_emotion    import AudioEmotionDetector
 
 
 class AxonEngine:
@@ -33,6 +35,13 @@ class AxonEngine:
         print("  [Engine] Initializing memory...")
         self.memory   = MemorySystem(db_path=Path(data_dir) / "memory" / "axon.db")
 
+        print("  [Engine] Initializing face identity system...")
+        self.face_id  = FaceIdentitySystem(
+            db_path      = Path(data_dir) / "memory" / "axon.db",
+            on_new_face  = self._on_new_face,
+            on_known_face= self._on_known_face,
+        )
+
         print("  [Engine] Initializing neural fabric...")
         self.fabric   = NeuralFabric(data_dir=os.path.join(data_dir, "neural"))
         self.fabric.add_callback(self._on_fabric_state)
@@ -50,6 +59,13 @@ class AxonEngine:
         print("  [Engine] Initializing voice output...")
         self.voice    = VoiceOutput()
 
+        print("  [Engine] Initializing audio emotion detector...")
+        self.audio_emo = AudioEmotionDetector(
+            on_emotion   = self._on_audio_emotion,
+            device_index = None,
+        )
+        self._last_audio_emo: dict = {}
+
         print("  [Engine] Initializing sensory systems...")
         self.optic    = OpticSystem(
             on_frame=self._on_frame,
@@ -61,6 +77,8 @@ class AxonEngine:
         self._emotion_before_response    = "neutral"
         self._emotion_history: list      = []
         self._last_face_data: dict       = {}
+        self._pending_name_for_pid:      str  = None   # person_id awaiting naming
+        self._last_audio_emo:            dict = {}
 
     # ── Start / Stop ──────────────────────────────────────────
 
@@ -68,6 +86,7 @@ class AxonEngine:
               camera_index: int = -1, mic_index: int = None):
         self.running = True
         self.fabric.start()
+        self.audio_emo.start()
 
         if enable_camera:
             try:
@@ -107,6 +126,7 @@ class AxonEngine:
         self.running = False
         self.optic.stop()
         self.auditory.stop()
+        self.audio_emo.stop()
         self.fabric.stop()
         self.voice.stop()
 
@@ -137,8 +157,27 @@ class AxonEngine:
     }
 
     def _on_face(self, face_data: dict):
-        self._emit("face", face_data)
         import time as _time
+        no_face  = face_data.get("no_face", False)
+
+        # ── Face identity processing ──────────────────────────────────────
+        if not no_face:
+            face_crop = face_data.get("_crop")   # set by optic if available
+            person_result = None
+            if face_crop is not None:
+                person_result = self.face_id.process_face(face_crop)
+
+            if person_result:
+                face_data["person_id"]   = person_result.get("person_id")
+                face_data["person_name"] = person_result.get("name", "Unknown")
+                face_data["person_matched"] = not person_result.get("unknown", False)
+                face_data["person_visits"]  = person_result.get("visit_count", 1)
+                # Track emotion for this person
+                emotion_now = face_data.get("emotion", "neutral")
+                emo_conf_now = face_data.get("confidence", 0.5)
+                self.face_id.update_emotion_for_current(emotion_now, emo_conf_now)
+
+        self._emit("face", face_data)
         emotion  = face_data.get("emotion", "neutral")
         probs    = face_data.get("emotion_probs", {})
         conf     = face_data.get("confidence", 0.5)
@@ -146,18 +185,24 @@ class AxonEngine:
 
         # ── Store face data + rolling history ────────────────────────────
         self._last_face_data = face_data
-        self._emotion_history.append((emotion, emo_conf, _time.time()))
-        if len(self._emotion_history) > 10:
-            self._emotion_history.pop(0)
+        if not no_face:
+            self._emotion_history.append((emotion, emo_conf, _time.time()))
+            if len(self._emotion_history) > 10:
+                self._emotion_history.pop(0)
 
         # Update visual context with emotion trend
         trend = self._emotion_trend()
         self._last_visual_ctx.update({
-            "face_present":   True,
+            "face_present":   not no_face,
             "emotion":        emotion,
             "emotion_conf":   round(emo_conf, 3),
             "emotion_trend":  trend,
+            "person_name":    face_data.get("person_name", ""),
+            "person_matched": face_data.get("person_matched", False),
         })
+
+        if no_face:
+            return
 
         # Always stimulate social/face recognition areas
         self.fabric.stimulate_for_input("face", 0.25)
@@ -181,7 +226,109 @@ class AxonEngine:
         if emotion != "neutral" and emo_conf > 0.45:
             self._emit("log", {"msg": f"😶 Emotion: {face_data.get('emoji','')} {emotion} ({int(emo_conf*100)}%) trend:{trend}"})
 
-    def _emotion_trend(self) -> str:
+    # ── Face identity callbacks ───────────────────────────────────────────────
+
+    def _on_new_face(self, temp_id: str):
+        """Called when an unknown face has been seen for UNKNOWN_PROMPT_DELAY seconds."""
+        self._pending_name_for_pid = temp_id
+        self._emit("new_face", {"temp_id": temp_id})
+        self._emit("log", {"msg": f"👤 New face detected — asking for identity"})
+
+        # Ask who this person is via the LLM response channel
+        # We inject a special "system observation" rather than treating it as user speech
+        threading.Thread(
+            target=self._ask_who_is_this,
+            args=(temp_id,),
+            daemon=True,
+        ).start()
+
+    def _ask_who_is_this(self, temp_id: str):
+        """Generate a natural greeting / who-are-you question."""
+        import time as _time
+        prompt = (
+            "You have just noticed a new face in your visual field that you have never seen before. "
+            "Greet them warmly and ask who they are in a natural, friendly way. "
+            "Be brief — one or two sentences."
+        )
+        try:
+            response = self.language.respond(
+                user_input     = "__face_new__",
+                visual_context = {**self._last_visual_ctx, "new_face": True},
+                system_note    = prompt,
+            )
+            if response:
+                self._emit("response", {"text": response})
+                self.voice.speak(response, interrupt=False)
+        except Exception as e:
+            print(f"  [Engine] ask_who_is_this error: {e}")
+
+    def _on_known_face(self, person: dict):
+        """Called when a previously known face returns."""
+        name = person.get("name", "Unknown")
+        visits = person.get("visit_count", 1)
+        pid    = person.get("person_id")
+        self._emit("known_face", {"person": person})
+        self._emit("log", {"msg": f"👤 Recognised: {name} (visit #{visits})"})
+
+        # Greet if they've been away a while (>10 min since last seen)
+        import time as _time
+        gap = _time.time() - person.get("last_seen", 0)
+        if gap > 600 and name != "Unknown":
+            threading.Thread(
+                target=self._greet_known_person,
+                args=(person,),
+                daemon=True,
+            ).start()
+
+    def _greet_known_person(self, person: dict):
+        name    = person.get("name", "someone")
+        visits  = person.get("visit_count", 1)
+        profile = person.get("profile", {})
+        facts   = profile.get("known_facts", {})
+        notes   = profile.get("notes", "")
+        context_str = ""
+        if facts:
+            context_str += " Known facts: " + "; ".join(f"{k}={v}" for k, v in facts.items()) + "."
+        if notes:
+            context_str += " Notes: " + notes[:200]
+        prompt = (
+            f"You recognise {name} from your visual memory — this is visit #{visits}. "
+            f"{context_str} "
+            "Give them a warm, natural greeting that acknowledges you remember them. "
+            "Keep it to one sentence."
+        )
+        try:
+            response = self.language.respond(
+                user_input     = "__face_known__",
+                visual_context = {**self._last_visual_ctx, "known_person": name},
+                system_note    = prompt,
+            )
+            if response:
+                self._emit("response", {"text": response})
+                self.voice.speak(response, interrupt=False)
+        except Exception as e:
+            print(f"  [Engine] greet_known error: {e}")
+
+    # ── Audio emotion callback ─────────────────────────────────────────────────
+
+    def _on_audio_emotion(self, state: dict):
+        """Called every ~0.5s with prosody analysis results."""
+        self._last_audio_emo = state
+        self._emit("audio_emotion", state)
+
+        # Feed into neural fabric — voice arousal stimulates brainstem / limbic
+        arousal = state.get("arousal", 0.0)
+        valence = state.get("valence", 0.0)
+        if state.get("speaking", False):
+            self.fabric.stimulate_region("auditory_cortex",  0.05 + arousal * 0.12)
+            self.fabric.stimulate_region("amygdala",         max(0, -valence) * 0.10)
+            self.fabric.stimulate_region("anterior_cingulate", abs(valence) * 0.06)
+            if arousal > 0.65:
+                self.fabric.neuromod.stress(0.04)
+            elif valence > 0.3 and arousal > 0.3:
+                self.fabric.neuromod.reward(0.03)
+
+        def _emotion_trend(self) -> str:
         """Compute trajectory of last N emotions: improving / declining / stable."""
         if len(self._emotion_history) < 3:
             return "stable"
@@ -205,7 +352,43 @@ class AxonEngine:
         self._emit("log",        {"msg": f"🎤 Heard: {text}"})
         self.fabric.stimulate_for_input("speech",   0.75)
         self.fabric.stimulate_for_input("question", 0.60)
+
+        # ── If we were waiting for a new face name, try to extract it ────
+        if self._pending_name_for_pid:
+            extracted = self._extract_name_from_text(text)
+            if extracted:
+                pid = self._pending_name_for_pid
+                self._pending_name_for_pid = None
+                self.face_id.name_person(pid, extracted)
+                self._emit("person_named", {"person_id": pid, "name": extracted})
+                self._emit("log", {"msg": f"👤 Learned: face is '{extracted}'"})
+                # Respond with acknowledgement
+                self._think(f"The person in front of you just introduced themselves as {extracted}. Respond warmly, say their name, and note you'll remember them.")
+                return
+
         self._think(text)
+
+    def _extract_name_from_text(self, text: str) -> str:
+        """
+        Simple heuristic to extract a person's name from responses like:
+        "I'm John", "My name is Sarah", "It's Alex", "Call me Mike", etc.
+        Returns the extracted name or "" if nothing found.
+        """
+        import re
+        t = text.strip()
+        patterns = [
+            r"(?:i'?m|i am)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
+            r"(?:my name is|name's)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
+            r"(?:it'?s|its|call me|they call me)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
+            r"^([A-Z][a-z]+)[\.,!?]?\s*$",  # Single word, capitalised
+        ]
+        for pat in patterns:
+            m = re.search(pat, t, re.IGNORECASE)
+            if m:
+                name = m.group(1).strip().title()
+                if len(name) > 1 and name.lower() not in {"the","this","that","here","there","yes","no","okay","hi","hello"}:
+                    return name
+        return ""
 
     # ── Thinking ──────────────────────────────────────────────
 
@@ -221,12 +404,18 @@ class AxonEngine:
             self.fabric.stimulate_for_input("memory",   0.55)
             optic_status = self.optic.get_status()
             visual_ctx = {
-                "camera_running": optic_status.get("running", False),
-                "face_present":   self._last_visual_ctx.get("face_present", False),
-                "emotion":        self._last_visual_ctx.get("emotion", "neutral"),
-                "emotion_conf":   self._last_visual_ctx.get("emotion_conf", 0.5),
-                "emotion_trend":  self._last_visual_ctx.get("emotion_trend", "stable"),
-                "motion":         optic_status.get("motion", 0.0),
+                "camera_running":  optic_status.get("running", False),
+                "face_present":    self._last_visual_ctx.get("face_present", False),
+                "emotion":         self._last_visual_ctx.get("emotion", "neutral"),
+                "emotion_conf":    self._last_visual_ctx.get("emotion_conf", 0.5),
+                "emotion_trend":   self._last_visual_ctx.get("emotion_trend", "stable"),
+                "motion":          optic_status.get("motion", 0.0),
+                "person_name":     self._last_visual_ctx.get("person_name", ""),
+                "person_matched":  self._last_visual_ctx.get("person_matched", False),
+                # Audio emotion from voice prosody
+                "audio_emotion":   self._last_audio_emo.get("audio_emotion", ""),
+                "audio_arousal":   self._last_audio_emo.get("arousal", 0.0),
+                "voice_speaking":  self._last_audio_emo.get("speaking", False),
             }
             try:
                 response = self.language.think(user_input, visual_context=visual_ctx)

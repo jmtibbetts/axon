@@ -177,6 +177,35 @@ def on_diagnostic():
         emit("diagnostic_result", {"error": str(e) + "\n" + traceback.format_exc()[-800:]})
 
 
+@socketio.on("get_people")
+def on_get_people():
+    global _engine
+    if not _engine or not _engine.running:
+        emit("people_list", {"people": []})
+        return
+    try:
+        summary = _engine.face_id.get_summary()
+        emit("people_list", {"people": summary.get("all", [])})
+    except Exception as e:
+        emit("people_list", {"people": [], "error": str(e)})
+
+
+@socketio.on("name_person")
+def on_name_person(data):
+    global _engine
+    if not _engine:
+        return
+    pid  = data.get("person_id")
+    name = data.get("name", "").strip()
+    if pid and name:
+        try:
+            _engine.face_id.name_person(pid, name)
+            from flask_socketio import emit as _emit
+            emit("person_named", {"person_id": pid, "name": name}, broadcast=True)
+        except Exception as e:
+            print(f"  [App] name_person error: {e}")
+
+
 @socketio.on("get_voice_config")
 def on_get_voice_config():
     global _engine
