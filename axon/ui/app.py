@@ -8,7 +8,8 @@ try:
 except ImportError:
     _CUDA_NAME = None
 from pathlib import Path
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, request
+import os, tempfile
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 
@@ -271,6 +272,153 @@ def on_set_voice(data):
             target=lambda: _engine.voice.speak(f"Hello, I'm {label}. This is my voice.", interrupt=True),
             daemon=True
         ).start()
+
+# ── Identity / Knowledge socket handlers ─────────────────────────────────────
+
+@socketio.on("get_identity")
+def on_get_identity():
+    global _engine
+    if not _engine:
+        emit("identity_state", {"error": "Engine not running"})
+        return
+    try:
+        identity = _engine.get_identity_summary()
+        emit("identity_state", identity)
+    except Exception as e:
+        emit("identity_state", {"error": str(e)})
+
+@socketio.on("get_beliefs")
+def on_get_beliefs():
+    global _engine
+    if not _engine:
+        emit("beliefs_state", {"beliefs": []})
+        return
+    try:
+        emit("beliefs_state", {"beliefs": _engine.beliefs.all_beliefs()})
+    except Exception as e:
+        emit("beliefs_state", {"beliefs": [], "error": str(e)})
+
+@socketio.on("ingest_text")
+def on_ingest_text(data):
+    global _engine
+    if not _engine:
+        emit("ingest_result", {"ok": False, "error": "Engine not running"})
+        return
+    text       = data.get("text", "").strip()
+    source     = data.get("source", "manual")
+    credibility= float(data.get("credibility", 0.6))
+    if not text:
+        emit("ingest_result", {"ok": False, "error": "No text provided"})
+        return
+    try:
+        result = _engine.ingest_knowledge(text, source=source, credibility=credibility)
+        emit("ingest_result", {"ok": True, **result})
+        # Refresh identity state for UI
+        emit("identity_state", _engine.get_identity_summary())
+    except Exception as e:
+        emit("ingest_result", {"ok": False, "error": str(e)})
+
+# ── File upload endpoint ──────────────────────────────────────────────────────
+
+@app.route("/upload_knowledge", methods=["POST"])
+def upload_knowledge():
+    global _engine
+    if not _engine:
+        return jsonify({"ok": False, "error": "Engine not running"}), 400
+
+    file = request.files.get("file")
+    if not file or not file.filename:
+        return jsonify({"ok": False, "error": "No file provided"}), 400
+
+    filename  = file.filename.lower()
+    credibility = float(request.form.get("credibility", 0.6))
+    source    = request.form.get("source", file.filename)
+
+    # Save to temp
+    suffix = os.path.splitext(filename)[1]
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        file.save(tmp.name)
+        tmp_path = tmp.name
+
+    try:
+        text = _extract_text_from_file(tmp_path, filename)
+    finally:
+        try: os.unlink(tmp_path)
+        except: pass
+
+    if not text or not text.strip():
+        return jsonify({"ok": False, "error": "Could not extract text from file"}), 400
+
+    try:
+        result = _engine.ingest_knowledge(text, source=source, credibility=credibility)
+        return jsonify({"ok": True, "chars": len(text), **result})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+def _extract_text_from_file(path: str, filename: str) -> str:
+    """Extract plain text from PDF, DOCX, DOC, TXT, MD files."""
+    ext = os.path.splitext(filename)[1].lower()
+
+    if ext == ".pdf":
+        try:
+            import pdfplumber
+            with pdfplumber.open(path) as pdf:
+                return "\n".join(p.extract_text() or "" for p in pdf.pages)
+        except ImportError:
+            try:
+                import PyPDF2
+                with open(path, "rb") as f:
+                    reader = PyPDF2.PdfReader(f)
+                    return "\n".join(page.extract_text() or "" for page in reader.pages)
+            except ImportError:
+                raise RuntimeError("PDF reading requires: pip install pdfplumber  or  pip install PyPDF2")
+
+    elif ext in (".docx",):
+        try:
+            import docx
+            doc = docx.Document(path)
+            return "\n".join(p.text for p in doc.paragraphs)
+        except ImportError:
+            raise RuntimeError("DOCX reading requires: pip install python-docx")
+
+    elif ext in (".doc",):
+        # Try antiword or textract
+        try:
+            import subprocess
+            result = subprocess.run(["antiword", path], capture_output=True, text=True, timeout=15)
+            if result.returncode == 0:
+                return result.stdout
+        except Exception:
+            pass
+        try:
+            import textract
+            return textract.process(path).decode("utf-8", errors="ignore")
+        except ImportError:
+            raise RuntimeError(".doc requires antiword (system package) or: pip install textract")
+
+    elif ext in (".txt", ".md", ".rst", ".csv"):
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            return f.read()
+
+    elif ext in (".epub",):
+        try:
+            import ebooklib
+            from ebooklib import epub
+            from html.parser import HTMLParser
+            class _P(HTMLParser):
+                def __init__(self): super().__init__(); self.parts=[]
+                def handle_data(self, d): self.parts.append(d)
+            book = epub.read_epub(path)
+            parts = []
+            for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
+                p = _P(); p.feed(item.get_content().decode("utf-8","ignore")); parts.append(" ".join(p.parts))
+            return "\n".join(parts)
+        except ImportError:
+            raise RuntimeError("EPUB reading requires: pip install EbookLib")
+    else:
+        raise RuntimeError(f"Unsupported file type: {ext}")
+
 
 if __name__ == "__main__":
     import signal, sys

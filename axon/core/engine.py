@@ -12,11 +12,14 @@ from pathlib import Path
 from axon.sensory.optic    import OpticSystem
 from axon.sensory.auditory import AuditorySystem
 from axon.cognition.language    import LanguageCore
-from axon.cognition.memory      import MemorySystem
-from axon.cognition.neural_fabric import NeuralFabric
-from axon.cognition.voice_output   import VoiceOutput
-from axon.cognition.face_identity  import FaceIdentitySystem
-from axon.sensory.audio_emotion    import AudioEmotionDetector
+from axon.cognition.memory              import MemorySystem
+from axon.cognition.neural_fabric       import NeuralFabric
+from axon.cognition.voice_output        import VoiceOutput
+from axon.cognition.face_identity       import FaceIdentitySystem
+from axon.sensory.audio_emotion         import AudioEmotionDetector
+from axon.cognition.belief_system       import BeliefSystem
+from axon.cognition.preference_tracker  import PreferenceTracker, HobbyEngine
+from axon.cognition.knowledge_ingestion import KnowledgeIngestionPipeline
 
 
 class AxonEngine:
@@ -46,6 +49,27 @@ class AxonEngine:
         self.fabric   = NeuralFabric(data_dir=os.path.join(data_dir, "neural"))
         self.fabric.add_callback(self._on_fabric_state)
 
+        print("  [Engine] Initializing belief system...")
+        db_path = Path(data_dir) / "memory" / "axon.db"
+        self.beliefs   = BeliefSystem(db_path)
+
+        print("  [Engine] Initializing preference tracker + hobby engine...")
+        self.preferences = PreferenceTracker(db_path)
+        self.hobbies     = HobbyEngine(db_path)
+
+        # Inject into fabric so reward loop can use them
+        self.fabric._gpu._belief_system      = self.beliefs
+        self.fabric._gpu._preference_tracker = self.preferences
+        self.fabric._gpu._pref_tracker       = self.preferences
+        self.fabric._gpu._cluster_names_ref  = self.fabric._gpu._cluster_names
+
+        print("  [Engine] Initializing knowledge ingestion pipeline...")
+        self.knowledge = KnowledgeIngestionPipeline(
+            memory_system = self.memory,
+            belief_system = self.beliefs,
+            on_concept    = self._on_knowledge_concept,
+        )
+
         print("  [Engine] Initializing language core...")
         self.language = LanguageCore(
             self.memory,
@@ -55,6 +79,8 @@ class AxonEngine:
             prefer_local=prefer_local,
             neural_fabric=self.fabric,
         )
+        # Give language core a back-reference so it can call get_identity_summary()
+        self.language._engine = self
 
         print("  [Engine] Initializing voice output...")
         self.voice    = VoiceOutput()
@@ -328,7 +354,9 @@ class AxonEngine:
             elif valence > 0.3 and arousal > 0.3:
                 self.fabric.neuromod.reward(0.03)
 
-        def _emotion_trend(self) -> str:
+
+
+    def _emotion_trend(self) -> str:
         """Compute trajectory of last N emotions: improving / declining / stable."""
         if len(self._emotion_history) < 3:
             return "stable"
@@ -345,10 +373,61 @@ class AxonEngine:
         emotion, conf, _ = self._emotion_history[-1]
         return self._EMOTION_VALENCE.get(emotion, 0.0) * conf
 
+    def _on_knowledge_concept(self, concept: dict):
+        """
+        Called by KnowledgeIngestionPipeline for each extracted concept.
+        Stimulates relevant brain regions so knowledge creates real activation patterns.
+        """
+        valence = concept.get("valence", 0.0)
+        context = concept.get("context", "")
+
+        # Positive concepts → reward pathways
+        if valence > 0.1:
+            self.fabric.stimulate_region("prefrontal_cortex",  0.06 * valence)
+            self.fabric.stimulate_region("hippocampus",        0.08)
+            self.fabric.neuromod.curiosity(0.05)
+        elif valence < -0.1:
+            self.fabric.stimulate_region("amygdala",           0.06 * abs(valence))
+            self.fabric.stimulate_region("anterior_cingulate", 0.05)
+        else:
+            # Neutral — engage language/association regions
+            self.fabric.stimulate_region("wernicke_area",      0.05)
+            self.fabric.stimulate_region("temporal_lobe",      0.04)
+
+    def ingest_knowledge(self, text: str, source: str = "manual",
+                         credibility: float = 0.6) -> dict:
+        """
+        Public entry point to ingest text knowledge.
+        Returns ingestion summary. Thread-safe.
+        """
+        if not hasattr(self, 'knowledge') or self.knowledge is None:
+            return {"error": "knowledge pipeline not initialized"}
+        result = self.knowledge.ingest(text, source_label=source, credibility=credibility)
+        # Emit to UI
+        self._emit("knowledge_ingested", result)
+        return result
+
+    def get_identity_summary(self) -> dict:
+        """
+        Returns the full behavioral identity snapshot:
+        personality traits, beliefs, preferences, hobbies.
+        """
+        fabric_state = self.fabric.get_state()
+        return {
+            "personality": fabric_state.get("personality", {}),
+            "beliefs":     self.beliefs.all_beliefs() if hasattr(self, 'beliefs') else [],
+            "preferences": self.preferences.summary()  if hasattr(self, 'preferences') else {},
+            "hobbies":     self.hobbies.summary()       if hasattr(self, 'hobbies') else {},
+            "top_beliefs_context": self.beliefs.as_context_string(5) if hasattr(self, 'beliefs') else "",
+        }
+
     def _on_transcript(self, text: str):
         if not text.strip():
             return
         self._emit("transcript", {"text": text})
+        # Mark as externally driven — resets idle timer for hobby detection
+        if hasattr(self, 'hobbies'):
+            self.hobbies.mark_external_input()
         self._emit("log",        {"msg": f"🎤 Heard: {text}"})
         self.fabric.stimulate_for_input("speech",   0.75)
         self.fabric.stimulate_for_input("question", 0.60)
@@ -795,6 +874,17 @@ class AxonEngine:
     # ── Neural fabric state → UI ──────────────────────────────
 
     def _on_fabric_state(self, state: dict):
+        # Idle hobby detection: check if system is self-activating a preference
+        if hasattr(self, 'hobbies') and hasattr(self, 'fabric'):
+            try:
+                act = self.fabric._gpu.activation
+                names = self.fabric._gpu._cluster_names
+                new_hobby = self.hobbies.idle_tick(act, names)
+                if new_hobby:
+                    self._emit("new_hobby", {"cluster": new_hobby})
+                    self.fabric.neuromod.curiosity(0.12)
+            except Exception:
+                pass
         self._emit("neural_state", state)
         # Push synapse count to header counter every tick
         self._emit("synapse_count", {

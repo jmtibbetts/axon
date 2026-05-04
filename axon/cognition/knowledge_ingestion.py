@@ -1,0 +1,215 @@
+"""
+AXON — Knowledge Ingestion Pipeline
+text → concepts → simulated experiences → memory entries + belief updates
+
+This is NOT a RAG system. We do not just store and retrieve.
+The pipeline converts knowledge into internal "experiences" that the
+system can use for decision-making, the same way lived events are used.
+
+Pipeline:
+  1. Chunk text into ~200-word segments
+  2. Extract concepts + valence per chunk (lightweight heuristics + keyword matching)
+  3. Convert each concept into a simulated scenario:
+       { context, expected_outcome, confidence, valence }
+  4. Store as semantic memory + optionally assert/challenge beliefs
+  5. Optionally run through neural fabric stimulation (the concept activates
+     relevant clusters just like a real experience would)
+
+Design principle:
+  The system can DISAGREE with ingested knowledge if its existing
+  beliefs + experience contradict it. Confidence is never set to 1.0
+  from external sources alone.
+"""
+
+import re
+import json
+import time
+import math
+import threading
+from pathlib import Path
+from typing import List, Dict, Optional, Callable
+
+# Valence lexicon — simple but effective for concept extraction
+_POS_WORDS = {
+    "success","growth","reward","pleasure","joy","curiosity","love","win",
+    "achieve","benefit","gain","thrive","flourish","learn","discover",
+    "create","connect","understand","improve","persist","effort","mastery",
+    "confidence","trust","hope","progress","insight","wisdom","clarity",
+    "strength","resilience","opportunity","creativity","freedom","health",
+    "happiness","fulfillment","purpose","meaning","connection","empathy",
+}
+_NEG_WORDS = {
+    "failure","loss","pain","fear","anger","stress","regret","mistake",
+    "conflict","harm","danger","threat","anxiety","uncertainty","confusion",
+    "decay","weakness","isolation","rejection","frustration","grief","shame",
+    "punishment","cost","risk","damage","struggle","suffer","obstacle",
+}
+_CONCEPT_PATTERNS = [
+    # "X leads to Y", "X causes Y", "X results in Y"
+    r"(\w[\w\s]{2,25})\s+(?:leads?|leads? to|causes?|results? in|produces?|creates?)\s+([\w\s]{2,30})",
+    # "Y comes from X", "Y is caused by X"
+    r"([\w\s]{2,25})\s+(?:comes? from|is caused by|stems? from|is the result of)\s+([\w\s]{2,30})",
+    # "People who X tend to Y"
+    r"(?:people|those|systems?|agents?)\s+who\s+([\w\s]{2,25})\s+tend to\s+([\w\s]{2,30})",
+]
+
+
+def _chunk_text(text: str, max_words: int = 180) -> List[str]:
+    """Split into ~max_words chunks at sentence boundaries."""
+    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    chunks, current, count = [], [], 0
+    for sent in sentences:
+        words = len(sent.split())
+        if count + words > max_words and current:
+            chunks.append(" ".join(current))
+            current, count = [sent], words
+        else:
+            current.append(sent)
+            count += words
+    if current:
+        chunks.append(" ".join(current))
+    return [c for c in chunks if len(c.split()) >= 10]
+
+
+def _extract_valence(text: str) -> float:
+    """Fast heuristic valence score for a chunk of text. Range -1 to 1."""
+    words_lower = re.findall(r'\b\w+\b', text.lower())
+    pos = sum(1 for w in words_lower if w in _POS_WORDS)
+    neg = sum(1 for w in words_lower if w in _NEG_WORDS)
+    total = pos + neg
+    if total == 0:
+        return 0.0
+    return round((pos - neg) / total, 3)
+
+
+def _extract_concepts(chunk: str) -> List[Dict]:
+    """
+    Extract causal concept pairs from text.
+    Returns list of {context, outcome, valence, confidence}
+    """
+    concepts = []
+    for pattern in _CONCEPT_PATTERNS:
+        for match in re.finditer(pattern, chunk, re.IGNORECASE):
+            grps = match.groups()
+            if len(grps) >= 2:
+                context = grps[0].strip().lower()
+                outcome = grps[1].strip().lower()
+                val     = _extract_valence(outcome)
+                if val == 0.0:
+                    val = _extract_valence(chunk)
+                concepts.append({
+                    "context":  context,
+                    "outcome":  outcome,
+                    "valence":  val,
+                    "confidence": 0.55,   # external source: never fully trusted
+                })
+
+    # Fallback: treat whole chunk as one concept if nothing matched
+    if not concepts:
+        words = chunk.split()
+        summary = " ".join(words[:12]) + ("..." if len(words) > 12 else "")
+        concepts.append({
+            "context":  summary,
+            "outcome":  "general",
+            "valence":  _extract_valence(chunk),
+            "confidence": 0.40,
+        })
+
+    return concepts
+
+
+def _concept_to_belief_key(concept: Dict) -> str:
+    """Derive a canonical belief key from a concept."""
+    ctx = re.sub(r'[^a-z0-9]', '_', concept["context"][:30].lower()).strip('_')
+    return ctx
+
+
+class KnowledgeIngestionPipeline:
+    """
+    Main entry point. Processes text and updates the system's internal state.
+
+    Parameters:
+        memory_system    — MemorySystem instance (stores semantic facts)
+        belief_system    — BeliefSystem instance (updates beliefs)
+        on_concept       — optional callback(concept_dict) called per concept
+                           so the neural fabric can stimulate relevant clusters
+    """
+
+    def __init__(self, memory_system, belief_system,
+                 on_concept: Optional[Callable] = None):
+        self._mem     = memory_system
+        self._beliefs = belief_system
+        self._on_concept = on_concept
+        self._lock    = threading.Lock()
+        self._ingestion_log: List[dict] = []   # last N ingestion summaries
+
+    def ingest(self, text: str, source_label: str = "external",
+               credibility: float = 0.6) -> dict:
+        """
+        Full pipeline. Returns summary dict.
+        credibility: 0–1, how much to trust this source vs. existing beliefs.
+        """
+        with self._lock:
+            start   = time.time()
+            chunks  = _chunk_text(text)
+            total_concepts = 0
+            beliefs_updated = 0
+            memories_stored = 0
+            concept_list    = []
+
+            for chunk in chunks:
+                chunk_valence = _extract_valence(chunk)
+                concepts = _extract_concepts(chunk)
+
+                for concept in concepts:
+                    total_concepts += 1
+                    concept_list.append(concept)
+
+                    # 1. Store as semantic memory
+                    key   = _concept_to_belief_key(concept)
+                    value = (f"context: {concept['context']} → "
+                             f"outcome: {concept['outcome']} "
+                             f"(valence {concept['valence']:+.2f})")
+                    self._mem.store_semantic(value, "knowledge", confidence=concept["confidence"])
+                    memories_stored += 1
+
+                    # 2. Assert or challenge existing belief
+                    existing = self._beliefs.get(key)
+                    if existing:
+                        # Challenge: this might agree or contradict
+                        self._beliefs.challenge(key, concept["valence"], credibility)
+                    else:
+                        # New belief from external source — moderate confidence
+                        self._beliefs.assert_belief(
+                            key,
+                            f"{concept['context'].capitalize()} tends to lead to {concept['outcome']}.",
+                            strength=concept["confidence"] * credibility,
+                            valence=concept["valence"],
+                            source="knowledge"
+                        )
+                    beliefs_updated += 1
+
+                    # 3. Stimulate neural fabric if callback provided
+                    if self._on_concept:
+                        self._on_concept({
+                            **concept,
+                            "source": source_label,
+                        })
+
+            elapsed = round(time.time() - start, 3)
+            summary = {
+                "source":           source_label,
+                "chunks":           len(chunks),
+                "concepts":         total_concepts,
+                "memories_stored":  memories_stored,
+                "beliefs_updated":  beliefs_updated,
+                "elapsed_s":        elapsed,
+                "top_concepts":     concept_list[:5],
+            }
+            self._ingestion_log.append(summary)
+            if len(self._ingestion_log) > 20:
+                self._ingestion_log.pop(0)
+            return summary
+
+    def last_ingestions(self, n: int = 5) -> List[dict]:
+        return self._ingestion_log[-n:]

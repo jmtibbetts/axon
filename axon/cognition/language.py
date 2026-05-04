@@ -431,16 +431,25 @@ class LanguageCore:
             sys_prompt   = build_system_prompt(neuron_count, camera_active=cam_active) + "\n\n" + mem_ctx
             if user_profile:
                 sys_prompt += "\n\n" + user_profile
+            # Inject beliefs context
+            engine = getattr(self, '_engine', None)
+            if engine:
+                try:
+                    belief_ctx = engine.beliefs.as_context_string(4)
+                    if belief_ctx:
+                        sys_prompt += "\n\n" + belief_ctx
+                except Exception:
+                    pass
             sys_prompt   += "\n\n[SYSTEM OBSERVATION]: " + system_note
 
             messages = [{"role": "user", "content": "Respond naturally based on the system observation above."}]
             try:
                 # Use LM Studio or Claude depending on availability
-            if self._lm_studio_available():
-                return self._call_lm_studio(messages, sys_prompt)
-            elif self.client:
-                return self._call_claude(messages, sys_prompt)
-            return ""
+                if self._lm_studio_available():
+                    return self._call_lm_studio(messages, sys_prompt)
+                elif self.client:
+                    return self._call_claude(messages, sys_prompt)
+                return ""
             except Exception as e:
                 print(f"  [Language] respond() error: {e}")
                 return ""
@@ -457,6 +466,33 @@ class LanguageCore:
         sys_prompt   = build_system_prompt(neuron_count, camera_active=cam_active) + "\n\n" + mem_ctx
         if user_profile:
             sys_prompt += "\n\n" + user_profile
+
+        # 1c. Inject behavioral identity: beliefs, personality, preferences, hobbies
+        engine = getattr(self, '_engine', None)
+        if engine:
+            try:
+                identity = engine.get_identity_summary()
+                # Beliefs context
+                belief_ctx = identity.get("top_beliefs_context", "")
+                if belief_ctx:
+                    sys_prompt += "\n\n" + belief_ctx
+                # Personality color
+                pers_dict = identity.get("personality", {})
+                if pers_dict:
+                    dominant = sorted(pers_dict.items(), key=lambda x: -x[1])[:2]
+                    desc = ", ".join(f"{k}={v:.2f}" for k, v in dominant)
+                    sys_prompt += f"\n\nDominant personality traits right now: {desc}."
+                # Preferences / likes
+                likes = identity.get("preferences", {}).get("likes", [])
+                if likes:
+                    top_likes = ", ".join(l["label"] for l in likes[:3])
+                    sys_prompt += f"\nYou have developed a preference for: {top_likes}."
+                # Hobbies
+                hobby_list = identity.get("hobbies", {}).get("hobbies", [])
+                if hobby_list:
+                    sys_prompt += f"\nYou voluntarily return to: {', '.join(hobby_list[:3])} during idle time — these are your hobbies."
+            except Exception:
+                pass
 
         # 1b. Inject neural state as natural-language self-awareness context
         if self.fabric:

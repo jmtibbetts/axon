@@ -539,6 +539,28 @@ class TemporalRewardBuffer:
         reward  = raw_reward  * meta_sensitivity
         penalty = raw_penalty * meta_sensitivity
 
+        # ── Personality + Belief trait biasing ────────────────────────────────
+        # Traits shape what kinds of outcomes feel rewarding.
+        # This is what makes the system have PREFERENCES, not just competence.
+        if hasattr(self, '_personality') and hasattr(self, '_belief_biases'):
+            t = self._personality
+            b = self._belief_biases
+            # openness amplifies novelty reward (already computed below, pre-apply fraction)
+            reward  += t.get("openness",          0.5) * 0.04 * (valence_mean + 1.0)
+            # conscientiousness rewards consistency
+            reward  += t.get("conscientiousness",  0.5) * b.get("consistency_bonus", 0.0) * 0.08
+            # extraversion amplifies social / high-arousal rewards
+            reward  += t.get("extraversion",       0.5) * max(0, valence_mean) * 0.05
+            # agreeableness rewards low-conflict, smooth trajectories
+            if variance < 0.02:
+                reward += t.get("agreeableness",   0.5) * 0.03
+            # neuroticism adds penalty under uncertainty
+            penalty += t.get("neuroticism",        0.5) * variance * 0.15
+            # belief-derived bonuses
+            reward  += b.get("novelty_bonus",  0.0) * 0.06
+            reward  += b.get("social_bonus",   0.0) * 0.04
+            penalty += b.get("conflict_penalty",0.0) * 0.05
+
         # Consistency sweet spot
         variance = acts.var(dim=0).mean().item()
         if variance < 0.005:
@@ -602,7 +624,24 @@ class TemporalRewardBuffer:
         self._total_reward  += reward
         self._total_penalty += penalty
         self._last_temporal_weights = temporal_weights.tolist()
+
+        # Fire preference observation: the system learns what patterns feel good
+        if hasattr(self, '_pref_tracker') and self._pref_tracker is not None and reward > 0:
+            try:
+                mean_act = acts.mean(0)   # [N] average activation over window
+                result = self._pref_tracker.observe(mean_act, reward - penalty,
+                                                    getattr(self, '_cluster_names_ref', []))
+                if result:
+                    self._last_preference_event = result
+            except Exception:
+                pass
+
         return reward, penalty, dominant
+
+    def set_personality_context(self, traits: dict, belief_biases: dict):
+        """Call once per tick from NeuralFabricGPU to inject personality + belief biases."""
+        self._personality    = traits
+        self._belief_biases  = belief_biases
 
     def stats(self) -> dict:
         return {
@@ -1193,6 +1232,11 @@ class NeuralFabric:
         self.temp_reward  = TemporalRewardBuffer(horizon=10)
         self.cog_state    = CognitiveState()
         self.critic       = InternalCritic(N, self._cluster_names)
+        # Pluggable subsystems (set by engine after init)
+        self._belief_system    = None   # BeliefSystem — injected by engine
+        self._preference_tracker = None # PreferenceTracker — injected by engine
+        self._hobby_engine     = None   # HobbyEngine — injected by engine
+
         # Context bias vector: memory + personality shape cluster gating
         self.context_bias = torch.zeros(N, dtype=torch.float32)
         # Exploration noise: epsilon driven by CognitiveState + MetaController
@@ -1740,6 +1784,11 @@ class NeuralFabric:
                     self.emotions.current,
                     self.emotions.valence
                 )
+            # Inject current personality + belief biases into reward buffer each cycle
+            if hasattr(self, 'personality') and hasattr(self, '_belief_system'):
+                traits = self.personality.to_dict()
+                biases = self._belief_system.personality_bias(traits) if self._belief_system else {}
+                self.temp_reward.set_personality_context(traits, biases)
             if self._tick % self.temp_reward.horizon == 0 and self._tick > 0:
                 # Pass meta_sensitivity so reward magnitude is meta-modulated
                 r, p, dom = self.temp_reward.evaluate(

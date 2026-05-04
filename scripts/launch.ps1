@@ -142,13 +142,33 @@ if ($lbOk -ne "ok") {
 $sfOk = & $venvPy -c "import soundfile; print('ok')" 2>$null
 if ($sfOk -ne "ok") { & $venvPip install soundfile --quiet }
 
-# ── [8/9] Data directories ────────────────────────────────────────────────────
-Write-Host "  [8/9] Creating data directories..." -ForegroundColor Yellow
+# ── [8/9] Document parsing (PDF / DOCX / EPUB) ───────────────────────────────
+Write-Host "  [8/9] Document parsing libraries..." -ForegroundColor Yellow
+$pdfOk = & $venvPy -c "import pdfplumber; print('ok')" 2>$null
+if ($pdfOk -ne "ok") {
+    Write-Host "  Installing pdfplumber (PDF support)..." -ForegroundColor Cyan
+    & $venvPip install pdfplumber --quiet
+} else { Write-Host "  [SKIP] pdfplumber ok" -ForegroundColor DarkGray }
+
+$docxOk = & $venvPy -c "import docx; print('ok')" 2>$null
+if ($docxOk -ne "ok") {
+    Write-Host "  Installing python-docx (DOCX support)..." -ForegroundColor Cyan
+    & $venvPip install python-docx --quiet
+} else { Write-Host "  [SKIP] python-docx ok" -ForegroundColor DarkGray }
+
+$epubOk = & $venvPy -c "import ebooklib; print('ok')" 2>$null
+if ($epubOk -ne "ok") {
+    Write-Host "  Installing EbookLib (EPUB support)..." -ForegroundColor Cyan
+    & $venvPip install EbookLib --quiet
+} else { Write-Host "  [SKIP] EbookLib ok" -ForegroundColor DarkGray }
+
+# ── [9/10] Data directories ────────────────────────────────────────────────────
+Write-Host "  [9/10] Creating data directories..." -ForegroundColor Yellow
 New-Item -ItemType Directory -Force -Path "data\memory" | Out-Null
 
 # ── [9/9] Preflight check ─────────────────────────────────────────────────────
 Write-Host ""
-Write-Host "  [9/9] Running preflight check..." -ForegroundColor Yellow
+Write-Host "  [10/10] Running preflight check..." -ForegroundColor Yellow
 
 $preflight_script = @"
 import sys, importlib

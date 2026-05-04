@@ -358,8 +358,9 @@ canvas.spark{display:block;}
       <button class="info-tab active" data-tab="brain"    onclick="switchTab('brain')">🧠 Brain</button>
       <button class="info-tab"        data-tab="activity" onclick="switchTab('activity')">⚡ Activity</button>
       <button class="info-tab"        data-tab="memory"   onclick="switchTab('memory')">💾 Memory</button>
-      <button class="info-tab"        data-tab="knowme"   onclick="switchTab('knowme')">👤 Know Me</button>
-      <button class="info-tab"        data-tab="voice"    onclick="switchTab('voice')">🎙️ Voice</button>
+      <button class="info-tab"        data-tab="knowme"    onclick="switchTab('knowme')">👤 Know Me</button>
+      <button class="info-tab"        data-tab="identity"  onclick="switchTab('identity')">🧬 Identity</button>
+      <button class="info-tab"        data-tab="voice"     onclick="switchTab('voice')">🎙️ Voice</button>
       <button class="info-tab"        data-tab="people"   onclick="switchTab('people')">👥 People</button>
     </div>
 
@@ -502,6 +503,112 @@ canvas.spark{display:block;}
         <span class="section-hint">What AXON has inferred about you  <span id="profile-turns" style="color:#6b7280;font-weight:400;"></span></span>
       </div>
       <div id="user-profile-panel" style="font-size:8.5px;color:#c4b5fd;line-height:1.7;"></div>
+    </div>
+
+    <!-- TAB: Identity (Beliefs, Personality, Preferences, Hobbies, Knowledge) -->
+    <div id="tab-identity" class="tab-pane" style="overflow-y:auto;flex:1;display:none;padding:6px 8px;">
+
+      <!-- Personality Trait Bars -->
+      <div class="neuro-section" style="margin-bottom:8px;">
+        <div class="neuro-title">🎭 Personality Traits
+          <span class="section-hint">Active biases shaping reward &amp; decisions</span>
+        </div>
+        <div id="identity-traits" style="display:flex;flex-direction:column;gap:4px;margin-top:4px;"></div>
+      </div>
+
+      <!-- Beliefs -->
+      <div class="neuro-section" style="margin-bottom:8px;">
+        <div class="neuro-title">💡 Beliefs
+          <span class="section-hint">Weighted assumptions — updated by experience &amp; knowledge</span>
+        </div>
+        <div id="identity-beliefs" style="display:flex;flex-direction:column;gap:3px;margin-top:4px;font-size:8px;"></div>
+      </div>
+
+      <!-- Preferences -->
+      <div class="neuro-section" style="margin-bottom:8px;">
+        <div class="neuro-title">❤️ Preferences
+          <span class="section-hint">Emergent likes &amp; dislikes from reinforcement history</span>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:4px;">
+          <div style="flex:1;">
+            <div style="font-size:8px;color:#4ade80;margin-bottom:3px;font-weight:600;">LIKES</div>
+            <div id="identity-likes" style="font-size:8px;color:#d1fae5;display:flex;flex-direction:column;gap:2px;"></div>
+          </div>
+          <div style="flex:1;">
+            <div style="font-size:8px;color:#f87171;margin-bottom:3px;font-weight:600;">DISLIKES</div>
+            <div id="identity-dislikes" style="font-size:8px;color:#fee2e2;display:flex;flex-direction:column;gap:2px;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Hobbies -->
+      <div class="neuro-section" style="margin-bottom:8px;">
+        <div class="neuro-title">🎯 Hobbies
+          <span class="section-hint">Repeated voluntary engagement during idle time</span>
+        </div>
+        <div id="identity-hobbies" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;font-size:8px;"></div>
+        <div style="font-size:7.5px;color:#4b5563;margin-top:4px;">Top voluntary activity →</div>
+        <div id="identity-voluntary" style="font-size:8px;color:#94a3b8;margin-top:2px;"></div>
+      </div>
+
+      <!-- Knowledge Ingestion -->
+      <div class="neuro-section">
+        <div class="neuro-title">📚 Feed Knowledge
+          <span class="section-hint">Text, books, articles — converted to internal experience</span>
+        </div>
+
+        <!-- File Upload -->
+        <div style="background:#0a0f1a;border:1px solid #1e3a5f;border-radius:6px;padding:8px 10px;margin-top:6px;margin-bottom:8px;">
+          <div style="font-size:8.5px;color:#64748b;margin-bottom:6px;">UPLOAD FILE (PDF, DOCX, TXT, MD, EPUB)</div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <label for="knowledge-file" style="
+              background:#0f172a;border:1px dashed #334155;color:#7dd3fc;
+              font-size:8px;padding:5px 10px;border-radius:4px;cursor:pointer;
+              font-family:var(--font);white-space:nowrap;
+            ">📁 Choose File</label>
+            <input type="file" id="knowledge-file" accept=".pdf,.doc,.docx,.txt,.md,.rst,.epub,.csv"
+              style="display:none" onchange="onKnowledgeFileSelected(this)">
+            <span id="knowledge-filename" style="font-size:8px;color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100px;">(none)</span>
+            <button id="upload-btn" onclick="uploadKnowledgeFile()" style="
+              margin-left:auto;background:#1e3a5f;border:1px solid #2563eb;
+              color:#7dd3fc;font-size:8px;font-family:var(--font);
+              padding:4px 10px;border-radius:4px;cursor:pointer;white-space:nowrap;
+            ">⬆ Upload</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+            <span style="font-size:8px;color:#64748b;">Credibility</span>
+            <input type="range" id="file-credibility" min="1" max="10" value="6" style="flex:1;accent-color:#6366f1;"
+              oninput="document.getElementById('file-cred-val').textContent=(this.value/10).toFixed(1)">
+            <span id="file-cred-val" style="font-size:8px;color:#7dd3fc;width:20px;">0.6</span>
+          </div>
+        </div>
+
+        <!-- Paste Text -->
+        <div style="font-size:8.5px;color:#64748b;margin-bottom:4px;">OR PASTE TEXT</div>
+        <textarea id="knowledge-text" rows="5" placeholder="Paste article, book excerpt, or any text here…"
+          style="width:100%;box-sizing:border-box;background:#0a0f1a;border:1px solid #1e3a5f;
+                 color:#e2e8f0;font-size:8.5px;font-family:var(--font);border-radius:4px;
+                 padding:6px 8px;resize:vertical;outline:none;"></textarea>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+          <span style="font-size:8px;color:#64748b;">Source label</span>
+          <input id="knowledge-source" type="text" value="manual" placeholder="e.g. book title"
+            style="flex:1;background:#0a0f1a;border:1px solid #1e3a5f;color:#e2e8f0;
+                   font-size:8px;font-family:var(--font);border-radius:4px;padding:3px 6px;outline:none;">
+          <span style="font-size:8px;color:#64748b;">Credibility</span>
+          <input type="range" id="text-credibility" min="1" max="10" value="6"
+            style="width:60px;accent-color:#6366f1;"
+            oninput="document.getElementById('text-cred-val').textContent=(this.value/10).toFixed(1)">
+          <span id="text-cred-val" style="font-size:8px;color:#7dd3fc;width:20px;">0.6</span>
+          <button onclick="ingestKnowledgeText()" style="
+            background:#1e1a3a;border:1px solid #6366f1;color:#a5b4fc;
+            font-size:8px;font-family:var(--font);padding:4px 10px;
+            border-radius:4px;cursor:pointer;white-space:nowrap;
+          ">🧠 Ingest</button>
+        </div>
+
+        <!-- Ingestion log -->
+        <div id="ingest-log" style="margin-top:8px;font-size:7.5px;color:#4b5563;max-height:80px;overflow-y:auto;"></div>
+      </div>
     </div>
 
     <!-- TAB: Voice Switcher -->
@@ -3395,6 +3502,244 @@ socket.on('audio_emotion', d => {
     featEl.textContent = `pitch: ${d.pitch_hz||0}Hz  energy: ${((d.energy||0)*100).toFixed(1)}  zcr: ${(d.zcr||0).toFixed(3)}`;
   }
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// IDENTITY TAB — Beliefs, Personality, Preferences, Hobbies, Knowledge Feed
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Request identity state whenever the Identity tab is opened
+function switchTabOrig(name) { /* already defined below */ }
+
+// Patch switchTab to load identity on open
+const _origSwitchTab = switchTab;
+function switchTab(name) {
+  _origSwitchTab(name);
+  if (name === 'identity') requestIdentityState();
+}
+
+function requestIdentityState() {
+  socket.emit('get_identity');
+}
+
+// ── Render identity_state event ───────────────────────────────────────────
+socket.on('identity_state', data => {
+  if (!data || data.error) return;
+  renderPersonalityTraits(data.personality || {});
+  renderBeliefs(data.beliefs || []);
+  renderPreferences(data.preferences || {});
+  renderHobbies(data.hobbies || {});
+});
+
+socket.on('knowledge_ingested', data => {
+  appendIngestLog(`✅ ${data.source || 'text'}: ${data.concepts} concepts, ${data.memories_stored} memories, ${data.beliefs_updated} beliefs (${data.elapsed_s}s)`);
+  requestIdentityState();
+});
+
+socket.on('beliefs_state', data => {
+  renderBeliefs(data.beliefs || []);
+});
+
+socket.on('ingest_result', data => {
+  const logEl = document.getElementById('ingest-log');
+  if (!logEl) return;
+  if (!data.ok) {
+    appendIngestLog(`❌ Error: ${data.error}`);
+    return;
+  }
+  appendIngestLog(`✅ ${data.source || 'text'}: ${data.concepts} concepts extracted, ${data.beliefs_updated} beliefs updated (${data.elapsed_s}s)`);
+  requestIdentityState();
+});
+
+socket.on('new_hobby', data => {
+  if (data && data.cluster) {
+    addFeedEvent('🎯', 'New hobby detected', data.cluster, 'cyan');
+    requestIdentityState();
+  }
+});
+
+function appendIngestLog(msg) {
+  const el = document.getElementById('ingest-log');
+  if (!el) return;
+  const line = document.createElement('div');
+  line.style.cssText = 'padding:2px 0;border-bottom:1px solid #0f172a;';
+  line.textContent = new Date().toLocaleTimeString() + '  ' + msg;
+  el.prepend(line);
+  while (el.children.length > 10) el.removeChild(el.lastChild);
+}
+
+// ── Personality Trait Bars ────────────────────────────────────────────────
+const TRAIT_COLORS = {
+  openness:          '#a78bfa',
+  conscientiousness: '#34d399',
+  extraversion:      '#fbbf24',
+  agreeableness:     '#60a5fa',
+  neuroticism:       '#f87171',
+};
+const TRAIT_LABELS = {
+  openness:          'Openness',
+  conscientiousness: 'Conscientiousness',
+  extraversion:      'Extraversion',
+  agreeableness:     'Agreeableness',
+  neuroticism:       'Neuroticism',
+};
+const TRAIT_DESC = {
+  openness:          'amplifies novelty reward, curiosity bias',
+  conscientiousness: 'rewards consistency, reduces noise',
+  extraversion:      'amplifies high-arousal positive outcomes',
+  agreeableness:     'rewards smooth low-conflict trajectories',
+  neuroticism:       'adds uncertainty penalty under variance',
+};
+
+function renderPersonalityTraits(traits) {
+  const el = document.getElementById('identity-traits');
+  if (!el) return;
+  el.innerHTML = Object.entries(traits).map(([k, v]) => {
+    const color = TRAIT_COLORS[k] || '#94a3b8';
+    const pct   = Math.round(v * 100);
+    const desc  = TRAIT_DESC[k] || '';
+    return `<div style="margin-bottom:5px;">
+      <div style="display:flex;justify-content:space-between;margin-bottom:2px;">
+        <span style="font-size:8.5px;color:${color};font-weight:600;">${TRAIT_LABELS[k]||k}</span>
+        <span style="font-size:8px;color:#64748b;">${pct}%</span>
+      </div>
+      <div style="background:#0a0f1a;border-radius:3px;height:6px;overflow:hidden;">
+        <div style="width:${pct}%;height:100%;background:${color};border-radius:3px;transition:width 0.4s;"></div>
+      </div>
+      <div style="font-size:7px;color:#4b5563;margin-top:1px;">${desc}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── Belief List ───────────────────────────────────────────────────────────
+function renderBeliefs(beliefs) {
+  const el = document.getElementById('identity-beliefs');
+  if (!el) return;
+  if (!beliefs.length) { el.innerHTML = '<span style="color:#4b5563;">No beliefs formed yet.</span>'; return; }
+  el.innerHTML = beliefs.slice(0, 12).map(b => {
+    const pct    = Math.round(b.strength * 100);
+    const valCls = b.valence > 0.05 ? '#4ade80' : b.valence < -0.05 ? '#f87171' : '#94a3b8';
+    const srcBadge = `<span style="background:#0f172a;border:1px solid #1e293b;color:#64748b;
+      padding:0 3px;border-radius:2px;font-size:7px;margin-left:4px;">${b.source}</span>`;
+    return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid #0a0f1a;">
+      <div style="flex:1;min-width:0;">
+        <div style="color:#c4b5fd;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${b.claim}${srcBadge}</div>
+        <div style="display:flex;align-items:center;gap:4px;margin-top:2px;">
+          <div style="width:60px;background:#0a0f1a;border-radius:2px;height:3px;overflow:hidden;">
+            <div style="width:${pct}%;height:100%;background:#6366f1;"></div>
+          </div>
+          <span style="color:#64748b;font-size:7px;">${pct}% conf</span>
+          <span style="color:${valCls};font-size:7px;">${b.valence >= 0 ? '+' : ''}${b.valence.toFixed(2)} val</span>
+          <span style="color:#4b5563;font-size:7px;">✓${b.hits} ✗${b.misses}</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Preferences ───────────────────────────────────────────────────────────
+function renderPreferences(prefs) {
+  const likesEl    = document.getElementById('identity-likes');
+  const dislikesEl = document.getElementById('identity-dislikes');
+  if (!likesEl || !dislikesEl) return;
+
+  const likes    = prefs.likes    || [];
+  const dislikes = prefs.dislikes || [];
+
+  likesEl.innerHTML = likes.length
+    ? likes.map(l => `<div style="background:#052e16;border-radius:3px;padding:2px 5px;
+        display:flex;justify-content:space-between;gap:4px;">
+        <span style="color:#4ade80;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:90px;">${l.label}</span>
+        <span style="color:#166534;flex-shrink:0;">${l.hits}x</span>
+      </div>`).join('')
+    : '<span style="color:#4b5563;">None yet</span>';
+
+  dislikesEl.innerHTML = dislikes.length
+    ? dislikes.map(l => `<div style="background:#2d0a0a;border-radius:3px;padding:2px 5px;
+        display:flex;justify-content:space-between;gap:4px;">
+        <span style="color:#f87171;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:90px;">${l.label}</span>
+        <span style="color:#7f1d1d;flex-shrink:0;">${l.hits}x</span>
+      </div>`).join('')
+    : '<span style="color:#4b5563;">None yet</span>';
+}
+
+// ── Hobbies ───────────────────────────────────────────────────────────────
+function renderHobbies(hobbies) {
+  const el  = document.getElementById('identity-hobbies');
+  const vel = document.getElementById('identity-voluntary');
+  if (!el) return;
+
+  const list = hobbies.hobbies || [];
+  el.innerHTML = list.length
+    ? list.map(h => `<div style="background:#0c1a2e;border:1px solid #1e3a5f;border-radius:3px;
+        padding:2px 6px;color:#7dd3fc;font-size:8px;">🎯 ${h}</div>`).join('')
+    : '<span style="color:#4b5563;">No hobbies identified yet — needs idle time</span>';
+
+  if (vel) {
+    const top = (hobbies.top_voluntary || []).slice(0, 4);
+    vel.innerHTML = top.map(t => `<span style="margin-right:8px;color:#64748b;">${t.cluster} <span style="color:#94a3b8;">${t.count}x</span></span>`).join('');
+  }
+}
+
+// ── Knowledge Upload Handlers ─────────────────────────────────────────────
+let _selectedKnowledgeFile = null;
+
+function onKnowledgeFileSelected(input) {
+  _selectedKnowledgeFile = input.files[0] || null;
+  const label = document.getElementById('knowledge-filename');
+  if (label) label.textContent = _selectedKnowledgeFile ? _selectedKnowledgeFile.name : '(none)';
+}
+
+function uploadKnowledgeFile() {
+  if (!_selectedKnowledgeFile) {
+    appendIngestLog('⚠ No file selected');
+    return;
+  }
+  const btn  = document.getElementById('upload-btn');
+  const cred = (document.getElementById('file-credibility')?.value || 6) / 10;
+
+  if (btn) { btn.textContent = '⏳ Processing…'; btn.disabled = true; }
+
+  const fd = new FormData();
+  fd.append('file', _selectedKnowledgeFile);
+  fd.append('credibility', cred);
+  fd.append('source', _selectedKnowledgeFile.name);
+
+  fetch('/upload_knowledge', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      if (btn) { btn.textContent = '⬆ Upload'; btn.disabled = false; }
+      if (data.ok) {
+        appendIngestLog(`✅ ${_selectedKnowledgeFile.name}: ${data.chars} chars, ${data.concepts} concepts, ${data.beliefs_updated} beliefs updated`);
+        _selectedKnowledgeFile = null;
+        const inp = document.getElementById('knowledge-file');
+        if (inp) inp.value = '';
+        const label = document.getElementById('knowledge-filename');
+        if (label) label.textContent = '(none)';
+        requestIdentityState();
+      } else {
+        appendIngestLog(`❌ ${data.error}`);
+      }
+    })
+    .catch(err => {
+      if (btn) { btn.textContent = '⬆ Upload'; btn.disabled = false; }
+      appendIngestLog(`❌ Upload failed: ${err}`);
+    });
+}
+
+function ingestKnowledgeText() {
+  const text   = (document.getElementById('knowledge-text')?.value || '').trim();
+  const source = (document.getElementById('knowledge-source')?.value || 'manual').trim();
+  const cred   = (document.getElementById('text-credibility')?.value || 6) / 10;
+
+  if (!text) { appendIngestLog('⚠ No text to ingest'); return; }
+
+  appendIngestLog(`⏳ Ingesting "${source}" (${text.length} chars)…`);
+  socket.emit('ingest_text', { text, source, credibility: cred });
+
+  // Clear textarea after submission
+  const ta = document.getElementById('knowledge-text');
+  if (ta) ta.value = '';
+}
 
 </script>
 </body>

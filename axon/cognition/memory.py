@@ -152,6 +152,12 @@ class MemorySystem:
 
     # ── Semantic memory ──────────────────────────────────────────────────────
 
+    def store_semantic(self, value: str, source: str = "knowledge", confidence: float = 0.6):
+        """Store a semantic fact with an auto-generated key (used by knowledge ingestion)."""
+        import hashlib
+        key = hashlib.md5(value[:80].encode()).hexdigest()[:16]
+        self.learn(key, value, confidence=confidence, source=source)
+
     def learn(self, key: str, value: str, confidence: float = 1.0, source: str = "inferred"):
         """Store or update a semantic fact."""
         with self._lock:
