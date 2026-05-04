@@ -3035,7 +3035,8 @@ function switchTab(name) {
   document.querySelectorAll('.tab-pane').forEach(p => {
     p.style.display = p.id === 'tab-' + name ? 'block' : 'none';
   });
-  if (name === 'memory') refreshMemoryPanel();
+  if (name === 'memory')   refreshMemoryPanel();
+  if (name === 'identity') requestIdentityState();
 }
 
 // ── Activity Feed ─────────────────────────────────────────────────────────────
@@ -3551,16 +3552,6 @@ socket.on('audio_emotion', d => {
 // ═══════════════════════════════════════════════════════════════════════════
 // IDENTITY TAB — Beliefs, Personality, Preferences, Hobbies, Knowledge Feed
 // ═══════════════════════════════════════════════════════════════════════════
-
-// Request identity state whenever the Identity tab is opened
-function switchTabOrig(name) { /* already defined below */ }
-
-// Patch switchTab to load identity on open
-const _origSwitchTab = switchTab;
-function switchTab(name) {
-  _origSwitchTab(name);
-  if (name === 'identity') requestIdentityState();
-}
 
 function requestIdentityState() {
   socket.emit('get_identity');
