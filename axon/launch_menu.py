@@ -189,21 +189,21 @@ def run():
 
     elif choice == "2":
         confirm = input(r(f"  ⚠  This will erase all learned memory for '{name}'. Type YES to confirm: ")).strip()
-        if confirm == "YES":
+        if confirm.upper() == "YES":
             reset_learned_memory(name)
         else:
             print(y("  Cancelled — keeping existing memory."))
 
     elif choice == "3":
         confirm = input(r("  ⚠  This will remove all face profiles and user data. Type YES to confirm: ")).strip()
-        if confirm == "YES":
+        if confirm.upper() == "YES":
             reset_user_profiles()
         else:
             print(y("  Cancelled."))
 
     elif choice == "4":
         confirm = input(r("  ⚠  FACTORY RESET — everything will be erased. Type YES to confirm: ")).strip()
-        if confirm == "YES":
+        if confirm.upper() == "YES":
             factory_reset()
         else:
             print(y("  Cancelled."))

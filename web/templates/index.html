@@ -4784,7 +4784,7 @@ function saveLMStudioUrl() {
   display:none;
   position:fixed; inset:0; z-index:9999;
   background:rgba(3,7,18,0.97);
-  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  flex-direction:column; align-items:center; justify-content:center;
   font-family:'Inter','Segoe UI',sans-serif;
 ">
   <div style="max-width:480px; width:90%; text-align:center;">
@@ -4990,7 +4990,7 @@ let obSelectedPreset = "";
 let obSelectedSample = "";
 
 function obInit(state) {
-  if (state.completed) return;
+  // Always populate cards regardless of completed flag
   obState   = state;
   obSelectedPreset = state.preset || "";
   obSelectedSample = state.sample_id || "";
@@ -5010,6 +5010,9 @@ function obInit(state) {
     <button class="ob-sample-btn ${obSelectedSample===s.id?'selected':''}"
       onclick="obSelectSample('${s.id}',this)">📖 ${s.label}</button>
   `).join("");
+
+  // If already completed, don't re-show the overlay
+  if (state.completed) return;
 
   const currentStep = state.step || 0;
   obShowStep(currentStep > 0 ? currentStep + 1 : 1);

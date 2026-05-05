@@ -145,9 +145,13 @@ def on_update_provider(data):
 
 @socketio.on("start_engine")
 def on_start(config):
-    global _engine
+    global _engine, _brain
     if _engine and _engine.running:
-        emit("log", {"msg": "Already running."}); return
+        emit("log", {"msg": "Already running."})
+        # Still push onboarding state so page refreshes get the correct overlay state
+        if _brain:
+            emit("onboarding_state", _sanitize(_brain.get_onboarding_state()))
+        return
     api_key      = config.get("api_key")    or os.getenv("ANTHROPIC_API_KEY", "")
     lm_url       = config.get("lm_url",       "http://localhost:1234")
     lm_model     = config.get("lm_model",     None) or None
@@ -170,7 +174,6 @@ def on_start(config):
         mic_index=config.get("mic_index", None),
     )
     # Wire public API layer
-    global _brain
     _brain = AxonBrain(engine=_engine)
     # Allow fabric to emit log events
     _engine.fabric._socket_emit = lambda ev, d: socketio.emit(ev, _sanitize(d))
