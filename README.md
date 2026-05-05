@@ -4,7 +4,7 @@
 
 ### Emerging Artificial Intelligence
 
-*A biologically-inspired AI that sees, hears, recognises faces, reads your voice, learns, remembers, competes, forms beliefs, builds opinions, explains its decisions, exposes a clean API — and speaks through any LLM you choose, local or cloud.*
+*A biologically-inspired AI that sees, hears, recognises faces, reads your voice, learns, remembers, competes, forms beliefs, builds opinions, disagrees when it should, explains its decisions, exposes a clean API — and speaks through any LLM you choose, local or cloud.*
 
 [![Python](https://img.shields.io/badge/Python-3.12-blue?style=flat-square&logo=python)](https://python.org)
 [![PyTorch](https://img.shields.io/badge/PyTorch-CUDA%2012.8-orange?style=flat-square&logo=pytorch)](https://pytorch.org)
@@ -24,7 +24,7 @@ It has real-time vision (YOLOv8 face detection + FER emotion recognition), **fac
 
 It talks to an LLM of your choice — **local via [LM Studio](https://lmstudio.ai) (no API key, fully private) or cloud via OpenAI, Anthropic Claude, Google Gemini, or Groq** — switchable at runtime through the built-in LLM provider panel.
 
-What separates AXON from other "neural" AI projects is genuine internal depth that goes beyond signal routing. Every 100ms, a **synchronized central cognitive loop** sequences all subsystems in explicit dependency order. **Clusters compete for dominance** via lateral inhibition. **Four internal drives** (curiosity, social, competence, stability) accumulate pressure when unmet and discharge when satisfied. The system forms **weighted beliefs** that update from lived experience and challenge external knowledge. A **multi-dimensional value system** scores the same outcome differently depending on personality. A **structured self-model** (I am, I believe, I like, I avoid, I want) is rebuilt continuously and injected into every decision. And now — a **public AxonBrain API layer** exposes all of this to external systems cleanly.
+What separates AXON from other "neural" AI projects is genuine internal depth that goes beyond signal routing. Every 100ms, a **synchronized central cognitive loop** sequences all subsystems in explicit dependency order. **Clusters compete for dominance** via lateral inhibition. **Four internal drives** (curiosity, social, competence, stability) accumulate pressure when unmet and discharge when satisfied. The system forms **weighted beliefs** that update from lived experience and challenge external knowledge. A **multi-dimensional value system** scores the same outcome differently depending on personality. A **structured self-model** (I am, I believe, I like, I avoid, I want) is rebuilt continuously and injected into every decision. And now — a **public AxonBrain API layer** exposes all of this to external systems cleanly. A **5-step onboarding sequence** shapes personality and seeds beliefs before the first conversation. **Goals** give it intrinsic motivation. **Surprise events** fire as toast notifications when beliefs shift, dissonance spikes, or cluster dominance flips. **Cognitive speed** is a real-time slider — from 1 Hz dreaming states to 50 Hz hyperdrive. And the brain can be **forked into named divergent copies** and shared as portable snapshots.
 
 ---
 
@@ -79,6 +79,11 @@ What separates AXON from other "neural" AI projects is genuine internal depth th
                         |  |  DRIVE SYSTEM     (motivational pressure)|   |
                         |  |  VALUE SYSTEM     (multi-dim scoring)    |   |
                         |  |  SELF-MODEL       (structured identity)  |   |
+                        |  |  GOAL SYSTEM      (intrinsic motivation) |   |
+                        |  |  SURPRISE ENGINE  (event detection)      |   |
+                        |  |  PERSONALITY DRIFT (reward-shaped traits)|   |
+                        |  |  MEMORY DECAY     (Ebbinghaus forgetting)|   |
+                        |  |  COGNITIVE SPEED  (0.05–5× real-time)    |   |
                         |  |  PUBLIC BRAIN API (clean external layer) |   |
                         |  +------------------------------------------+   |
                         +------------------------+--------------------------+
@@ -115,7 +120,7 @@ What separates AXON from other "neural" AI projects is genuine internal depth th
 Everything flows through one synchronized 10Hz cycle.
 
 ```python
-while True:
+while True:  # 0.05–50 Hz, adjustable with the time-scale slider
     sensory_state    = gather_inputs()                    # face/audio/motion from injected callbacks
     drive_hints      = drive_system.tick()                # accumulate pressure → fabric stimulation
     belief_state     = belief_system.decay_tick()         # drift toward uncertainty; NE spike if dissonant
@@ -131,9 +136,132 @@ while True:
     value_score      = value_system.evaluate(_last_reward)# multi-dimensional reward scoring
     thought_trace    = build_thought_trace(activations)   # what competed, what won, why
     emit_ui(drive_state, thought_trace)                   # live dashboard update
+    goal_system.reward_tick(thought_trace)                # distribute credit, advance goals
+    surprise_engine.evaluate(belief_delta, activations)   # emit surprise events to UI
+    if tick % 200 == 0:
+        hebbian_memory.decay(factor=0.995)                # gradual forgetting
+        personality.drift(recent_rewards)                  # traits shift from outcomes
 ```
 
 The cycle runs regardless of user input — AXON is always thinking, not just reacting.
+
+---
+
+## New in This Release
+
+### 🚀 First-Run Onboarding
+
+When AXON starts for the first time it presents a **5-step guided flow** before you ever type a message:
+
+1. **Name your AI** — it adopts this as its self-referential identity
+2. **Choose a personality** — Explorer, Analyst, Rebel, or Companion (each maps to a distinct trait vector)
+3. **Feed it something** — pick a built-in topic (consciousness, creativity, risk, learning) or paste your own text
+4. **Watch it learn** — see the ingestion log in real-time as concepts, opinions, and stances form
+5. **Hear its first take** — the LLM surfaces its genuine first opinion before you say a word
+
+State is saved to `data/onboarding.json` and never repeated.
+
+---
+
+### 🎯 Goal System
+
+AXON has **four intrinsic goals** that accumulate progress independently of user input:
+
+| Goal | What it tracks |
+|---|---|
+| `explore_uncertainty` | How often novel/surprising inputs are encountered |
+| `reduce_error` | Prediction accuracy improvement over time |
+| `maintain_coherence` | Belief consistency — contradictions lower progress |
+| `deepen_understanding` | Semantic richness of ingested knowledge |
+
+Goals are displayed as **live progress bars** below the chat input. When a goal reaches 80%, a milestone surprise event fires and neural fabric receives a stimulation hint toward the relevant region.
+
+---
+
+### ⚡ Surprise Events
+
+The `SurpriseDetector` monitors the cognitive cycle for 7 types of internal events and fires them as **toast notifications** in the UI:
+
+| Event | Trigger condition |
+|---|---|
+| `belief_shift` | A belief's strength changes by > 0.15 in one tick |
+| `cognitive_dissonance` | Norepinephrine > 0.70 while holding conflicting beliefs |
+| `contradiction_resolved` | Two previously conflicting beliefs converge |
+| `unexpected_conclusion` | Prediction error spike > 0.35 |
+| `personality_drift` | Any personality trait shifts by > 0.04 |
+| `goal_progress` | A goal crosses a 20% milestone threshold |
+| `cluster_dominance_flip` | The dominant brain cluster changes in one tick |
+
+Each event type has an independent cooldown to prevent spam.
+
+---
+
+### 🎭 Personality Drift
+
+AXON's personality is no longer static — it **shifts from lived experience**:
+
+- **High reward outcomes** → `risk_tolerance` increases, `caution` decreases
+- **Low reward / errors** → `caution` increases, `risk_tolerance` decreases
+- All drift is capped at **0.004 per event** (realistic, not jarring)
+- Drift fires a `personality_drift` surprise event above the 0.04 threshold
+
+---
+
+### ⏱ Cognitive Speed Control
+
+A **real-time slider** in the neural dashboard controls the cognitive cycle rate:
+
+| Label | Rate | Use case |
+|---|---|---|
+| 💤 Dreaming | 0.5–1.5 Hz | Observe memory consolidation, slow belief drift |
+| 🐢 Slow | 1–4 Hz | Study individual thought traces in detail |
+| ✅ Normal | 10 Hz | Default — balanced responsiveness and depth |
+| ⚡ Alert | 20 Hz | Higher temporal resolution for live interaction |
+| 🚀 Hyperdrive | 50 Hz | Stress-testing, rapid autonomous exploration |
+
+Speed is also settable via the API: `POST /api/brain/speed` with `{"speed_scale": 2.0}`.
+
+---
+
+### 🧬 Brain Forks
+
+Save a **named divergent copy** of the current brain state and load it independently:
+
+```python
+brain.fork_brain("aggressive", trait_overrides={"risk": 0.90, "dominance": 0.85})
+brain.load_brain("fork_aggressive")  # diverges from here
+```
+
+Or from the UI: the **🧬 Fork** button below the chat input.
+
+Forks persist to `data/snapshots/fork_<name>.json`.
+
+---
+
+### 🌐 Brain Sharing
+
+Generate a **portable brain snapshot** — a base64-encoded JSON summary of personality traits, top beliefs, and drive states. Share it as a token. Future versions will support importing a snapshot to bootstrap a new instance with a pre-shaped identity.
+
+---
+
+### 👁 Train / Observe Mode
+
+Toggle the chat input off while watching AXON think autonomously. In **Observe Mode**:
+
+- Input is disabled
+- The cognitive cycle continues normally
+- Thought traces, surprise events, and goal progress all stream live
+- Useful for studying emergent patterns without interaction bias
+
+---
+
+### 💬 Disagreement
+
+When AXON holds a belief with **> 68% confidence** that partially conflicts with user input, it will push back — respectfully but directly. This is controlled by the disagreement injection system in the language core, not by a persona prompt. It reflects actual belief state.
+
+---
+
+
 
 ---
 

@@ -442,6 +442,30 @@ canvas.spark{display:block;}
         </div>
       </div>
 
+      <!-- ─── Time-Scale Slider ─────────────────────────────────────────── -->
+      <div class="neuro-section" style="padding:8px 10px;">
+        <div class="neuro-title" style="display:flex;justify-content:space-between;align-items:center;">
+          <span>⏱ Cognitive Speed</span>
+          <span id="speed-label" style="color:#6366f1;font-size:0.78rem;font-weight:700;">Normal</span>
+        </div>
+        <input id="speed-slider" type="range" min="1" max="50" step="1" value="10"
+          oninput="onSpeedSlider(this.value)"
+          style="width:100%;margin:6px 0;accent-color:#6366f1;cursor:pointer;">
+        <div style="display:flex;justify-content:space-between;
+                    font-size:0.72rem;color:#475569;margin-top:2px;">
+          <span>Dreaming (0.1×)</span>
+          <span id="speed-hz-label" style="color:#94a3b8;">10.0 Hz</span>
+          <span>Hyperdrive (5×)</span>
+        </div>
+        <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
+          <button onclick="setSpeed(0.1)"  class="speed-preset-btn">💤 Dream</button>
+          <button onclick="setSpeed(0.5)"  class="speed-preset-btn">🐢 Slow</button>
+          <button onclick="setSpeed(1.0)"  class="speed-preset-btn">✅ Normal</button>
+          <button onclick="setSpeed(2.0)"  class="speed-preset-btn">⚡ Alert</button>
+          <button onclick="setSpeed(5.0)"  class="speed-preset-btn">🚀 Hyper</button>
+        </div>
+      </div>
+
       <!-- Neuromodulators with descriptions -->
       <div class="neuro-section">
         <div class="neuro-title">Neuromodulators
@@ -4664,6 +4688,12 @@ function saveLMStudioUrl() {
   width:8px; height:8px; border-radius:50%;
   background:#1e293b; border:1px solid #334155; transition:all 0.3s;
 }
+.speed-preset-btn {
+  padding:4px 9px; background:#0f172a; border:1px solid #334155;
+  border-radius:6px; color:#94a3b8; cursor:pointer; font-size:0.75rem;
+  transition:all 0.15s;
+}
+.speed-preset-btn:hover { border-color:#6366f1; color:#e2e8f0; background:#1e1b4b; }
 .ob-dot.active { background:#6366f1; border-color:#6366f1; transform:scale(1.3); }
 .ob-dot.done   { background:#22c55e; border-color:#22c55e; }
 .ob-step { width:100%; }
@@ -4934,6 +4964,95 @@ function shareBrain() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// TIME-SCALE / COGNITIVE SPEED
+// ═══════════════════════════════════════════════════════════════
+const SPEED_SLIDER_MAP = [
+  // slider value 1-50 → speed_scale
+  // 1=0.05, 10=1.0, 50=5.0 (log-ish curve)
+];
+
+function sliderValToScale(v) {
+  // v: 1-50, output: 0.05 - 5.0
+  // Use power curve: scale = (v/10)^1.5 * 1.0, clamped
+  const raw = Math.pow(v / 10, 1.5);
+  return Math.max(0.05, Math.min(5.0, raw));
+}
+function scaleToSliderVal(s) {
+  // inverse: v = 10 * s^(1/1.5)
+  return Math.round(10 * Math.pow(Math.max(0.05, s), 1/1.5));
+}
+
+function onSpeedSlider(v) {
+  const scale = sliderValToScale(parseInt(v));
+  applySpeedUI(scale);
+  // Debounce actual API call
+  clearTimeout(window._speedTimer);
+  window._speedTimer = setTimeout(() => {
+    fetch("/api/brain/speed", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({speed_scale: scale})});
+  }, 120);
+}
+
+function setSpeed(scale) {
+  applySpeedUI(scale);
+  fetch("/api/brain/speed", {method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({speed_scale: scale})})
+  .then(r => r.json()).then(d => {
+    if (d.label) document.getElementById("speed-label").textContent = d.label;
+    const slider = document.getElementById("speed-slider");
+    if (slider) slider.value = scaleToSliderVal(scale);
+  });
+}
+
+function applySpeedUI(scale) {
+  const hz    = (10 * scale).toFixed(1);
+  const label = speedLabel(scale);
+  const hzEl  = document.getElementById("speed-hz-label");
+  const lblEl = document.getElementById("speed-label");
+  if (hzEl)  hzEl.textContent  = hz + " Hz";
+  if (lblEl) lblEl.textContent = label;
+  // Pulse color on extremes
+  if (lblEl) {
+    lblEl.style.color = scale >= 4 ? "#f87171"
+                      : scale >= 2 ? "#fb923c"
+                      : scale <= 0.2 ? "#818cf8"
+                      : "#6366f1";
+  }
+}
+
+function speedLabel(s) {
+  if (s <= 0.15) return "Dreaming";
+  if (s <= 0.4)  return "Slow";
+  if (s <= 0.8)  return "Relaxed";
+  if (s <= 1.3)  return "Normal";
+  if (s <= 2.5)  return "Alert";
+  if (s <= 5.0)  return "Focused";
+  return "Hyperdrive";
+}
+
+socket.on("speed_changed", d => {
+  applySpeedUI(d.speed_scale);
+  const slider = document.getElementById("speed-slider");
+  if (slider) slider.value = scaleToSliderVal(d.speed_scale);
+  showSurpriseToast({
+    type: "speed", title: `⏱ ${d.label}`,
+    detail: `Cognitive rate: ${d.tick_hz} Hz`,
+    severity: d.tick_hz >= 30 ? "high" : d.tick_hz <= 2 ? "low" : "medium"
+  });
+});
+
+// Load current speed on startup
+function loadSpeed() {
+  fetch("/api/brain/speed").then(r => r.json()).then(d => {
+    applySpeedUI(d.speed_scale || 1.0);
+    const slider = document.getElementById("speed-slider");
+    if (slider) slider.value = scaleToSliderVal(d.speed_scale || 1.0);
+  }).catch(()=>{});
+}
+
+// ═══════════════════════════════════════════════════════════════
 // INIT — check onboarding on load
 // ═══════════════════════════════════════════════════════════════
 document.addEventListener("DOMContentLoaded", () => {
@@ -4941,6 +5060,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!state.completed) obInit(state);
   }).catch(() => {});
   loadGoals();
+  loadSpeed();
 });
 </script>
 

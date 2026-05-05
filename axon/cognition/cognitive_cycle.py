@@ -112,15 +112,36 @@ class CognitiveCycle:
 
     def __init__(self, engine):
         """engine is the AxonEngine instance — gives access to all subsystems."""
-        self._engine  = engine
-        self._running = False
+        self._engine      = engine
+        self._running     = False
         self._thread: Optional[threading.Thread] = None
-        self.metrics  = CycleMetrics()
-        self._tick_n  = 0
+        self.metrics      = CycleMetrics()
+        self._tick_n      = 0
+        # Speed scale: 1.0 = normal (10 Hz), 0.1 = very slow (1 Hz), 5.0 = fast (50 Hz)
+        self._speed_scale = 1.0
 
         # External state injected by sensory callbacks
         self._pending_sensory: Dict[str, Any] = {}
         self._sensory_lock = threading.Lock()
+
+    @property
+    def speed_scale(self) -> float:
+        return self._speed_scale
+
+    @speed_scale.setter
+    def speed_scale(self, value: float):
+        """Set cognitive speed. 1.0 = normal. Clamped 0.05 – 10.0."""
+        self._speed_scale = max(0.05, min(10.0, float(value)))
+
+    @property
+    def tick_hz(self) -> float:
+        """Effective tick rate in Hz."""
+        return self.TARGET_HZ * self._speed_scale
+
+    @property
+    def tick_interval(self) -> float:
+        """Effective seconds per tick."""
+        return 1.0 / max(0.01, self.tick_hz)
 
     # ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -152,7 +173,7 @@ class CognitiveCycle:
             elapsed_ms = (time.perf_counter() - t0) * 1000
             self.metrics.record_cycle(elapsed_ms)
             # Sleep the remainder of the tick interval
-            sleep_s = self.TICK_INTERVAL - (elapsed_ms / 1000.0)
+            sleep_s = self.tick_interval - (elapsed_ms / 1000.0)
             if sleep_s > 0:
                 time.sleep(sleep_s)
 

@@ -683,6 +683,45 @@ def api_share_brain():
     label = data.get("label", "")
     return jsonify(_sanitize(_brain.generate_share_link(slot=slot, label=label)))
 
+
+# ─── Time-Scale API ───────────────────────────────────────────────────────────
+
+@app.route("/api/brain/speed", methods=["GET"])
+def api_brain_speed_get():
+    if not _engine or not hasattr(_engine, "cycle"):
+        return jsonify({"speed_scale": 1.0, "tick_hz": 10.0})
+    c = _engine.cycle
+    return jsonify({
+        "speed_scale": round(c.speed_scale, 3),
+        "tick_hz":     round(c.tick_hz, 2),
+        "label":       _speed_label(c.speed_scale),
+    })
+
+@app.route("/api/brain/speed", methods=["POST"])
+def api_brain_speed_set():
+    if not _engine or not hasattr(_engine, "cycle"):
+        return jsonify({"ok": False, "error": "Engine not running"})
+    data  = request.json or {}
+    scale = float(data.get("speed_scale", 1.0))
+    _engine.cycle.speed_scale = scale
+    c = _engine.cycle
+    socketio.emit("speed_changed", {
+        "speed_scale": round(c.speed_scale, 3),
+        "tick_hz":     round(c.tick_hz, 2),
+        "label":       _speed_label(c.speed_scale),
+    })
+    return jsonify({"ok": True, "speed_scale": round(c.speed_scale, 3),
+                    "tick_hz": round(c.tick_hz, 2), "label": _speed_label(c.speed_scale)})
+
+def _speed_label(s: float) -> str:
+    if s <= 0.15:  return "Dreaming"
+    if s <= 0.4:   return "Slow"
+    if s <= 0.8:   return "Relaxed"
+    if s <= 1.3:   return "Normal"
+    if s <= 2.5:   return "Alert"
+    if s <= 5.0:   return "Focused"
+    return "Hyperdrive"
+
 if __name__ == "__main__":
     import signal, sys
 
