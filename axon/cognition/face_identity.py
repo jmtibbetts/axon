@@ -97,7 +97,19 @@ class FaceIdentitySystem:
         conn.close()
         for row in rows:
             pid, name, emb_blob, first_seen, last_seen, visits, profile_json = row
-            emb = np.frombuffer(emb_blob, dtype=np.float64)
+            emb = np.frombuffer(emb_blob, dtype=np.float64) if emb_blob else np.array([], dtype=np.float64)
+            if emb.shape[0] != 128:
+                print(f"  [FaceID] Skipping person {pid!r} ({name!r}) — bad embedding shape {emb.shape}, will re-learn on next sighting.")
+                # Still load the profile so the name is known, just don't add to embeddings
+                self._people[pid] = {
+                    "person_id":   pid,
+                    "name":        name or "Unknown",
+                    "first_seen":  first_seen,
+                    "last_seen":   last_seen,
+                    "visit_count": visits,
+                    "profile":     json.loads(profile_json or "{}"),
+                }
+                continue
             self._embeddings[pid] = emb
             self._people[pid] = {
                 "person_id":   pid,
@@ -172,6 +184,8 @@ class FaceIdentitySystem:
         best_pid  = None
         best_dist = 9.0
         for pid, known_emb in self._embeddings.items():
+            if known_emb.shape[0] != 128:
+                continue   # corrupted embedding — skip silently
             d = _cosine_dist(emb, known_emb)
             if d < best_dist:
                 best_dist = d
