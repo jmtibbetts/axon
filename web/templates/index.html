@@ -2188,23 +2188,49 @@ function drawNeural() {
 
   // ── Draw cross-region axon lines (static wiring, dim) ──────────────
   if (axonFrame % 4 === 0) {
-    nCtx.lineWidth = 0.5;
     AXON_ROUTES.forEach(([src, dst, w]) => {
       const d1 = REGION_DEFS[src], d2 = REGION_DEFS[dst];
       if (!d1||!d2) return;
-      const sa = regionMap[src] || 0;
-      const da = regionMap[dst] || 0;
+      const sa = sharpenedRegion[src] || 0;
+      const da = sharpenedRegion[dst] || 0;
       const combined = Math.max(sa, da);
-      if (combined < 0.05) return;
-      const alpha = Math.round(combined * w * 14).toString(16).padStart(2,'0');
+      if (combined < 0.04) return;
+
+      // ── Weight-driven thickness + glow ─────────────────────────────
+      // _hebbianWeights[src+">"+dst] is updated by brain_state events
+      const hebbKey = src + ">" + dst;
+      const hebbW   = (window._hebbianWeights && window._hebbianWeights[hebbKey]) || 0;
+      const totalW  = w * (1.0 + hebbW * 2.5);   // base route weight + Hebbian boost
+      const lineW   = Math.max(0.4, Math.min(4.5, totalW * combined * 3.2));
+      const alphaNum= Math.round(combined * totalW * 18);
+      const alpha   = Math.min(255, alphaNum).toString(16).padStart(2,'0');
+
       const mx = (d1.x*W + d2.x*W)/2;
-      const my = (d1.y*H + d2.y*H)/2 - 25 - Math.random()*10;
+      const my = (d1.y*H + d2.y*H)/2 - 25;
+
       nCtx.beginPath();
       nCtx.moveTo(d1.x*W, d1.y*H);
       nCtx.quadraticCurveTo(mx, my, d2.x*W, d2.y*H);
+      nCtx.lineWidth   = lineW;
       nCtx.strokeStyle = d1.color + alpha;
       nCtx.stroke();
+
+      // Glow for strong Hebbian connections
+      if (hebbW > 0.4 && combined > 0.3) {
+        nCtx.save();
+        nCtx.beginPath();
+        nCtx.moveTo(d1.x*W, d1.y*H);
+        nCtx.quadraticCurveTo(mx, my, d2.x*W, d2.y*H);
+        nCtx.lineWidth   = lineW * 2.2;
+        nCtx.strokeStyle = d1.color + "22";
+        nCtx.shadowBlur  = 8 + hebbW * 12;
+        nCtx.shadowColor = d1.color;
+        nCtx.stroke();
+        nCtx.restore();
+      }
     });
+    // Reset lineWidth
+    nCtx.lineWidth = 0.5;
   }
 
   // ── Advance & draw travelling signal pulses ─────────────────────────
@@ -2427,11 +2453,32 @@ function drawNeural() {
     }
   }
 
+  // ── Push cluster activation map to physics engine ────────────────────────
+  if (window._updateClusterActs) {
+    const physActMap = {};
+    for (const [key] of Object.entries(REGION_DEFS)) physActMap[key] = sharpenedRegion[key] || 0;
+    window._updateClusterActs(physActMap);
+    if (window._initClusterForce && !window._clusterForceInited) {
+      window._initClusterForce(Object.keys(REGION_DEFS), W, H);
+      window._clusterForceInited = true;
+    }
+  }
+
   // ── Draw region labels directly on canvas near cluster centers ──────────────
   nCtx.save();
   for (const [key, props] of Object.entries(REGION_DEFS)) {
-    const cx  = props.x * W;
-    const cy  = props.y * H;
+    // Use force-physics position for dominant clusters, else fixed centroid
+    const force = window._axonClusterForce && window._axonClusterForce[key];
+    const dom   = winnerSmooth[key] || 0;
+    const useFx = force && dom > 0.25;
+    // Blend: smoothly shift toward physics position as dominance grows
+    const fxBlend = Math.min(1, dom * 2.5);
+    const cx  = useFx
+      ? props.x * W * (1 - fxBlend) + force.x * fxBlend
+      : props.x * W;
+    const cy  = useFx
+      ? props.y * H * (1 - fxBlend) + force.y * fxBlend
+      : props.y * H;
     const act = sharpenedRegion[key] || 0;
     const isW = winnerRegions.has(key);
     const isL = loserRegions.has(key) && act > 0.05;
@@ -2476,6 +2523,11 @@ function drawNeural() {
       nCtx.fillText('▲', cx - 4, py - ph - 1);
     }
 
+    // ── Thought bubble — fire when cluster decisively wins (dom > 0.65) ──
+    if (isW && dom > 0.65 && axonFrame % 90 === Math.floor(Math.random()*4)) {
+      spawnThoughtBubble(cx, cy - props.spread * H * 0.75 - 18, key, dom);
+    }
+
     // Center dot — larger for winners
     const dotR  = isW ? 3.5 + dom * 3 : 2.5 + act * 2;
     const dotA  = Math.round((0.5 + act * 0.5) * 255).toString(16).padStart(2,'0');
@@ -2516,6 +2568,11 @@ function drawNeural() {
       }
     });
   }
+
+  // ── Thought bubbles overlay ────────────────────────────────────────────
+  drawThoughtBubbles(nCtx);
+  // ── Pruned connection fades ────────────────────────────────────────────
+  drawPrunedConnections(nCtx, W, H);
 
   requestAnimationFrame(drawNeural);
 }
@@ -5393,6 +5450,142 @@ function loadMemTier(tier) {
   setTimeout(enhanceNeuralCanvas, 2000);
 })();
 
+
+// ═══════════════════════════════════════════════════════════════
+// THOUGHT BUBBLES — cluster decision popups
+// ═══════════════════════════════════════════════════════════════
+const _thoughtBubbles = [];   // [{x,y,text,color,life,size}]
+
+const _CLUSTER_DECISIONS = {
+  prefrontal:    ["Planning ahead.", "Evaluating options.", "Inhibiting impulse.", "Weighing consequences."],
+  hippocampus:   ["Retrieving memory.", "Pattern match found.", "This feels familiar.", "Encoding experience."],
+  amygdala:      ["Threat detected.", "High arousal.", "Emotional salience.", "Fight-or-flight active."],
+  visual:        ["Scene analysis.", "Edge detection.", "Motion tracked.", "Object recognized."],
+  auditory:      ["Sound processed.", "Speech detected.", "Tone shift noted.", "Frequency pattern."],
+  language:      ["Generating response.", "Parsing syntax.", "Semantic mapping.", "Word selected."],
+  default_mode:  ["Wandering.", "Internal narrative.", "Self-referential.", "Daydreaming."],
+  thalamus:      ["Routing signal.", "Gating attention.", "Relay active.", "Filter applied."],
+  cerebellum:    ["Smoothing output.", "Timing correction.", "Motor calibrated.", "Sequence refined."],
+  association:   ["Cross-modal link.", "Concept binding.", "Analogy formed.", "Integration complete."],
+  social:        ["Social cue noted.", "Empathy active.", "Interaction processing.", "Reading intent."],
+  metacognition: ["Monitoring self.", "Error detected.", "Confidence assessed.", "Recalibrating."],
+};
+
+function spawnThoughtBubble(x, y, region, dominance) {
+  const opts  = _CLUSTER_DECISIONS[region] || ["Active."];
+  const text  = opts[Math.floor(Math.random() * opts.length)];
+  const color = (REGION_DEFS[region] || {color:"#ffffff"}).color;
+
+  // Avoid duplicate text
+  if (_thoughtBubbles.find(b => b.text === text && b.life > 0.6)) return;
+
+  _thoughtBubbles.push({
+    x:       x + (Math.random() - 0.5) * 40,
+    y,
+    text,
+    color,
+    life:    1.0,
+    vy:      -0.35 - Math.random() * 0.2,   // floats upward
+    size:    9 + Math.round(dominance * 3),
+  });
+  if (_thoughtBubbles.length > 8) _thoughtBubbles.shift();
+}
+
+function drawThoughtBubbles(ctx) {
+  for (let i = _thoughtBubbles.length - 1; i >= 0; i--) {
+    const b = _thoughtBubbles[i];
+    b.life -= 0.008;
+    b.y    += b.vy;
+    b.vy   *= 0.98;
+    if (b.life <= 0) { _thoughtBubbles.splice(i, 1); continue; }
+
+    const alpha  = Math.min(1, b.life * 2);
+    const hexA   = Math.round(alpha * 200).toString(16).padStart(2,'0');
+    const bgHexA = Math.round(alpha * 140).toString(16).padStart(2,'0');
+    const col    = b.color + hexA;
+
+    ctx.save();
+    ctx.font = `italic ${b.size}px sans-serif`;
+    const tw = ctx.measureText(b.text).width;
+    const pad = 6;
+    const bx  = b.x - tw/2 - pad;
+    const by  = b.y - b.size - pad/2;
+    const bw  = tw + pad*2;
+    const bh  = b.size + pad;
+
+    // Bubble background
+    ctx.fillStyle = "#0a0014" + bgHexA;
+    ctx.strokeStyle= b.color + hexA;
+    ctx.lineWidth  = 1;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, bw, bh, 4);
+    ctx.fill();
+    ctx.stroke();
+
+    // Text
+    ctx.fillStyle = col;
+    ctx.fillText(b.text, b.x - tw/2, b.y);
+    ctx.restore();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// LIVE HEBBIAN WEIGHT STORE
+// ═══════════════════════════════════════════════════════════════
+window._hebbianWeights = {};   // "src>dst" → 0..1 weight
+
+// Update weights from brain_state hebbian_paths
+socket.on("brain_state", (d) => {
+  if (d && d.hebbian_paths) {
+    for (const [key, val] of Object.entries(d.hebbian_paths)) {
+      window._hebbianWeights[key] = Math.min(1.0, val);
+    }
+  }
+});
+
+// Periodic fetch to hydrate on load
+function loadHebbianWeights() {
+  fetch("/api/brain/memory").then(r=>r.json()).then(d => {
+    const paths = d.pathways || [];
+    paths.forEach(p => {
+      if (p.src && p.dst && p.weight != null) {
+        window._hebbianWeights[p.src + ">" + p.dst] = Math.min(1.0, p.weight);
+      }
+    });
+  }).catch(()=>{});
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PRUNING FADE — ghost lines for weakened connections
+// ═══════════════════════════════════════════════════════════════
+const _prunedConnections = new Set();   // "src>dst"
+
+function markPruned(src, dst) {
+  _prunedConnections.add(src + ">" + dst);
+  setTimeout(() => _prunedConnections.delete(src + ">" + dst), 8000);
+}
+
+function drawPrunedConnections(ctx, W, H) {
+  if (!_prunedConnections.size) return;
+  ctx.save();
+  ctx.setLineDash([3, 6]);
+  ctx.lineWidth = 0.5;
+  for (const key of _prunedConnections) {
+    const [src, dst] = key.split(">");
+    const d1 = REGION_DEFS[src], d2 = REGION_DEFS[dst];
+    if (!d1 || !d2) continue;
+    const mx = (d1.x*W + d2.x*W)/2;
+    const my = (d1.y*H + d2.y*H)/2 - 20;
+    ctx.beginPath();
+    ctx.moveTo(d1.x*W, d1.y*H);
+    ctx.quadraticCurveTo(mx, my, d2.x*W, d2.y*H);
+    ctx.strokeStyle = d1.color + "20";
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
 // ═══════════════════════════════════════════════════════════════
 // TIME-SCALE / COGNITIVE SPEED
 // ═══════════════════════════════════════════════════════════════
@@ -5494,6 +5687,7 @@ document.addEventListener("DOMContentLoaded", () => {
   loadReflections();
   loadNarratives();
   loadMemTier("episodic");
+  loadHebbianWeights();
 });
 </script>
 
