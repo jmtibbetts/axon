@@ -5486,9 +5486,9 @@ function updateEmotionBars(neuromod, rewardScore, surpriseScore) {
 
 // Hook into existing neuromodulator update
 const _origNmUpdate = window._nmUpdateHook;
-socket.on("brain_state", (d) => {
+socket.on("neural_state", (d) => {
   if (d && d.neuromod) {
-    const reward = d.recent_reward || d.reward_avg || 0;
+    const reward = d.recent_reward || d.reward_avg || d.last_reward || 0;
     const surprise = d.last_surprise || 0;
     updateEmotionBars(d.neuromod, reward, surprise);
   }
@@ -5738,13 +5738,7 @@ function drawThoughtBubbles(ctx) {
 window._hebbianWeights = {};   // "src>dst" → 0..1 weight
 
 // Update weights from brain_state hebbian_paths
-socket.on("brain_state", (d) => {
-  if (d && d.hebbian_paths) {
-    for (const [key, val] of Object.entries(d.hebbian_paths)) {
-      window._hebbianWeights[key] = Math.min(1.0, val);
-    }
-  }
-});
+// hebbian_paths hydrated from loadHebbianWeights() REST call (below)
 
 // Periodic fetch to hydrate on load
 function loadHebbianWeights() {

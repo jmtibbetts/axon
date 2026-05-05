@@ -1112,6 +1112,9 @@ class AxonEngine:
                     self.fabric.neuromod.curiosity(0.12)
             except Exception:
                 pass
+        # Inject reward/surprise into the neural_state so frontend bars update
+        state["last_reward"]  = getattr(self, "_last_reward", 0.0)
+        state["last_surprise"] = getattr(self.fabric, "_last_surprise", 0.0)
         self._emit("neural_state", state)
         # Push synapse count to header counter every tick
         self._emit("synapse_count", {

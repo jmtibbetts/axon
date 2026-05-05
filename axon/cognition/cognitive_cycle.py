@@ -282,6 +282,7 @@ class CognitiveCycle:
         if hasattr(e, "value_system") and e.value_system and hasattr(e, "_last_reward"):
             try:
                 raw_reward = getattr(e, "_last_reward", 0.0)
+                e._cycle_reward = raw_reward   # save for goals before consume
                 if abs(raw_reward) > 0.01:
                     drive_urgency = {}
                     if hasattr(e, "drives") and e.drives:
@@ -372,9 +373,9 @@ class CognitiveCycle:
                     pass
 
         # ── 9b. Goal system: distribute reward + fabric hints ───────────────
-        if hasattr(e, "goals") and e.goals and hasattr(e, "_last_reward"):
+        if hasattr(e, "goals") and e.goals:
             try:
-                raw_r = getattr(e, "_last_reward", 0.0)
+                raw_r = getattr(e, "_cycle_reward", getattr(e, "_last_reward", 0.0))
                 is_nov = bool(activations and max(activations.values(), default=0) > 0.7)
                 e.goals.reward_tick(raw_r, {
                     "is_novel":     is_nov,
