@@ -2021,15 +2021,16 @@ class NeuralFabric:
                     if self._tick % 1000 == 0:
                         self.personality.save()
 
+                # Ambient firing runs BEFORE snapshot so baseline activations
+                # are already present when the frontend reads region values
+                if self._tick % 2 == 0:
+                    self._ambient_fire()
+
                     if self._callbacks:
                         state = self._make_snapshot(spike_dict)
                         for cb in self._callbacks:
                             try: cb(state)
                             except: pass
-
-                # Ambient firing
-                if self._tick % 2 == 0:
-                    self._ambient_fire()
 
                 elapsed = time.time() - t0
                 time.sleep(max(0.0, dt - elapsed))
@@ -2043,13 +2044,14 @@ class NeuralFabric:
                 time.sleep(min(2.0, dt * _consecutive_errors))
 
     def _make_snapshot(self, spike_dict: dict) -> dict:
-        top = sorted(spike_dict.items(), key=lambda x: x[1], reverse=True)[:15]
-        # ── Use ACTIVATION (not spikes) for region values ─────────────────────
-        # spike_dict is thresholded — clusters below threshold = 0 spike even if
-        # they have real activation. Read the live activation tensor directly.
+        # ── Use ACTIVATION for both regions AND top clusters ──────────────────
+        # spike_dict is thresholded — at idle all spikes are 0 even though the
+        # brain has real resting activation. Always read the live tensor instead.
         with self._lock:
             act_cpu = self.activation.cpu().numpy()
         act_by_name = {n: float(act_cpu[i]) for i, n in enumerate(self._cluster_names)}
+        # Top clusters by ACTIVATION (not spike) so idle state still shows bars
+        top = sorted(act_by_name.items(), key=lambda x: x[1], reverse=True)[:15]
         region_act: Dict[str, list] = defaultdict(list)
         for name, cluster in self.clusters.items():
             region_act[cluster.region].append(act_by_name.get(name, 0.0))
