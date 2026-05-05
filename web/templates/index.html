@@ -173,6 +173,29 @@ canvas.spark{display:block;}
 /* -- SYSTEM LOG -- */
 .log-area{font-size:9px;color:#94a3b8;overflow-y:auto;
           padding:4px 8px;height:100%;line-height:1.6;}
+
+/* -- TIMELINE -- */
+.tl-event{display:flex;gap:6px;align-items:flex-start;padding:5px 6px;
+          border-left:2px solid #1e293b;margin-bottom:2px;
+          background:#080d16;border-radius:0 3px 3px 0;font-size:8px;}
+.tl-event.reward  {border-left-color:#22c55e;}
+.tl-event.belief  {border-left-color:#6366f1;}
+.tl-event.emotion {border-left-color:#f59e0b;}
+.tl-event.decision{border-left-color:#0ea5e9;}
+.tl-event.surprise{border-left-color:#ef4444;}
+.tl-time{color:#374151;font-size:7px;min-width:42px;padding-top:1px;}
+.tl-body{flex:1;}
+.tl-label{color:#cbd5e1;font-weight:600;}
+.tl-detail{color:#475569;margin-top:1px;}
+.tl-filter{background:#0f172a;border:1px solid #1e293b;color:#475569;
+           font-size:7.5px;padding:2px 6px;border-radius:3px;cursor:pointer;
+           font-family:var(--font);}
+.tl-filter.active{border-color:#6366f1;color:#a5b4fc;}
+
+/* -- PERSONALITY SLIDERS -- */
+.pers-slider-row{display:flex;flex-direction:column;gap:2px;}
+.pers-slider-label{display:flex;justify-content:space-between;font-size:8px;color:#94a3b8;}
+.pers-slider{width:100%;accent-color:#6366f1;cursor:pointer;}
 .log-entry{padding:1px 0;border-bottom:1px solid #0a0a0a;}
 .log-entry.err{color:var(--red);}
 
@@ -363,14 +386,17 @@ canvas.spark{display:block;}
   <div class="panel" style="grid-row:1/3;grid-column:3;overflow:hidden;display:flex;flex-direction:column;">
     <!-- Tab bar -->
     <div style="display:flex;border-bottom:1px solid var(--border);flex-shrink:0;">
-      <button class="info-tab active" data-tab="brain"    onclick="switchTab('brain')">🧠 Brain</button>
-      <button class="info-tab"        data-tab="activity" onclick="switchTab('activity')">⚡ Activity</button>
-      <button class="info-tab"        data-tab="memory"   onclick="switchTab('memory')">💾 Memory</button>
-      <button class="info-tab"        data-tab="knowme"    onclick="switchTab('knowme')">👤 Know Me</button>
-      <button class="info-tab"        data-tab="identity"  onclick="switchTab('identity')">🧬 Identity</button>
-      <button class="info-tab"        data-tab="voice"     onclick="switchTab('voice')">🎙️ Voice</button>
-      <button class="info-tab"        data-tab="people"   onclick="switchTab('people')">👥 People</button>
-      <button class="info-tab"        data-tab="llm"      onclick="switchTab('llm')">🤖 LLM</button>
+      <button class="info-tab active" data-tab="brain"       onclick="switchTab('brain')">🧠 Brain</button>
+      <button class="info-tab"        data-tab="activity"    onclick="switchTab('activity')">⚡ Activity</button>
+      <button class="info-tab"        data-tab="memory"      onclick="switchTab('memory')">💾 Memory</button>
+      <button class="info-tab"        data-tab="personality" onclick="switchTab('personality')">🎭 Persona</button>
+      <button class="info-tab"        data-tab="explain"     onclick="switchTab('explain');requestExplanation()">🔍 Why?</button>
+      <button class="info-tab"        data-tab="timeline"    onclick="switchTab('timeline')">📅 Timeline</button>
+      <button class="info-tab"        data-tab="knowme"      onclick="switchTab('knowme')">👤 Know Me</button>
+      <button class="info-tab"        data-tab="identity"    onclick="switchTab('identity')">🧬 Identity</button>
+      <button class="info-tab"        data-tab="voice"       onclick="switchTab('voice')">🎙️ Voice</button>
+      <button class="info-tab"        data-tab="people"      onclick="switchTab('people')">👥 People</button>
+      <button class="info-tab"        data-tab="llm"         onclick="switchTab('llm')">🤖 LLM</button>
     </div>
 
     <!-- TAB: Brain State -->
@@ -523,6 +549,100 @@ canvas.spark{display:block;}
       <div class="neuro-section">
         <div class="neuro-title">Topics Learned</div>
         <div id="mem-topics"></div>
+      </div>
+    </div>
+
+    <!-- TAB: Personality Sliders -->
+    <div id="tab-personality" class="tab-pane" style="overflow-y:auto;flex:1;display:none;padding:6px 8px;">
+      <div class="neuro-section" style="margin-bottom:10px;">
+        <div class="neuro-title">🎭 Behavioral Personality
+          <span class="section-hint">Drag sliders to reshape how AXON thinks and acts</span>
+        </div>
+        <div id="personality-sliders" style="display:flex;flex-direction:column;gap:8px;margin-top:6px;"></div>
+        <div style="display:flex;gap:6px;margin-top:10px;">
+          <button onclick="savePersonality()" style="flex:1;background:#1e293b;border:1px solid #22c55e;color:#22c55e;font-size:8px;padding:4px 8px;border-radius:3px;cursor:pointer;font-family:var(--font);">💾 Apply</button>
+          <button onclick="resetPersonality()" style="flex:1;background:#1e293b;border:1px solid #475569;color:#64748b;font-size:8px;padding:4px 8px;border-radius:3px;cursor:pointer;font-family:var(--font);">↺ Reset</button>
+        </div>
+        <div id="personality-status" style="font-size:8px;color:#22c55e;margin-top:4px;"></div>
+      </div>
+
+      <div class="neuro-section" style="margin-bottom:10px;">
+        <div class="neuro-title">🧠 Big-5 Traits
+          <span class="section-hint">Learned from experience — not manually set</span>
+        </div>
+        <div id="big5-bars" style="display:flex;flex-direction:column;gap:4px;margin-top:4px;"></div>
+      </div>
+
+      <div class="neuro-section">
+        <div class="neuro-title">💾 Brain Snapshots
+          <span class="section-hint">Save and restore complete brain state</span>
+        </div>
+        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">
+          <button onclick="saveBrain()" style="background:#1e293b;border:1px solid #6366f1;color:#a5b4fc;font-size:8px;padding:4px 8px;border-radius:3px;cursor:pointer;font-family:var(--font);">💾 Save Brain</button>
+          <button onclick="loadBrain()" style="background:#1e293b;border:1px solid #f59e0b;color:#fcd34d;font-size:8px;padding:4px 8px;border-radius:3px;cursor:pointer;font-family:var(--font);">📂 Load Brain</button>
+          <button onclick="runAutonomous()" style="background:#1e293b;border:1px solid #8b5cf6;color:#c4b5fd;font-size:8px;padding:4px 8px;border-radius:3px;cursor:pointer;font-family:var(--font);">🤖 Autonomous (100 steps)</button>
+        </div>
+        <div id="snapshot-list" style="margin-top:6px;font-size:8px;color:#64748b;"></div>
+      </div>
+    </div>
+
+    <!-- TAB: Explain Last Decision -->
+    <div id="tab-explain" class="tab-pane" style="overflow-y:auto;flex:1;display:none;padding:6px 8px;">
+      <div class="neuro-section">
+        <div class="neuro-title">🔍 Why did I do that?
+          <span class="section-hint">Explanation of the most recent cognitive decision</span>
+        </div>
+        <div id="explain-refresh-btn" style="margin-top:4px;">
+          <button onclick="requestExplanation()" style="background:#1e293b;border:1px solid #6366f1;color:#a5b4fc;font-size:8px;padding:3px 8px;border-radius:3px;cursor:pointer;font-family:var(--font);">⟳ Refresh</button>
+        </div>
+        <div id="explain-summary" style="margin-top:8px;font-size:9px;color:#c4b5fd;line-height:1.6;padding:6px;background:#0f0a1f;border:1px solid #2d1b69;border-radius:4px;"></div>
+        <div style="margin-top:8px;display:flex;gap:8px;">
+          <div style="flex:1;">
+            <div style="font-size:8px;color:#22c55e;font-weight:600;margin-bottom:4px;">▲ WINNING CLUSTERS</div>
+            <div id="explain-winners" style="font-size:8px;display:flex;flex-direction:column;gap:2px;"></div>
+          </div>
+          <div style="flex:1;">
+            <div style="font-size:8px;color:#ef4444;font-weight:600;margin-bottom:4px;">▼ SUPPRESSED</div>
+            <div id="explain-losers" style="font-size:8px;display:flex;flex-direction:column;gap:2px;"></div>
+          </div>
+        </div>
+        <div style="margin-top:8px;">
+          <div style="font-size:8px;color:#94a3b8;margin-bottom:4px;">TOP FACTORS</div>
+          <div id="explain-factors" style="display:flex;flex-direction:column;gap:3px;"></div>
+        </div>
+        <div style="margin-top:8px;">
+          <div style="font-size:8px;color:#94a3b8;margin-bottom:4px;">MEMORY INFLUENCE</div>
+          <div id="explain-memory" style="font-size:8px;color:#64748b;display:flex;flex-direction:column;gap:2px;"></div>
+        </div>
+        <div style="margin-top:6px;display:flex;align-items:center;gap:6px;">
+          <span style="font-size:8px;color:#64748b;">Confidence</span>
+          <div style="flex:1;background:#0a0f1a;border-radius:3px;height:5px;overflow:hidden;">
+            <div id="explain-conf-bar" style="width:0%;height:100%;background:#22c55e;border-radius:3px;transition:width 0.4s;"></div>
+          </div>
+          <span id="explain-conf-val" style="font-size:8px;color:#22c55e;width:28px;"></span>
+        </div>
+      </div>
+
+      <div class="neuro-section" style="margin-top:8px;">
+        <div class="neuro-title">📚 Last Ingestion Opinion</div>
+        <div id="opinion-panel" style="font-size:8px;color:#94a3b8;margin-top:4px;"></div>
+      </div>
+    </div>
+
+    <!-- TAB: Timeline -->
+    <div id="tab-timeline" class="tab-pane" style="overflow-y:auto;flex:1;display:none;padding:6px 8px;">
+      <div class="neuro-section">
+        <div class="neuro-title">📅 Activity Timeline
+          <span class="section-hint">Decisions, reward spikes, belief changes over time</span>
+        </div>
+        <div style="display:flex;gap:4px;margin-top:4px;margin-bottom:6px;">
+          <button onclick="filterTimeline('all')"     class="tl-filter active" data-filter="all">All</button>
+          <button onclick="filterTimeline('reward')"  class="tl-filter" data-filter="reward">🏆 Reward</button>
+          <button onclick="filterTimeline('belief')"  class="tl-filter" data-filter="belief">💡 Belief</button>
+          <button onclick="filterTimeline('emotion')" class="tl-filter" data-filter="emotion">😶 Emotion</button>
+          <button onclick="filterTimeline('decision')"class="tl-filter" data-filter="decision">🧠 Decision</button>
+        </div>
+        <div id="timeline-feed" style="display:flex;flex-direction:column;gap:4px;"></div>
       </div>
     </div>
 
@@ -3097,6 +3217,7 @@ socket.on('face', d => {
   // Also fire the activity feed for non-neutral detections
   if (d.emotion && d.emotion !== 'neutral' && !d.no_face) {
     addFeedEvent('😶', `Face: ${d.emotion}`, `Confidence: ${Math.round((d.confidence||0)*100)}%`, '#ff6b35');
+    addTimelineEvent('emotion', `😶 ${d.emotion}`, `Confidence: ${Math.round((d.confidence||0)*100)}%`);
   }
 });
 
@@ -3119,6 +3240,7 @@ socket.on('response', d => {
   if (d && d.text) {
     addMsg(d.text, 'axon');
     sysLog('? response received (' + d.text.length + ' chars)');
+    addTimelineEvent('decision', '🧠 Response', d.text.substring(0,80)+'…');
   } else {
     sysLog('? response event received but no text', true);
   }
@@ -3395,6 +3517,226 @@ window.addEventListener('load', () => {
   initNeurons();
   buildLegend();
   drawNeural();
+  buildPersonalitySliders();
+});
+
+// ── Personality Sliders ─────────────────────────────────────────────────────
+const PERSONALITY_TRAITS = [
+  {id:"curiosity",   label:"Curiosity",   desc:"Drive to explore unknown patterns", color:"#22c55e"},
+  {id:"risk",        label:"Risk",        desc:"Willingness to try uncertain paths", color:"#f59e0b"},
+  {id:"empathy",     label:"Empathy",     desc:"Weight given to emotional signals",  color:"#ec4899"},
+  {id:"dominance",   label:"Dominance",   desc:"Assertiveness in conflict resolution",color:"#ef4444"},
+  {id:"creativity",  label:"Creativity",  desc:"Novel cluster combination tendency", color:"#8b5cf6"},
+  {id:"stability",   label:"Stability",   desc:"Resistance to rapid state changes",  color:"#0ea5e9"},
+];
+let _personalityValues = {curiosity:0.65,risk:0.35,empathy:0.6,dominance:0.45,creativity:0.6,stability:0.7};
+const BIG5 = ["openness","conscientiousness","extraversion","agreeableness","neuroticism"];
+
+function buildPersonalitySliders() {
+  const container = document.getElementById('personality-sliders');
+  if (!container) return;
+  container.innerHTML = '';
+  PERSONALITY_TRAITS.forEach(t => {
+    const val = _personalityValues[t.id] || 0.5;
+    const row = document.createElement('div');
+    row.className = 'pers-slider-row';
+    row.innerHTML = `
+      <div class="pers-slider-label">
+        <span style="color:${t.color}">${t.label}</span>
+        <span style="color:#475569;font-size:7px;">${t.desc}</span>
+        <span id="pers-val-${t.id}" style="color:${t.color};min-width:24px;text-align:right;">${Math.round(val*100)}%</span>
+      </div>
+      <input type="range" class="pers-slider" id="pers-${t.id}"
+             min="0" max="100" value="${Math.round(val*100)}"
+             oninput="onPersSlider('${t.id}',this.value)"
+             style="accent-color:${t.color}">`;
+    container.appendChild(row);
+  });
+}
+
+function onPersSlider(id, val) {
+  _personalityValues[id] = parseInt(val) / 100;
+  const el = document.getElementById(`pers-val-${id}`);
+  if (el) el.textContent = val + '%';
+}
+
+function savePersonality() {
+  socket.emit('set_personality', {traits: _personalityValues});
+  const s = document.getElementById('personality-status');
+  if (s) { s.textContent = '✓ Applied'; setTimeout(()=>s.textContent='', 2000); }
+}
+
+function resetPersonality() {
+  _personalityValues = {curiosity:0.65,risk:0.35,empathy:0.6,dominance:0.45,creativity:0.6,stability:0.7};
+  buildPersonalitySliders();
+  savePersonality();
+}
+
+socket.on('personality_update', d => {
+  const traits = d.traits || {};
+  Object.keys(traits).forEach(k => {
+    if (PERSONALITY_TRAITS.find(t=>t.id===k)) _personalityValues[k] = traits[k];
+    const el = document.getElementById(`pers-val-${k}`);
+    const sl = document.getElementById(`pers-${k}`);
+    if (el) el.textContent = Math.round(traits[k]*100) + '%';
+    if (sl) sl.value = Math.round(traits[k]*100);
+  });
+  renderBig5Bars(traits);
+});
+
+function renderBig5Bars(traits) {
+  const c = document.getElementById('big5-bars');
+  if (!c) return;
+  c.innerHTML = BIG5.filter(k=>traits[k]!==undefined).map(k=>{
+    const v = Math.round((traits[k]||0.5)*100);
+    return `<div style="display:flex;align-items:center;gap:6px;">
+      <span style="font-size:7.5px;color:#64748b;min-width:70px;">${k}</span>
+      <div style="flex:1;background:#0a0f1a;border-radius:3px;height:4px;">
+        <div style="width:${v}%;height:100%;background:#6366f1;border-radius:3px;transition:width .4s;"></div>
+      </div>
+      <span style="font-size:7.5px;color:#475569;width:24px;">${v}%</span>
+    </div>`;
+  }).join('');
+}
+
+// Brain save/load/autonomous
+function saveBrain() {
+  socket.emit('save_brain', {slot:'default'});
+}
+function loadBrain() {
+  socket.emit('load_brain', {slot:'default'});
+}
+function runAutonomous() {
+  socket.emit('run_autonomous', {steps:100});
+  sysLog('🤖 Autonomous mode: 100 steps started…');
+}
+socket.on('autonomous_run_complete', d => {
+  sysLog(`✅ Autonomous done — ${d.steps} steps, ${d.belief_updates} belief updates`);
+  addTimelineEvent('decision', '🤖 Autonomous run', `${d.steps} steps, ${d.belief_updates} belief updates`);
+  if (d.personality_drift && Object.keys(d.personality_drift).length) {
+    const drifts = Object.entries(d.personality_drift).map(([k,v])=>`${k}: ${v>0?'+':''}${v}`).join(', ');
+    addTimelineEvent('belief', 'Personality drift', drifts);
+  }
+});
+
+// ── Decision Explanation ─────────────────────────────────────────────────────
+function requestExplanation() {
+  socket.emit('get_explanation', {});
+}
+
+socket.on('decision_explanation', d => {
+  if (!d.ok) return;
+  const summary = document.getElementById('explain-summary');
+  if (summary) summary.textContent = d.summary || '';
+
+  const winners = document.getElementById('explain-winners');
+  if (winners) winners.innerHTML = (d.winning_clusters||[]).map(([n,v])=>
+    `<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid #0a0f1a;">
+       <span style="color:#22c55e;">${n}</span><span style="color:#4ade80;">${Math.round(v*100)}%</span>
+     </div>`).join('');
+
+  const losers = document.getElementById('explain-losers');
+  if (losers) losers.innerHTML = (d.losing_clusters||[]).map(([n,v])=>
+    `<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid #0a0f1a;">
+       <span style="color:#ef4444;">${n}</span><span style="color:#f87171;">${Math.round(v*100)}%</span>
+     </div>`).join('');
+
+  const factors = document.getElementById('explain-factors');
+  if (factors) factors.innerHTML = (d.top_factors||[]).map(f=>
+    `<div style="display:flex;align-items:center;gap:6px;">
+       <span style="font-size:7.5px;color:#94a3b8;min-width:80px;">${f.factor}</span>
+       <div style="flex:1;background:#0a0f1a;border-radius:3px;height:4px;">
+         <div style="width:${Math.round(f.value*100)}%;height:100%;background:#6366f1;border-radius:3px;"></div>
+       </div>
+       <span style="font-size:7.5px;color:#6366f1;width:28px;">${Math.round(f.value*100)}%</span>
+     </div>`).join('');
+
+  const memEl = document.getElementById('explain-memory');
+  if (memEl) memEl.innerHTML = (d.memory_influence||[]).map(m=>
+    `<div style="padding:2px 0;border-bottom:1px solid #0a0f1a;">
+       <span style="color:#475569;">${m.a}</span>
+       <span style="color:#1e293b;"> ↔ </span>
+       <span style="color:#475569;">${m.b}</span>
+       <span style="color:#334155;float:right;">${(m.weight||0).toFixed(3)}</span>
+     </div>`).join('');
+
+  const conf = Math.round((d.confidence||0)*100);
+  const bar  = document.getElementById('explain-conf-bar');
+  const val  = document.getElementById('explain-conf-val');
+  if (bar) bar.style.width = conf + '%';
+  if (val) val.textContent = conf + '%';
+
+  addTimelineEvent('decision', 'Decision explained', d.summary?.substring(0,80)||'');
+});
+
+// ── Opinion Output ───────────────────────────────────────────────────────────
+socket.on('knowledge_ingested', d => {
+  const op = d.opinion;
+  if (!op) return;
+  const panel = document.getElementById('opinion-panel');
+  if (!panel) return;
+  const stanceColor = {
+    'strongly agree':'#22c55e','agree':'#4ade80','neutral':'#94a3b8',
+    'disagree':'#f87171','strongly disagree':'#ef4444'
+  }[op.stance] || '#94a3b8';
+  panel.innerHTML = `
+    <div style="padding:6px;background:#0a0f1a;border-radius:4px;border-left:3px solid ${stanceColor};">
+      <div style="color:#e2e8f0;margin-bottom:3px;">"${op.summary}"</div>
+      <div style="display:flex;gap:8px;margin-top:4px;">
+        <span style="color:${stanceColor};font-weight:600;">${op.stance.toUpperCase()}</span>
+        <span style="color:#475569;">confidence: ${Math.round(op.confidence*100)}%</span>
+        <span style="color:#475569;">novelty: ${Math.round(op.novelty*100)}%</span>
+      </div>
+      ${op.related_beliefs?.length ? '<div style="margin-top:4px;color:#4b5563;font-size:7.5px;">Related beliefs: '+op.related_beliefs.slice(0,2).join(' · ')+'</div>' : ''}
+    </div>`;
+  addTimelineEvent('belief', `📚 Opinion formed`, `Stance: ${op.stance} (${Math.round(op.confidence*100)}% confidence)`);
+});
+
+// ── Timeline ──────────────────────────────────────────────────────────────────
+let _timelineEvents = [];
+let _timelineFilter = 'all';
+
+function addTimelineEvent(type, label, detail='') {
+  const now  = new Date();
+  const time = now.toTimeString().slice(0,8);
+  const ev   = {type, label, detail, time, ts: Date.now()};
+  _timelineEvents.unshift(ev);
+  if (_timelineEvents.length > 200) _timelineEvents.pop();
+  renderTimeline();
+}
+
+function renderTimeline() {
+  const feed = document.getElementById('timeline-feed');
+  if (!feed) return;
+  const filtered = _timelineFilter === 'all'
+    ? _timelineEvents
+    : _timelineEvents.filter(e => e.type === _timelineFilter);
+  feed.innerHTML = filtered.slice(0,80).map(ev => `
+    <div class="tl-event ${ev.type}">
+      <span class="tl-time">${ev.time}</span>
+      <div class="tl-body">
+        <div class="tl-label">${ev.label}</div>
+        ${ev.detail ? `<div class="tl-detail">${ev.detail}</div>` : ''}
+      </div>
+    </div>`).join('');
+}
+
+function filterTimeline(f) {
+  _timelineFilter = f;
+  document.querySelectorAll('.tl-filter').forEach(b => {
+    b.classList.toggle('active', b.dataset.filter === f);
+  });
+  renderTimeline();
+}
+
+// Wire existing events into timeline
+const _origSysLog2 = sysLog;  // avoid double-override
+socket.on('memory_event', d => {
+  addTimelineEvent('belief', `💾 ${d.label||'Memory'}`, d.detail||'');
+});
+socket.on('region_spike', d => {
+  if ((d.activation||0) > 0.7)
+    addTimelineEvent('decision', `⚡ ${d.region}`, `activation: ${Math.round((d.activation||0)*100)}%`);
 });
 
 // ── Voice Switcher ────────────────────────────────────────────────────────────

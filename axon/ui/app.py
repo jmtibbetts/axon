@@ -14,7 +14,9 @@ from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from axon.core.engine import AxonEngine
+from axon.core.engine   import AxonEngine
+from axon.core.brain_api import AxonBrain
+_brain: AxonBrain = None
 
 app      = Flask(__name__, template_folder="../../web/templates")
 CORS(app)
@@ -162,14 +164,63 @@ def on_start(config):
         camera_index=config.get("camera_index",  -1),
         mic_index=config.get("mic_index", None),
     )
+    # Wire public API layer
+    global _brain
+    _brain = AxonBrain(engine=_engine)
+    # Allow fabric to emit log events
+    _engine.fabric._socket_emit = lambda ev, d: socketio.emit(ev, _sanitize(d))
 
 @socketio.on("stop_engine")
 def on_stop():
-    global _engine
+    global _engine, _brain
+    if _brain:
+        _brain.save_brain("autosave")
+        emit("log", {"msg": "💾 Brain autosaved."})
     if _engine:
         _engine.stop()
         _engine = None
+        _brain  = None
     emit("log", {"msg": "AXON stopped."})
+
+@socketio.on("set_personality")
+def on_set_personality(data):
+    if not _brain:
+        return
+    result = _brain.set_personality(data.get("traits", {}))
+    emit("personality_update", _sanitize({"traits": result.get("traits", {})}))
+
+@socketio.on("run_autonomous")
+def on_run_autonomous(data):
+    if not _brain:
+        return
+    steps  = int(data.get("steps", 100))
+    result = _brain.run_autonomous(steps=steps)
+    emit("log", {"msg": f"🧠 Autonomous run started ({steps} steps)"})
+
+@socketio.on("get_explanation")
+def on_get_explanation(_data=None):
+    if not _brain:
+        return
+    exp = _brain.explain_last_decision()
+    emit("decision_explanation", _sanitize(exp))
+
+@socketio.on("save_brain")
+def on_save_brain(data=None):
+    if not _brain:
+        return
+    slot   = (data or {}).get("slot", "default")
+    result = _brain.save_brain(slot)
+    emit("log", {"msg": f"💾 Brain saved to slot '{slot}' — {result.get('beliefs',0)} beliefs"})
+    emit("brain_saved", _sanitize(result))
+
+@socketio.on("load_brain")
+def on_load_brain(data=None):
+    if not _brain:
+        return
+    slot   = (data or {}).get("slot", "default")
+    result = _brain.load_brain(slot)
+    emit("log", {"msg": f"📂 Brain restored from '{slot}'"})
+    emit("brain_loaded", _sanitize(result))
 
 def _sanitize(obj):
     """Recursively convert numpy/torch scalar types to native Python for JSON."""
@@ -449,6 +500,68 @@ def _extract_text_from_file(path: str, filename: str) -> str:
     else:
         raise RuntimeError(f"Unsupported file type: {ext}")
 
+
+
+# ── Public Brain API endpoints ───────────────────────────────────────────────
+
+@app.route("/api/brain/state")
+def api_brain_state():
+    if not _brain:
+        return jsonify({"ok": False, "error": "Engine not running"})
+    return jsonify(_sanitize(_brain.get_state()))
+
+@app.route("/api/brain/explain")
+def api_brain_explain():
+    if not _brain:
+        return jsonify({"ok": False, "error": "Engine not running"})
+    return jsonify(_sanitize(_brain.explain_last_decision()))
+
+@app.route("/api/brain/personality", methods=["GET","POST"])
+def api_personality():
+    if not _brain:
+        return jsonify({"ok": False, "error": "Engine not running"})
+    if request.method == "POST":
+        traits = request.json or {}
+        return jsonify(_sanitize(_brain.set_personality(traits)))
+    return jsonify({"ok": True, "traits": _sanitize(_brain.get_personality())})
+
+@app.route("/api/brain/save", methods=["POST"])
+def api_brain_save():
+    if not _brain:
+        return jsonify({"ok": False, "error": "Engine not running"})
+    slot = (request.json or {}).get("slot", "default")
+    return jsonify(_sanitize(_brain.save_brain(slot)))
+
+@app.route("/api/brain/load", methods=["POST"])
+def api_brain_load():
+    if not _brain:
+        return jsonify({"ok": False, "error": "Engine not running"})
+    slot = (request.json or {}).get("slot", "default")
+    return jsonify(_sanitize(_brain.load_brain(slot)))
+
+@app.route("/api/brain/snapshots")
+def api_brain_snapshots():
+    if not _brain:
+        return jsonify([])
+    return jsonify(_brain.list_snapshots())
+
+@app.route("/api/brain/autonomous", methods=["POST"])
+def api_brain_autonomous():
+    if not _brain:
+        return jsonify({"ok": False, "error": "Engine not running"})
+    data  = request.json or {}
+    steps = int(data.get("steps", 100))
+    return jsonify(_sanitize(_brain.run_autonomous(steps=steps)))
+
+@app.route("/api/brain/ingest", methods=["POST"])
+def api_brain_ingest():
+    if not _brain:
+        return jsonify({"ok": False, "error": "Engine not running"})
+    data = request.json or {}
+    text = data.get("text", "")
+    if not text:
+        return jsonify({"ok": False, "error": "text required"})
+    return jsonify(_sanitize(_brain.ingest(text, source=data.get("source","api"))))
 
 if __name__ == "__main__":
     import signal, sys

@@ -199,6 +199,18 @@ class EmotionalCore:
 
 class PersonalityMatrix:
     TRAITS = ["openness","conscientiousness","extraversion","agreeableness","neuroticism"]
+    # Product-facing behavioral traits (exposed in UI sliders + public API)
+    BEHAVIORAL_TRAITS = ["curiosity","risk","empathy","dominance","creativity","stability"]
+    ALL_TRAITS = TRAITS + BEHAVIORAL_TRAITS
+    # Behavioral defaults
+    BEHAVIORAL_DEFAULTS = {
+        "curiosity":   0.65,
+        "risk":        0.35,
+        "empathy":     0.60,
+        "dominance":   0.45,
+        "creativity":  0.60,
+        "stability":   0.70,
+    }
 
     def __init__(self, data_dir: str):
         self._path = os.path.join(data_dir, "personality.json")
@@ -209,15 +221,19 @@ class PersonalityMatrix:
     def _load(self):
         # Seed defaults so traits are never empty
         defaults = {t: 0.5 for t in self.TRAITS}
+        defaults.update(self.BEHAVIORAL_DEFAULTS)
         self.traits = defaults
         if os.path.exists(self._path):
             try:
-                self.traits = json.load(open(self._path))
+                loaded = json.load(open(self._path))
+                # Merge: keep loaded values but add any new defaults
+                self.traits = {**defaults, **loaded}
                 return
             except: pass
         self.traits = {t: random.gauss(0.5, 0.15) for t in self.TRAITS}
         for t in self.TRAITS:
             self.traits[t] = max(0.1, min(0.9, self.traits[t]))
+        self.traits.update(self.BEHAVIORAL_DEFAULTS)
 
     def save(self):
         os.makedirs(os.path.dirname(self._path), exist_ok=True)
@@ -1584,6 +1600,25 @@ class NeuralFabric:
         # Surprise spike: high surprise temporarily boosts exploration
         surprise_boost = min(0.15, surprise * 0.6) if surprise > 0.10 else 0.0
         self._explore_eps = min(0.55, (base_eps + cog_boost * 0.15 + surprise_boost) * meta_mult)
+
+        # ── Prediction-error feedback loop ───────────────────────────────────
+        # High surprise = high prediction error → norepinephrine spike,
+        # increased exploration, and dampened belief confidence
+        if surprise > 0.15:
+            # Norepinephrine: attention/alertness response to unexpected events
+            nm.norepinephrine = min(1.0, nm.norepinephrine + surprise * 0.20)
+            # Epsilon: temporarily widen search space
+            self._explore_eps = min(0.65, self._explore_eps + surprise * 0.08)
+            # Belief confidence damping: surprises erode certainty
+            if hasattr(self, '_belief_biases') and self._belief_biases:
+                for k in list(self._belief_biases.keys()):
+                    self._belief_biases[k] = self._belief_biases[k] * (1.0 - surprise * 0.10)
+            # Log if very surprised
+            if surprise > 0.40:
+                self._emit_cb("log", {"msg": f"⚡ High surprise ({surprise:.2f}) → NE spike, wider exploration"})
+        elif surprise < 0.05 and nm.norepinephrine > 0.45:
+            # Calm recovery: gradually lower NE when things are predictable
+            nm.norepinephrine = max(0.30, nm.norepinephrine - 0.005)
 
         if random.random() < self._explore_eps:
             burst_idx = random.randint(0, act.shape[0] - 1)

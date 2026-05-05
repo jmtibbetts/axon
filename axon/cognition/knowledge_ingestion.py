@@ -212,7 +212,8 @@ class KnowledgeIngestionPipeline:
         credibility: 0–1, how much to trust this source vs. existing beliefs.
         """
         with self._lock:
-            start   = time.time()
+            start          = time.time()
+            interpretations: List[dict] = []
             chunks  = _chunk_text(text)
             total_concepts = 0
             beliefs_updated = 0
@@ -227,6 +228,7 @@ class KnowledgeIngestionPipeline:
 
                 # ── INTERPRETATION: form an opinion about this chunk ──────
                 interpretation = _extract_interpretation(chunk, concepts, credibility)
+                interpretations.append(interpretation)
 
                 for concept in concepts:
                     total_concepts += 1
@@ -280,6 +282,37 @@ class KnowledgeIngestionPipeline:
                         })
 
             elapsed = round(time.time() - start, 3)
+            # ── Build opinion output ─────────────────────────────────────
+            # Aggregate a stance across all interpretations
+            all_interps = [i for i in interpretations if i]
+            if all_interps:
+                avg_valence    = sum(i.get("valence", 0)    for i in all_interps) / len(all_interps)
+                avg_confidence = sum(i.get("confidence", 0) for i in all_interps) / len(all_interps)
+                avg_novelty    = sum(i.get("novelty", 0)    for i in all_interps) / len(all_interps)
+                stance = (
+                    "strongly agree" if avg_valence > 0.5 and avg_confidence > 0.6 else
+                    "agree"          if avg_valence > 0.2 else
+                    "neutral"        if abs(avg_valence) < 0.2 else
+                    "disagree"       if avg_valence > -0.5 else
+                    "strongly disagree"
+                )
+                related_beliefs = [
+                    b.claim[:80] for b in (self._beliefs.all_beliefs()[:3] if self._beliefs else [])
+                ]
+            else:
+                avg_valence = avg_confidence = avg_novelty = 0.0
+                stance         = "neutral"
+                related_beliefs = []
+
+            opinion = {
+                "summary":         (concept_list[0]["context"][:120] if concept_list else text[:120]),
+                "stance":          stance,
+                "confidence":      round(avg_confidence, 3),
+                "valence":         round(avg_valence, 3),
+                "novelty":         round(avg_novelty, 3),
+                "related_beliefs": related_beliefs,
+            }
+
             summary = {
                 "source":            source_label,
                 "chunks":            len(chunks),
@@ -289,6 +322,7 @@ class KnowledgeIngestionPipeline:
                 "max_dissonance":    round(total_dissonance, 3),
                 "elapsed_s":         elapsed,
                 "top_concepts":      concept_list[:5],
+                "opinion":           opinion,
             }
             self._ingestion_log.append(summary)
             if len(self._ingestion_log) > 20:
