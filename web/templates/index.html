@@ -1853,20 +1853,29 @@ function initNeurons() {
   });
   neuronNodes.forEach((n, i) => {
     const pool = (BY_REGION[n.region] || []).filter(j => j !== i);
-    n.neighbors = pool.sort(() => Math.random() - .5).slice(0, 5);
+    n.neighbors = pool.sort(() => Math.random() - .5).slice(0, 9);  // was 5
   });
 
   // Build cross-region axon neighbors:
-  // For each AXON_ROUTE, 10% of src neurons get a pointer to a random dst neuron
-  AXON_ROUTES.forEach(([src, dst]) => {
+  // 22% of src neurons get cross-region pointers (was 10%)
+  // Bidirectional: also wire the reverse direction at half rate
+  AXON_ROUTES.forEach(([src, dst, w]) => {
     const srcPool = BY_REGION[src] || [];
     const dstPool = BY_REGION[dst] || [];
     if (!srcPool.length || !dstPool.length) return;
-    const count = Math.max(2, Math.floor(srcPool.length * 0.10));
-    for (let k = 0; k < count; k++) {
+    // Forward connections
+    const fwdCount = Math.max(4, Math.floor(srcPool.length * 0.22));
+    for (let k = 0; k < fwdCount; k++) {
       const si = srcPool[Math.floor(Math.random() * srcPool.length)];
       const di = dstPool[Math.floor(Math.random() * dstPool.length)];
       neuronNodes[si].xNeighbors.push(di);
+    }
+    // Weaker reverse connections (feedback loops)
+    const revCount = Math.max(2, Math.floor(dstPool.length * 0.08 * w));
+    for (let k = 0; k < revCount; k++) {
+      const di = dstPool[Math.floor(Math.random() * dstPool.length)];
+      const si = srcPool[Math.floor(Math.random() * srcPool.length)];
+      neuronNodes[di].xNeighbors.push(si);
     }
   });
 
@@ -1919,12 +1928,23 @@ function drawNeural() {
   // Goal: quiet regions (< 0.15) stay very dim (< 0.08 on canvas)
   //       active regions (> 0.35) surge bright (> 0.7 on canvas)
   // Approach: subtract a resting floor then apply a power boost
-  const RESTING_FLOOR = 0.10;  // below this = dark
+  // Contrast stretch: retain idle glow (don't strip to zero), but still
+  // amplify active regions strongly. Biological brains are NEVER silent.
+  const RESTING_FLOOR = 0.04;   // only strip true noise (< 4%)
   const sharpenedRegion = {};
   for (const [k, v] of Object.entries(regionMap)) {
-    const above = Math.max(0, v - RESTING_FLOOR);         // strip resting noise
-    const scaled = above / (1.0 - RESTING_FLOOR);         // renormalize to 0-1
-    sharpenedRegion[k] = Math.pow(scaled, 1.6);           // power boost contrast
+    // Use regional baselines so each area has its own resting glow
+    const REGION_BASELINES = {
+      prefrontal:0.12, default_mode:0.18, thalamus:0.14,
+      hippocampus:0.10, amygdala:0.08, visual:0.06,
+      auditory:0.06, language:0.09, association:0.10,
+      social:0.07, cerebellum:0.09, metacognition:0.12
+    };
+    const floor = REGION_BASELINES[k] || RESTING_FLOOR;
+    const above = Math.max(0, v - RESTING_FLOOR);
+    const scaled = above / (1.0 - RESTING_FLOOR);
+    // Softer power curve: 1.2 instead of 1.6 so idle values stay visible
+    sharpenedRegion[k] = Math.max(floor * 0.55, Math.pow(scaled, 1.2));
   }
 
   // ── Receive new state and schedule spike waves ──────────────────────
@@ -1989,17 +2009,27 @@ function drawNeural() {
 
     newTop.forEach(c => {
       const sharpAct = sharpenedRegion[c.region || regionForCluster(c.name)] || 0;
-      if (sharpAct > 0.12) {
-        scheduleSpikeWave(c.region || regionForCluster(c.name), sharpAct);
+      // Lower threshold — even resting clusters get mild spike waves
+      if (sharpAct > 0.04) {
+        scheduleSpikeWave(c.region || regionForCluster(c.name), Math.max(0.08, sharpAct));
       }
     });
+    // Spontaneous idle spike wave on a random region every update cycle
+    // (simulates the brain's spontaneous resting state activity)
+    if (axonFrame % 16 === 0) {
+      const rKeys = Object.keys(REGION_DEFS);
+      const randReg = rKeys[Math.floor(Math.random() * rKeys.length)];
+      const idleAct = sharpenedRegion[randReg] || 0.06;
+      scheduleSpikeWave(randReg, 0.04 + idleAct * 0.3);
+    }
 
     // Fire pulses along active axon routes
     AXON_ROUTES.forEach(([src, dst, w]) => {
       const sa = sharpenedRegion[src] || 0;
       const da = sharpenedRegion[dst] || 0;
       const coact = sa * da;
-      if (coact > 0.08 && Math.random() < coact * w * 0.5) {
+      // Lower coact threshold — show pulses even at resting activation levels
+      if (coact > 0.02 && Math.random() < coact * w * 0.8) {
         addPulse(src, dst, Math.sqrt(coact) * w);
       }
     });
@@ -2023,12 +2053,43 @@ function drawNeural() {
     }
   }
 
-  // ── Default-mode ambient pulses when idle ───────────────────────────
-  if (axonFrame % 60 === 0) {
-    const dmRoutes = AXON_ROUTES.filter(([s,d]) =>
-      s==='default_mode'||d==='default_mode'||s==='thalamus'||d==='thalamus');
-    const r = dmRoutes[Math.floor(Math.random()*dmRoutes.length)];
-    if (r) addPulse(r[0], r[1], 0.08 + Math.random()*0.06);
+  // ── Spontaneous synapse formation — biological idle plasticity ──────
+  // Every ~2s at idle, form a visible glowing connection between two regions
+  if (axonFrame % 110 === 0 && Math.random() < 0.75) {
+    const route = AXON_ROUTES[Math.floor(Math.random() * AXON_ROUTES.length)];
+    const sa = sharpenedRegion[route[0]] || 0.08;
+    const da = sharpenedRegion[route[1]] || 0.08;
+    const strength = 0.15 + Math.max(sa, da) * 0.5;
+    addSynapseEvent(route[0], route[1], strength, Math.random() < 0.3 ? 'new' : 'strengthen');
+  }
+  // During active processing: much more frequent spontaneous connections
+  {
+    const topActVal = Math.max(0, ...Object.values(sharpenedRegion));
+    if (topActVal > 0.35 && axonFrame % 30 === 0 && Math.random() < 0.9) {
+      const activeRoutes = AXON_ROUTES.filter(([s,d]) =>
+        (sharpenedRegion[s]||0) > 0.18 || (sharpenedRegion[d]||0) > 0.18);
+      const r = activeRoutes.length
+        ? activeRoutes[Math.floor(Math.random() * activeRoutes.length)]
+        : AXON_ROUTES[Math.floor(Math.random() * AXON_ROUTES.length)];
+      addSynapseEvent(r[0], r[1], 0.3 + topActVal * 0.6, 'strengthen');
+    }
+  }
+
+  // ── Autonomous biological pulses — fire frequently across the whole brain ──
+  // Every 12 frames fire a random route pulse (idle brain is NEVER static)
+  if (axonFrame % 12 === 0) {
+    const r = AXON_ROUTES[Math.floor(Math.random() * AXON_ROUTES.length)];
+    if (r) {
+      const sa = sharpenedRegion[r[0]] || 0.06;
+      const da = sharpenedRegion[r[1]] || 0.06;
+      addPulse(r[0], r[1], 0.06 + Math.max(sa, da) * 0.5 + Math.random() * 0.08);
+    }
+  }
+  // Every 25 frames fire a thalamus broadcast (thalamus is always relaying)
+  if (axonFrame % 25 === 0) {
+    const tRoutes = AXON_ROUTES.filter(([s]) => s === 'thalamus');
+    const tr = tRoutes[Math.floor(Math.random() * tRoutes.length)];
+    if (tr) addPulse(tr[0], tr[1], 0.12 + Math.random() * 0.10);
   }
 
   // ── Update neuron activations + emit trails ─────────────────────────
@@ -2039,9 +2100,14 @@ function drawNeural() {
     const fatigue = fatigueMap[n.region] || 0;
     const fatigueScale = 1.0 - fatigue * 0.4;
 
-    if (regionAct < 0.001) {
-      n.activation *= 0.92;
+    // Biological resting: even "inactive" neurons maintain a baseline flicker
+    // Use the regional baseline from sharpenedRegion OR a small constant floor
+    const restingFloor = 0.04 + Math.sin(n.phase * 0.7) * 0.015;
+    if (regionAct < 0.01) {
+      n.activation = Math.max(restingFloor, n.activation * 0.96);
       n.phase += n.speed;
+      // Even at idle, neurons fire tiny spontaneous spikes
+      if (Math.random() < 0.002) n.activation = Math.min(0.25, n.activation + 0.08);
       return;
     }
     if (!n.personalMult) n.personalMult = 0.4 + Math.random() * 1.2;
@@ -2092,10 +2158,13 @@ function drawNeural() {
     n.neighbors.forEach(j => {
       nextActivation[j] = Math.min(1.0, nextActivation[j] + signal * (0.3 + Math.random()*0.2));
     });
-    // Cross-region axon propagation (weaker, delayed)
-    if (n.activation > 0.80) n.xNeighbors.forEach(j => {
-      const delay = 3 + Math.floor(Math.random() * 8);
-      spikeQueue.push({ idx: j, at: axonFrame + delay });
+    // Cross-region axon propagation — fire at a much lower threshold
+    // so connections are always being made/broken even at idle
+    if (n.activation > 0.35) n.xNeighbors.forEach(j => {
+      if (Math.random() < n.activation * 0.6) {   // probabilistic, not deterministic
+        const delay = 2 + Math.floor(Math.random() * 6);
+        spikeQueue.push({ idx: j, at: axonFrame + delay });
+      }
     });
   });
   neuronNodes.forEach((n, i) => { n.activation = nextActivation[i]; });
@@ -2187,14 +2256,15 @@ function drawNeural() {
   }
 
   // ── Draw within-region synaptic connections ─────────────────────────
+  // Even resting neurons (0.05+) should show faint local dendrites
   nCtx.lineWidth = 0.25;
   neuronNodes.forEach(n => {
-    if (n.activation < 0.35) return;
+    if (n.activation < 0.06) return;   // was 0.35 — show at resting potential
     n.neighbors.forEach(j => {
       const m   = neuronNodes[j];
       const sig = n.activation * m.activation;
-      if (sig < 0.04) return;
-      const alpha = Math.min(90, Math.round(sig * 140));
+      if (sig < 0.003) return;         // was 0.04
+      const alpha = Math.min(90, Math.round(sig * 200));
       nCtx.beginPath();
       nCtx.moveTo(n.x, n.y);
       nCtx.lineTo(m.x, m.y);
@@ -2203,23 +2273,27 @@ function drawNeural() {
     });
   });
 
-  // ── Draw cross-region axon lines (static wiring, dim) ──────────────
-  if (axonFrame % 4 === 0) {
+  // ── Draw cross-region axon lines — always visible, intensity varies ──
+  // Always draw ALL routes at minimum opacity so the brain looks connected.
+  // Active routes (high coactivation) become bright and thick.
+  if (axonFrame % 3 === 0) {
     AXON_ROUTES.forEach(([src, dst, w]) => {
       const d1 = REGION_DEFS[src], d2 = REGION_DEFS[dst];
       if (!d1||!d2) return;
       const sa = sharpenedRegion[src] || 0;
       const da = sharpenedRegion[dst] || 0;
       const combined = Math.max(sa, da);
-      if (combined < 0.04) return;
+      const minVisible = 0.05 * w;   // always at least this bright (was 0 if coact<0.04)
+      if (combined < 0.001 && minVisible < 0.01) return;
 
       // ── Weight-driven thickness + glow ─────────────────────────────
       // _hebbianWeights[src+">"+dst] is updated by brain_state events
       const hebbKey = src + ">" + dst;
       const hebbW   = (window._hebbianWeights && window._hebbianWeights[hebbKey]) || 0;
       const totalW  = w * (1.0 + hebbW * 2.5);   // base route weight + Hebbian boost
-      const lineW   = Math.max(0.4, Math.min(4.5, totalW * combined * 3.2));
-      const alphaNum= Math.round(combined * totalW * 18);
+      const lineW   = Math.max(0.5, Math.min(4.5, totalW * Math.max(combined, minVisible) * 3.5));
+      // Minimum alpha so all routes always show as a dim web
+      const alphaNum= Math.max(8, Math.round(Math.max(combined, minVisible) * totalW * 28));
       const alpha   = Math.min(255, alphaNum).toString(16).padStart(2,'0');
 
       const mx = (d1.x*W + d2.x*W)/2;
@@ -2373,7 +2447,7 @@ function drawNeural() {
   }
 
   // ── Draw neurons ────────────────────────────────────────────────────────────
-  const RESTING_GLOW = 0.035;
+  const RESTING_GLOW = 0.08;   // neurons never fully dark — resting glow
   neuronNodes.forEach(n => {
     const regionAct = sharpenedRegion[n.region] || 0;
     const isWinner  = winnerRegions.has(n.region);
