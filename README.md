@@ -31,15 +31,61 @@
 
 ## What is AXON?
 
-AXON is not a chatbot wrapper. It is a **persistent**, biologically-inspired intelligence with **2.342 billion virtual neurons** across 12 functional brain regions, running fully on a local GPU. Unlike stateless assistants, AXON accumulates experience over time — every conversation, recognised face, learned fact, Hebbian weight change, formed belief, and written reflection is stored in a local SQLite database and survives reboots. The model is always the same mind that was there the last time you talked to it.
+AXON is not a chatbot wrapper. It is a **persistent, biologically-inspired intelligence** with **2.342 billion virtual neurons** across 12 functional brain regions, running fully on a local GPU.
 
-It has real-time vision (YOLOv8 face detection + FER emotion recognition), **face identity recognition**, voice input (Whisper), voice output (edge-tts), **real-time audio emotion detection**, Hebbian memory, a 6-chemical neuromodulator engine, a **prediction error → norepinephrine feedback loop**, a **public brain API**, **brain state persistence and snapshots**, and a live neural dashboard.
+Unlike stateless assistants, AXON accumulates experience over time — every conversation, recognised face, learned fact, Hebbian weight change, formed belief, and written reflection is stored in a local SQLite database and survives reboots. **The model is always the same mind that was there the last time you talked to it.**
 
-It talks to an LLM of your choice — **local via [LM Studio](https://lmstudio.ai) (no API key, fully private) or cloud via OpenAI, Anthropic Claude, Google Gemini, or Groq** — switchable at runtime through the built-in LLM provider panel.
+---
 
-What separates AXON from other "neural" AI projects is genuine internal depth that goes beyond signal routing. Every 100ms, a **synchronized central cognitive loop** sequences all subsystems in explicit dependency order. **Clusters compete for dominance** via lateral inhibition. **Four internal drives** (curiosity, social, competence, stability) accumulate pressure when unmet and discharge when satisfied. The system forms **weighted beliefs** that update from lived experience and challenge external knowledge. A **multi-dimensional value system** scores the same outcome differently depending on personality. A **structured self-model** (I am, I believe, I like, I avoid, I want) is rebuilt continuously and injected into every decision. AXON now **reflects autonomously** every ~15 seconds — forming conclusions from its own activation patterns. **Seven competing worldviews** fight for narrative dominance on every tick. A **four-tier memory hierarchy** (Episodic → Semantic → Value → Identity) manages what gets kept, what decays, and what becomes part of the self. **Personality traits** (curiosity, risk, stability, persistence, neuroticism) are fully wired — each one directly shapes exploration rate, cluster resistance, and neuromodulator swings. And a **weight-driven neural canvas** makes Hebbian learning, thought bubbles, and pruning events visible in real time.
+### 🔬 Sensory & Motor Layer
 
-The most fundamental shift is in how the LLM is used. The LLM is no longer the brain — it is the **imagination engine**. Before every response, a **Thought Generator** injects goal conditioning (current goal, emotional state, personality vector, active drives, dominant worldview) and **intelligently selected memory** (relevant past outcomes, episodes, beliefs, and current bias) into the LLM, which then generates **N distinct candidate responses**. Each candidate is mapped to a cluster activation profile across 12 brain regions, scored by neural alignment with the live state, personality trait affinity, reward plausibility, and an ordering prior — and the **Conflict Engine resolves the winner**. After the response is delivered, a **learning loop** closes: emotional feedback fires `record_outcome()`, the winning cluster activations are rewarded, the strategy library is updated, memory salience is boosted, and a prediction error event is emitted. The LLM call is now part of a continuous learning cycle, not a one-off event. Every round is visible in the live **Competing Thoughts** panel in the UI.
+| Capability | Implementation |
+|---|---|
+| 👁️ Vision | YOLOv8 face detection + FER emotion recognition |
+| 🪪 Face Identity | dlib 128-d embeddings — recognises who it's talking to |
+| 🎤 Voice Input | OpenAI Whisper STT |
+| 🔊 Voice Output | edge-tts speech synthesis |
+| 😤 Audio Emotion | Real-time prosody analysis (pitch / energy / ZCR) |
+| 🌐 LLM Backend | LM Studio (local, private) · OpenAI · Claude · Gemini · Groq |
+
+---
+
+### 🧬 Internal Cognitive Depth
+
+What separates AXON from other "neural" AI projects is genuine internal depth that goes beyond signal routing:
+
+- **Synchronized cognitive loop** — every 100ms, all subsystems execute in explicit dependency order
+- **Cluster competition** — lateral inhibition forces regions to fight for dominance
+- **Four internal drives** — curiosity, social, competence, stability — each accumulates pressure when unmet and discharges when satisfied
+- **Weighted belief system** — beliefs update from lived experience and actively challenge external knowledge
+- **Multi-dimensional value scoring** — the same outcome is scored differently depending on personality state
+- **Structured self-model** — `I am / I believe / I like / I avoid / I want` rebuilt continuously and injected into every decision
+- **Autonomous reflection** — AXON reflects every ~15 seconds, forming conclusions from its own activation patterns
+- **Seven competing worldviews** — fight for narrative dominance on every cognitive tick
+- **Four-tier memory hierarchy** — Episodic → Semantic → Value → Identity — governs what decays, what persists, what becomes self
+- **Wired personality traits** — curiosity, risk, stability, persistence, neuroticism directly shape exploration rate, cluster resistance, and neuromodulator swings
+- **Weight-driven neural canvas** — Hebbian learning, thought bubbles, and pruning events visualised in real time
+
+---
+
+### 🧠 The LLM is Not the Brain — It's the Imagination Engine
+
+The most fundamental shift: the LLM no longer generates the answer. It generates **possibilities**. AXON's neural systems pick the winner.
+
+Before every response, the **Thought Generator** runs a full conditioning pipeline:
+
+```
+Goal conditioning  →  emotional state + personality + active drives + dominant worldview
+Memory injection   →  relevant outcomes, episodes, beliefs, current bias
+Candidate gen      →  LLM produces N distinct candidate responses
+Candidate scoring  →  neural alignment + trait affinity + reward plausibility
+Conflict Engine    →  winner resolved against live cluster activations
+Learning loop      →  record_outcome() closes the cycle — weights, memory, strategy updated
+```
+
+After delivery, **emotional feedback closes the loop**: `record_outcome()` fires, winning clusters are rewarded, the strategy library is updated, memory salience is boosted, and a `prediction_error` event is emitted. **The LLM call is now part of a continuous learning cycle, not a one-off event.**
+
+Every round is visible in the live **Competing Thoughts** panel in the UI.
 
 ---
 
