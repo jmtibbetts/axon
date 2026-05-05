@@ -535,3 +535,7 @@ See [LICENSE](LICENSE), [COMMERCIAL.md](COMMERCIAL.md), and [LICENSE_NOTICE.txt]
 <div align="center">
 <sub>AXON is not a product. It is an experiment in what it means for a machine to become something.</sub>
 </div>
+
+---
+
+⭐ If you're working on AI agents, cognitive systems, or memory architectures — **star this repo to follow development.**
