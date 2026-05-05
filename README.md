@@ -18,7 +18,7 @@
 
 ## What is AXON?
 
-AXON is not a chatbot wrapper. It is a persistent, biologically-inspired intelligence with **2.342 billion virtual neurons** across 12 functional brain regions, running fully on a local GPU. It has real-time vision (YOLOv8 face detection + FER emotion recognition), **face identity recognition**, voice input (Whisper), voice output (edge-tts), **real-time audio emotion detection**, Hebbian memory, a 6-chemical neuromodulator engine, and a live neural dashboard.
+AXON is not a chatbot wrapper. It is a **persistent**, biologically-inspired intelligence with **2.342 billion virtual neurons** across 12 functional brain regions, running fully on a local GPU. Unlike stateless assistants, AXON accumulates experience over time — every conversation, recognised face, learned fact, Hebbian weight change, and formed belief is written to a local SQLite database and survives reboots. The model is always the same mind that was there the last time you talked to it. It has real-time vision (YOLOv8 face detection + FER emotion recognition), **face identity recognition**, voice input (Whisper), voice output (edge-tts), **real-time audio emotion detection**, Hebbian memory, a 6-chemical neuromodulator engine, and a live neural dashboard.
 
 It talks to an LLM of your choice — **local via [LM Studio](https://lmstudio.ai) (no API key, fully private) or cloud via OpenAI, Anthropic Claude, Google Gemini, or Groq** — switchable at runtime through the built-in LLM provider panel.
 
@@ -524,13 +524,37 @@ del data\gpu_config.json  # Windows
 
 ---
 
-### 🔄 Resetting memory
+### 💾 Persistent storage
+
+AXON never forgets between sessions unless you explicitly ask it to. Every piece of experience is written to `data/memory/axon.db`, a local SQLite database that persists across reboots, reinstalls, and restarts.
+
+What survives every session:
+- **Episodic memory** — timestamped records of conversations, interactions, and events
+- **Semantic memory** — extracted facts, concepts, and knowledge ingested from documents
+- **Hebbian weights** — synaptic connection strengths learned from co-activation patterns
+- **Belief system** — weighted assumptions updated from lived experience
+- **Face profiles** — identity embeddings, names, and relationship history for every recognised person
+- **User model** — inferred preferences, personality traits, and personal details passively built over time
+- **LLM provider config** — your chosen provider, model, and API keys (`data/providers.json`)
+
+> The database is local and never leaves your machine.
+
+### 🔄 Resetting to a clean state
+
+If you want to wipe AXON's accumulated experience and start fresh — new personality baseline, no memories, no known faces — run:
 
 ```bash
 python reset_memory.py
 ```
 
-Wipes all episodic memory, semantic knowledge, Hebbian weights, and **all face profiles**. The next run starts completely fresh. This is the **only** way to clear face/person data — normal reboots never delete anything.
+This permanently deletes:
+- All episodic and semantic memories
+- All Hebbian connection weights
+- All formed beliefs and preferences
+- All face identity profiles and relationship data
+- The inferred user model
+
+**This cannot be undone.** Normal reboots, restarts, and even reinstalls do *not* clear memory — this script is the only way to reset the model to its default state.
 
 ---
 
