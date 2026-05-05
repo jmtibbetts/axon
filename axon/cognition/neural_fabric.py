@@ -1261,7 +1261,23 @@ class NeuralFabric:
         print(f"  [NeuralFabric] Building GPU tensors for {N} clusters on {DEVICE} ...")
 
         # GPU tensors
-        self.activation  = torch.rand(N, dtype=torch.float32, device=DEVICE) * 0.10
+        # Seed activation near biological resting baselines so the UI doesn't
+        # show all regions at ~6% until the ambient loop has run for many seconds.
+        _init_act = torch.rand(N, dtype=torch.float32, device=DEVICE) * 0.06
+        # Build a region-name → cluster-indices lookup for the warm-start
+        _rmap: Dict[str, list] = defaultdict(list)
+        for _ci, _cn in enumerate(self._cluster_names):
+            _rmap[self.clusters[_cn].region].append(_ci)
+        _BASELINE_INIT = {
+            "prefrontal": 0.14, "default_mode": 0.20, "thalamus": 0.16,
+            "hippocampus": 0.12, "amygdala": 0.10, "visual": 0.08,
+            "auditory": 0.08, "language": 0.11, "association": 0.12,
+            "social": 0.09, "cerebellum": 0.11, "metacognition": 0.14,
+        }
+        for _reg, _base in _BASELINE_INIT.items():
+            for _ci in _rmap.get(_reg, []):
+                _init_act[_ci] = _base + torch.rand(1).item() * 0.04
+        self.activation  = torch.clamp(_init_act, 0.0, 1.0)
         self.fatigue     = torch.zeros(N, dtype=torch.float32, device=DEVICE)
         self.threshold   = torch.tensor(
             [self.clusters[n].threshold for n in self._cluster_names],
@@ -1750,7 +1766,7 @@ class NeuralFabric:
                 deficit = torch.clamp(baseline - cur, min=0.0)
                 # Add a little noise so they don't all lock in sync
                 jitter = torch.rand(len(idxs), device=DEVICE) * 0.04
-                self.activation[t] = torch.clamp(cur + deficit * 0.25 + jitter * 0.02, 0.0, 1.0)
+                self.activation[t] = torch.clamp(cur + deficit * 0.55 + jitter * 0.02, 0.0, 1.0)
 
         # ── Spontaneous burst: random cluster fires strongly (inner monologue)
         if random.random() < 0.15:

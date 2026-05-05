@@ -3175,14 +3175,17 @@ scanCameras();
 scanMics();
 
 // ── Tab switcher ─────────────────────────────────────────────────────────────
-function switchTab(name) {
+// Use a variable assignment (not a function declaration) so it is never hoisted
+// and cannot be silently overwritten by a later declaration in the same scope.
+const switchTab = function(name) {
   document.querySelectorAll('.info-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
   document.querySelectorAll('.tab-pane').forEach(p => {
     p.style.display = p.id === 'tab-' + name ? 'block' : 'none';
   });
   if (name === 'memory')   refreshMemoryPanel();
   if (name === 'identity') requestIdentityState();
-}
+  if (name === 'llm')      { if (typeof loadProviderStatus === 'function') loadProviderStatus(); }
+};
 
 // ── Activity Feed ─────────────────────────────────────────────────────────────
 const MAX_FEED_ITEMS = 60;
@@ -4166,12 +4169,7 @@ function saveLMStudioUrl() {
   reprobe();
 }
 
-// Load provider status when tab is switched to llm
-var _origSwitchTab = switchTab;
-function switchTab(name) {
-  _origSwitchTab(name);
-  if (name === "llm") loadProviderStatus();
-}
+// LLM tab hook is now built into the main switchTab above.
 
 </script>
 
