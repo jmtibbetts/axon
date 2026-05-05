@@ -3266,13 +3266,19 @@ function reprobe()   { socket.emit('reprobe_lm'); sysLog('Re-probing LM Studio..
 // -- Socket events ---------------------------------------------
 socket.on('connect', () => {
   sysLog('Socket connected.');
-  // Auto-start the engine on every (re)connect so no manual ACTIVATE needed
+  // On first connect, check onboarding state before starting engine
   if (!window._axonStarted) {
     window._axonStarted = true;
-    setTimeout(() => {
-      sysLog('Auto-starting AXON...');
-      startAxon();
-    }, 800);   // brief delay so cfg fields are ready
+    fetch("/api/onboarding_check").then(r => r.json()).then(d => {
+      if (d.completed) {
+        // Onboarding done — start engine normally
+        setTimeout(() => { sysLog('Auto-starting AXON...'); startAxon(); }, 800);
+      }
+      // else: obInit() will show the overlay; engine starts after obFinish()
+    }).catch(() => {
+      // If API not ready yet, fall back to normal auto-start
+      setTimeout(() => { sysLog('Auto-starting AXON...'); startAxon(); }, 800);
+    });
   }
 });
 
@@ -3410,7 +3416,7 @@ socket.on('transcript', d => {
 });
 
 socket.on('onboarding_state', state => {
-  if (!state.completed) obInit(state);
+  obInit(state);  // obInit checks completed internally
 });
 socket.on('thinking', d => {
   if (d.state) {
@@ -5116,6 +5122,9 @@ function obStep4Next() { obShowStep(5); }
 function obFinish() {
   fetch("/api/onboarding/complete", {method:"POST"}).then(() => {
     document.getElementById("axon-onboarding").style.display = "none";
+    // Now start the engine with the chosen personality already applied
+    sysLog("Onboarding complete — activating AXON...");
+    startAxon();
   });
 }
 
@@ -5883,8 +5892,9 @@ function loadSpeed() {
 // INIT — check onboarding on load
 // ═══════════════════════════════════════════════════════════════
 document.addEventListener("DOMContentLoaded", () => {
+  // Show onboarding overlay immediately if not yet completed (before engine starts)
   fetch("/api/onboarding").then(r => r.json()).then(state => {
-    if (!state.completed) obInit(state);
+    obInit(state);  // obInit handles completed:true by skipping the overlay
   }).catch(() => {});
   loadGoals();
   loadSpeed();

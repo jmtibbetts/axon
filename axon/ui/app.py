@@ -606,10 +606,43 @@ def api_brain_ingest():
 
 # ─── Onboarding API ──────────────────────────────────────────────────────────
 
+@app.route("/api/onboarding_check")
+def api_onboarding_check():
+    """Lightweight check that works before engine starts — reads onboarding.json directly."""
+    import json as _json
+    from pathlib import Path as _Path
+    ob_path = _Path("data/onboarding.json")
+    if ob_path.exists():
+        try:
+            state = _json.loads(ob_path.read_text())
+            return jsonify({"completed": bool(state.get("completed", False))})
+        except Exception:
+            pass
+    return jsonify({"completed": False})
+
 @app.route("/api/onboarding")
 def api_onboarding_state():
+    # If engine not ready yet, read directly from disk so the overlay can show
     if not _brain:
-        return jsonify({"completed": True})
+        import json as _json
+        from pathlib import Path as _Path
+        from axon.cognition.onboarding import PRESETS, SAMPLE_TOPICS
+        ob_path = _Path("data/onboarding.json")
+        state = {}
+        if ob_path.exists():
+            try:
+                state = _json.loads(ob_path.read_text())
+            except Exception:
+                pass
+        return jsonify({
+            "completed": bool(state.get("completed", False)),
+            "step":      state.get("step", 0),
+            "ai_name":   state.get("ai_name", ""),
+            "preset":    state.get("preset", ""),
+            "sample_id": state.get("sample_id", ""),
+            "presets":   {k: {"description": v["description"]} for k, v in PRESETS.items()},
+            "samples":   [{"id": s["id"], "label": s["label"]} for s in SAMPLE_TOPICS],
+        })
     return jsonify(_sanitize(_brain.get_onboarding_state()))
 
 @app.route("/api/onboarding/name", methods=["POST"])
