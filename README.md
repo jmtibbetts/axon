@@ -4,7 +4,7 @@
 
 ### Emerging Artificial Intelligence
 
-*A biologically-inspired AI that sees, hears, recognises faces, reads your voice, learns, remembers, competes, forms beliefs, grows drives, and now thinks in a synchronized cognitive cycle — running entirely on your own hardware.*
+*A biologically-inspired AI that sees, hears, recognises faces, reads your voice, learns, remembers, competes, forms beliefs, grows drives, thinks in a synchronized cognitive cycle — and speaks through any LLM you choose, local or cloud.*
 
 [![Python](https://img.shields.io/badge/Python-3.12-blue?style=flat-square&logo=python)](https://python.org)
 [![PyTorch](https://img.shields.io/badge/PyTorch-CUDA%2012.8-orange?style=flat-square&logo=pytorch)](https://pytorch.org)
@@ -20,7 +20,7 @@
 
 AXON is not a chatbot wrapper. It is a persistent, biologically-inspired intelligence with **2.342 billion virtual neurons** across 12 functional brain regions, running fully on a local GPU. It has real-time vision (YOLOv8 face detection + FER emotion recognition), **face identity recognition**, voice input (Whisper), voice output (edge-tts), **real-time audio emotion detection**, Hebbian memory, a 6-chemical neuromodulator engine, and a live neural dashboard.
 
-It talks to a local LLM via [LM Studio](https://lmstudio.ai) — no cloud, no API keys required.
+It talks to an LLM of your choice — **local via [LM Studio](https://lmstudio.ai) (no API key, fully private) or cloud via OpenAI, Anthropic Claude, Google Gemini, or Groq** — switchable at runtime through the built-in LLM provider panel.
 
 What separates AXON from other "neural" AI projects is genuine internal depth that goes beyond signal routing. Every 100ms, a **synchronized central cognitive loop** sequences all subsystems in explicit dependency order. **Clusters compete for dominance** via lateral inhibition. **Four internal drives** (curiosity, social, competence, stability) accumulate pressure when unmet and discharge when satisfied — shaping which brain regions get priority. The system forms **weighted beliefs** that update from lived experience and challenge external knowledge. A **multi-dimensional value system** scores the same outcome differently depending on personality. And a **structured self-model** (I am, I believe, I like, I avoid, I want) is rebuilt continuously and injected into every decision.
 
@@ -384,6 +384,19 @@ Real-time web interface at `http://localhost:5000` — **7 tabs**:
 
 ---
 
+## LLM Provider Panel
+
+The **🤖 LLM** tab in the right dashboard column lets you configure the language brain at runtime:
+
+- **Active provider selector** — click to switch between LM Studio, OpenAI, Anthropic, Gemini, and Groq
+- **Prefer Local toggle** — always attempt LM Studio first, fall back to the cloud provider on failure
+- **Per-provider cards** — live status badge (ONLINE / KEY SET / NOT SET), API key input (masked), model dropdown
+- **LM Studio card** — editable server URL, ↻ Probe button to re-detect a model without restarting
+
+Settings are saved immediately to `data/providers.json`. Switching providers takes effect on the next message — no restart required.
+
+---
+
 ## Diagnostic Mode
 
 Say **"diagnostic mode"** or click the Diagnostics button. AXON responds in natural language covering:
@@ -404,7 +417,11 @@ Say **"diagnostic mode"** or click the Diagnostics button. AXON responds in natu
 | **Python** | 3.12 | 3.12 | 3.12 |
 | **GPU (optional)** | NVIDIA + CUDA 12.x | Apple Silicon (MPS) | NVIDIA + CUDA 12.x |
 | **CPU fallback** | ✅ auto | ✅ auto | ✅ auto |
-| **LM Studio** | Required | Required | Required |
+| **LM Studio** | Optional¹ | Optional¹ | Optional¹ |
+| **Cloud LLM** | Optional² | Optional² | Optional² |
+
+> ¹ LM Studio is the default provider and requires no API key. If it is offline, AXON falls back to the configured cloud provider.
+> ² OpenAI, Anthropic, Gemini, and Groq API keys can be entered at runtime — no restart required.
 
 ---
 
@@ -517,12 +534,31 @@ Wipes all episodic memory, semantic knowledge, Hebbian weights, and **all face p
 
 ---
 
-### 🔗 LM Studio setup
+### 🔗 LLM Provider setup
 
-1. Open LM Studio → **Local Server** tab
-2. Load any GGUF model (recommended: Mistral 7B, LLaMA 3 8B, or similar)
+AXON supports five provider options, all configurable at runtime from the **🤖 LLM** tab in the dashboard.
+
+#### Local — LM Studio (default, fully private)
+
+1. Install [LM Studio](https://lmstudio.ai) and open the **Local Server** tab
+2. Load any GGUF model (Mistral 7B, LLaMA 3 8B, Qwen, etc.)
 3. Start the server on port **1234** (default)
-4. Launch AXON — it connects automatically
+4. Launch AXON — it auto-detects the running model
+
+#### Cloud providers (optional)
+
+Open `http://localhost:7777` → click the **🤖 LLM** tab → enter your key and click **Save**. No restart needed.
+
+| Provider | Where to get a key | Notes |
+|---|---|---|
+| **OpenAI** | [platform.openai.com](https://platform.openai.com/api-keys) | gpt-4o, gpt-4o-mini, gpt-4-turbo, gpt-3.5-turbo |
+| **Anthropic** | [console.anthropic.com](https://console.anthropic.com) | claude-opus-4-5, sonnet, haiku |
+| **Google Gemini** | [aistudio.google.com](https://aistudio.google.com/app/apikey) | gemini-2.0-flash, 1.5-pro, 1.5-flash |
+| **Groq** | [console.groq.com](https://console.groq.com/keys) | llama3-70b, llama3-8b, mixtral, gemma2 |
+
+Keys are stored in `data/providers.json` — **never committed to git**.
+
+**Prefer Local** toggle (on by default): when checked, AXON always tries LM Studio first and only calls the selected cloud provider if LM Studio is offline or returns an error. Uncheck it to force cloud-only mode.
 
 Open the dashboard: `http://localhost:7777`
 
@@ -534,7 +570,8 @@ Open the dashboard: `http://localhost:7777`
 axon/
 ├── cognition/
 │   ├── neural_fabric.py        # 2.34B neuron GPU engine, conflict, RL, meta
-│   ├── language.py             # LLM orchestration + system prompt builder
+│   ├── language.py             # LLM orchestration + multi-provider dispatch
+│   ├── providers.py            # Provider registry (LM Studio/OpenAI/Anthropic/Gemini/Groq)
 │   ├── memory.py               # SQLite episodic + semantic + Hebbian store
 │   ├── cognitive_cycle.py      # Central 10Hz synchronized cognitive loop
 │   ├── belief_system.py        # Weighted beliefs + cognitive dissonance
@@ -555,7 +592,7 @@ axon/
     └── app.py                  # Flask-SocketIO + /upload_knowledge endpoint
 web/
 └── templates/
-    └── index.html              # Live neural dashboard (7 tabs)
+    └── index.html              # Live neural dashboard (8 tabs)
 data/
 └── memory/
     └── axon.db                 # SQLite: episodic, semantic, Hebbian, people, beliefs
