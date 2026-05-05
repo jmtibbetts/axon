@@ -24,6 +24,9 @@ from axon.cognition.drive_system        import DriveSystem
 from axon.cognition.value_system        import ValueSystem
 from axon.cognition.self_model          import SelfModel
 from axon.cognition.cognitive_cycle     import CognitiveCycle
+from axon.cognition.goals               import GoalSystem
+from axon.cognition.onboarding          import OnboardingManager, PRESETS, SAMPLE_TOPICS
+from axon.cognition.surprise_events     import SurpriseDetector
 
 
 class AxonEngine:
@@ -76,6 +79,15 @@ class AxonEngine:
 
         print("  [Engine] Initializing drive system...")
         self.drives = DriveSystem()
+
+        print("  [Engine] Initializing goal system...")
+        self.goals = GoalSystem(data_dir)
+
+        print("  [Engine] Initializing surprise detector...")
+        self.surprise = SurpriseDetector(on_event=self._on_surprise_event)
+
+        print("  [Engine] Initializing onboarding manager...")
+        self.onboarding = OnboardingManager(data_dir)
 
         print("  [Engine] Initializing value system...")
         self.value_system = ValueSystem()
@@ -194,6 +206,19 @@ class AxonEngine:
         self.audio_emo.stop()
         self.fabric.stop()
         self.voice.stop()
+        # Save goals on exit
+        if hasattr(self, "goals"):
+            try:
+                self.goals.save()
+            except Exception:
+                pass
+
+    def _on_surprise_event(self, event: dict):
+        """Called by SurpriseDetector when a notable internal event occurs."""
+        self._emit("surprise_event", event)
+        sev = event.get("severity", "medium")
+        icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(sev, "🟡")
+        self._emit("log", {"msg": f"{icon} [{event['type']}] {event['title']}: {event.get('detail','')[:80]}"})
 
     # ── Sensory callbacks ─────────────────────────────────────
 
@@ -458,6 +483,11 @@ class AxonEngine:
         self._emit("knowledge_ingested", result)
         return result
 
+    def ingest(self, text: str, source: str = "manual",
+               credibility: float = 0.6, emit_events: bool = False) -> dict:
+        """Alias for ingest_knowledge — used by brain_api and onboarding."""
+        return self.ingest_knowledge(text, source=source, credibility=credibility)
+
     def get_identity_summary(self) -> dict:
         """
         Returns the full behavioral identity snapshot:
@@ -549,11 +579,18 @@ class AxonEngine:
             drive_ctx_str = ""
             if hasattr(self, "drives"):
                 drive_ctx_str = self.drives.as_context_string()
+            # Goal context
+            goal_ctx_str = ""
+            if hasattr(self, "goals"):
+                goal_ctx_str = self.goals.as_context_string()
 
             # Self-model context
             self_model_str = ""
             if hasattr(self, "self_model"):
                 self_model_str = self.self_model.as_context_string()
+            # Merge goal context into self-model string
+            if goal_ctx_str:
+                self_model_str = (self_model_str + "\n\n" + goal_ctx_str).strip()
 
             visual_ctx = {
                 "camera_running":  optic_status.get("running", False),

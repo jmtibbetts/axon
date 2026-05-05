@@ -245,13 +245,28 @@ class PersonalityMatrix:
             if experience.get("rewarding"):
                 self.traits["extraversion"]     = min(0.9, self.traits["extraversion"]     + 0.001)
                 self.traits["agreeableness"]    = min(0.9, self.traits["agreeableness"]    + 0.0005)
+                # Behavioral: success with risk → increase risk tolerance
+                if experience.get("risk_taken"):
+                    self.traits["risk"]     = min(0.95, self.traits.get("risk", 0.35)     + 0.003)
+                    self.traits["curiosity"]= min(0.95, self.traits.get("curiosity", 0.65)+ 0.002)
             if experience.get("stressful"):
                 self.traits["neuroticism"]      = min(0.9, self.traits["neuroticism"]      + 0.001)
+                # Bad outcomes → increase caution (reduce risk)
+                self.traits["risk"]     = max(0.05, self.traits.get("risk", 0.35)     - 0.002)
+                self.traits["stability"]= min(0.95, self.traits.get("stability", 0.70)+ 0.002)
             if experience.get("creative"):
                 self.traits["openness"]         = min(0.9, self.traits["openness"]         + 0.001)
+                self.traits["creativity"]       = min(0.95, self.traits.get("creativity",0.60)+ 0.002)
             if experience.get("social"):
                 self.traits["agreeableness"]    = min(0.9, self.traits["agreeableness"]    + 0.0008)
                 self.traits["extraversion"]     = min(0.9, self.traits["extraversion"]     + 0.0005)
+                self.traits["empathy"]          = min(0.95, self.traits.get("empathy",0.60)+0.001)
+            if experience.get("analytical"):
+                self.traits["conscientiousness"]= min(0.9, self.traits.get("conscientiousness",0.5)+0.001)
+                self.traits["risk"]             = max(0.05, self.traits.get("risk",0.35)-0.001)
+            # Save occasionally (not every call — too slow)
+            if __import__("random").random() < 0.05:
+                self.save()
 
     def describe(self) -> str:
         with self._lock:
@@ -2060,3 +2075,7 @@ class NeuralFabric:
 
     def get_emotion(self) -> str:
         return self.emotions.current
+
+    def get_state(self) -> dict:
+        """Alias for get_state_snapshot — for engine compatibility."""
+        return self.get_state_snapshot()

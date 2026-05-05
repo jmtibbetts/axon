@@ -563,6 +563,126 @@ def api_brain_ingest():
         return jsonify({"ok": False, "error": "text required"})
     return jsonify(_sanitize(_brain.ingest(text, source=data.get("source","api"))))
 
+
+# ─── Onboarding API ──────────────────────────────────────────────────────────
+
+@app.route("/api/onboarding")
+def api_onboarding_state():
+    if not _brain:
+        return jsonify({"completed": True})
+    return jsonify(_sanitize(_brain.get_onboarding_state()))
+
+@app.route("/api/onboarding/name", methods=["POST"])
+def api_onboarding_name():
+    if not _brain:
+        return jsonify({"ok": False})
+    data = request.json or {}
+    return jsonify(_sanitize(_brain.onboarding_set_name(data.get("name",""))))
+
+@app.route("/api/onboarding/preset", methods=["POST"])
+def api_onboarding_preset():
+    if not _brain:
+        return jsonify({"ok": False})
+    data = request.json or {}
+    return jsonify(_sanitize(_brain.onboarding_set_preset(data.get("preset",""))))
+
+@app.route("/api/onboarding/ingest_sample", methods=["POST"])
+def api_onboarding_ingest_sample():
+    if not _brain:
+        return jsonify({"ok": False})
+    data = request.json or {}
+    return jsonify(_sanitize(_brain.onboarding_ingest_sample(data.get("sample_id",""))))
+
+@app.route("/api/onboarding/ingest_text", methods=["POST"])
+def api_onboarding_ingest_text():
+    if not _brain:
+        return jsonify({"ok": False})
+    data = request.json or {}
+    return jsonify(_sanitize(_brain.onboarding_ingest_text(data.get("text",""))))
+
+@app.route("/api/onboarding/complete", methods=["POST"])
+def api_onboarding_complete():
+    if not _brain:
+        return jsonify({"ok": False})
+    return jsonify(_sanitize(_brain.onboarding_complete()))
+
+@app.route("/api/first_opinion", methods=["POST"])
+def api_first_opinion():
+    """Get AXON's first opinion after onboarding ingestion."""
+    if not _engine:
+        return jsonify({"opinion": "I've processed the information and I'm ready to discuss it."})
+    try:
+        data    = request.json or {}
+        context = data.get("context", "")
+        prompt  = (
+            f"You just processed information about: {context}. "
+            f"Based on what you've ingested and your personality, "
+            f"give a single sentence expressing your genuine first take or opinion. "
+            f"Be direct. Show your personality. Don't hedge excessively."
+        )
+        opinion = _engine.language.think(prompt)
+        return jsonify({"opinion": opinion})
+    except Exception as ex:
+        return jsonify({"opinion": "Initial processing complete. I've formed a preliminary model."})
+
+# ─── Goals API ────────────────────────────────────────────────────────────────
+
+@app.route("/api/goals")
+def api_goals():
+    if not _brain:
+        return jsonify([])
+    return jsonify(_sanitize(_brain.get_goals()))
+
+@app.route("/api/goals/add", methods=["POST"])
+def api_add_goal():
+    if not _brain:
+        return jsonify({"ok": False})
+    data = request.json or {}
+    return jsonify(_sanitize(_brain.add_goal(
+        data.get("name",""), data.get("description",""), float(data.get("priority",0.5))
+    )))
+
+@app.route("/api/goals/remove", methods=["POST"])
+def api_remove_goal():
+    if not _brain:
+        return jsonify({"ok": False})
+    data = request.json or {}
+    return jsonify(_sanitize(_brain.remove_goal(data.get("name",""))))
+
+# ─── Surprise Events API ─────────────────────────────────────────────────────
+
+@app.route("/api/surprise_events")
+def api_surprise_events():
+    if not _brain:
+        return jsonify([])
+    return jsonify(_sanitize(_brain.recent_surprise_events()))
+
+# ─── Brain Fork + Share API ───────────────────────────────────────────────────
+
+@app.route("/api/fork_brain", methods=["POST"])
+def api_fork_brain():
+    if not _brain:
+        return jsonify({"ok": False, "error": "Engine not running"})
+    data     = request.json or {}
+    fork_name = data.get("fork_name", "fork")
+    overrides = data.get("trait_overrides")
+    return jsonify(_sanitize(_brain.fork_brain(fork_name, overrides)))
+
+@app.route("/api/list_forks")
+def api_list_forks():
+    if not _brain:
+        return jsonify([])
+    return jsonify(_sanitize(_brain.list_forks()))
+
+@app.route("/api/share_brain", methods=["POST"])
+def api_share_brain():
+    if not _brain:
+        return jsonify({"ok": False, "error": "Engine not running"})
+    data  = request.json or {}
+    slot  = data.get("slot", "default")
+    label = data.get("label", "")
+    return jsonify(_sanitize(_brain.generate_share_link(slot=slot, label=label)))
+
 if __name__ == "__main__":
     import signal, sys
 

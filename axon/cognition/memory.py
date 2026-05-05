@@ -326,5 +326,39 @@ class MemorySystem:
             "top_connections": self.top_connections(10),
         }
 
+    def decay_hebbian_weights(self, decay: float = 0.995):
+        """
+        Apply exponential decay to all Hebbian connection weights.
+        Weak connections fade; frequently-reused ones stay strong.
+        Called periodically by the cognitive cycle (~every 20s).
+        """
+        try:
+            self.conn.execute(
+                "UPDATE hebbian SET weight = weight * ? WHERE weight > 0.001",
+                (decay,)
+            )
+            # Clean up very weak connections to keep DB lean
+            self.conn.execute("DELETE FROM hebbian WHERE weight < 0.002")
+            self.conn.commit()
+        except Exception:
+            pass
+
+    def reinforce_connection(self, neuron_a: str, neuron_b: str,
+                              boost: float = 0.05):
+        """Boost an existing Hebbian connection on re-use."""
+        try:
+            self.conn.execute(
+                """UPDATE hebbian
+                   SET weight = MIN(1.0, weight + ?),
+                       fire_count = fire_count + 1,
+                       last_fired = ?
+                   WHERE (neuron_a=? AND neuron_b=?) OR (neuron_a=? AND neuron_b=?)""",
+                (boost, __import__('time').time(),
+                 neuron_a, neuron_b, neuron_b, neuron_a)
+            )
+            self.conn.commit()
+        except Exception:
+            pass
+
     def close(self):
         self.conn.close()

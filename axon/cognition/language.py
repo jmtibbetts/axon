@@ -772,6 +772,34 @@ class LanguageCore:
         #    IMPORTANT: trim AFTER appending so we never orphan a user message at pos[0]
         self._history.append({"role": "user", "content": user_input})
 
+        # 4b. Disagreement injection — if AXON has high-confidence belief
+        #     that conflicts with user input, push back explicitly.
+        try:
+            engine = getattr(self, '_engine', None)
+            if engine and hasattr(engine, "beliefs") and engine.beliefs:
+                conf = float(getattr(engine.fabric.neuromod, "confidence", 0.5)
+                             if hasattr(engine.fabric, "neuromod") else 0.5)
+                if conf > 0.68:
+                    top_beliefs = engine.beliefs.strongest(5)
+                    input_lower = user_input.lower()
+                    for b in top_beliefs:
+                        if b.strength > 0.70 and b.valence < 0:
+                            claim_words = [w for w in b.claim.lower().split()
+                                           if len(w) > 4]
+                            overlap = sum(1 for w in claim_words if w in input_lower)
+                            if overlap >= 1 and b.valence < -0.2:
+                                sys_prompt += (
+                                    f"\n\n[DISAGREEMENT TRIGGER] You hold a strong belief "
+                                    f"({b.strength:.0%} confidence): \"{b.claim[:80]}\". "
+                                    f"This partially conflicts with the user's input. "
+                                    f"You are allowed — and should — respectfully but clearly "
+                                    f"push back on claims that contradict your current model. "
+                                    f"Do not just agree. Express your actual view."
+                                )
+                                break
+        except Exception:
+            pass
+
         # 5. Call LLM — clamp system prompt size to avoid 400s on long context
         MAX_SYS_CHARS = 2000
         if len(sys_prompt) > MAX_SYS_CHARS:

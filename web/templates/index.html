@@ -378,6 +378,27 @@ canvas.spark{display:block;}
       <div class="chat-input">
         <input id="chat-in" placeholder="Speak or type to AXON..." onkeydown="if(event.key==='Enter')sendChat()"/>
         <button onclick="sendChat()">SEND</button>
+        <button id="observe-mode-btn" onclick="toggleObserveMode()"
+          title="Toggle Train/Observe mode"
+          style="padding:6px 10px;background:#0f172a;border:1px solid #334155;
+                 color:#94a3b8;border-radius:6px;cursor:pointer;font-size:0.78rem;white-space:nowrap;">
+          👁 Observe
+        </button>
+      </div>
+      <!-- Goals mini-panel -->
+      <div style="padding:8px 10px;border-top:1px solid #1e293b;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <span style="color:#475569;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.05em;">🎯 Goals</span>
+          <div style="display:flex;gap:6px;">
+            <button onclick="forkBrain()" title="Fork this brain"
+              style="padding:3px 8px;background:#0f172a;border:1px solid #334155;
+                     color:#64748b;border-radius:4px;cursor:pointer;font-size:0.72rem;">🧬 Fork</button>
+            <button onclick="shareBrain()" title="Share snapshot"
+              style="padding:3px 8px;background:#0f172a;border:1px solid #334155;
+                     color:#64748b;border-radius:4px;cursor:pointer;font-size:0.72rem;">🌐 Share</button>
+          </div>
+        </div>
+        <div id="goals-panel-body"></div>
       </div>
     </div>
   </div>
@@ -4540,6 +4561,408 @@ function saveLMStudioUrl() {
   user-select: none;
 ">
   Axon &mdash; Non-Commercial License &nbsp;&bull;&nbsp; Copyright &copy; 2026 Jon Tibbetts
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     ONBOARDING OVERLAY
+═══════════════════════════════════════════════════════════════════════ -->
+<div id="axon-onboarding" style="
+  display:none;
+  position:fixed; inset:0; z-index:9999;
+  background:rgba(3,7,18,0.97);
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  font-family:'Inter','Segoe UI',sans-serif;
+">
+  <div style="max-width:480px; width:90%; text-align:center;">
+    <!-- Progress dots -->
+    <div style="display:flex;justify-content:center;gap:8px;margin-bottom:32px;" id="ob-dots">
+      <div class="ob-dot" data-step="1"></div>
+      <div class="ob-dot" data-step="2"></div>
+      <div class="ob-dot" data-step="3"></div>
+      <div class="ob-dot" data-step="4"></div>
+      <div class="ob-dot" data-step="5"></div>
+    </div>
+
+    <!-- Step 1: Name -->
+    <div id="ob-step-1" class="ob-step">
+      <div style="font-size:3rem;margin-bottom:16px;">🧠</div>
+      <h2 style="color:#e2e8f0;font-size:1.6rem;margin:0 0 8px;">Name your AI</h2>
+      <p style="color:#64748b;margin:0 0 24px;font-size:0.95rem;">Give it a name it will recognize as itself.</p>
+      <input id="ob-name-input" type="text" placeholder="e.g. AXON, Nova, Kira…"
+        style="width:100%;padding:12px 16px;background:#0f172a;border:1px solid #334155;
+               border-radius:10px;color:#e2e8f0;font-size:1.1rem;outline:none;box-sizing:border-box;"
+        maxlength="32">
+      <button onclick="obStep1Next()" style="margin-top:16px;width:100%;padding:12px;
+        background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;
+        border-radius:10px;font-size:1rem;cursor:pointer;">Continue →</button>
+    </div>
+
+    <!-- Step 2: Personality preset -->
+    <div id="ob-step-2" class="ob-step" style="display:none;">
+      <div style="font-size:3rem;margin-bottom:16px;">🎭</div>
+      <h2 style="color:#e2e8f0;font-size:1.6rem;margin:0 0 8px;">Choose a personality</h2>
+      <p style="color:#64748b;margin:0 0 20px;font-size:0.95rem;">You can evolve this over time.</p>
+      <div id="ob-presets" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;text-align:left;"></div>
+      <button onclick="obStep2Next()" style="margin-top:20px;width:100%;padding:12px;
+        background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;
+        border-radius:10px;font-size:1rem;cursor:pointer;">Continue →</button>
+    </div>
+
+    <!-- Step 3: Feed it something -->
+    <div id="ob-step-3" class="ob-step" style="display:none;">
+      <div style="font-size:3rem;margin-bottom:16px;">📡</div>
+      <h2 style="color:#e2e8f0;font-size:1.6rem;margin:0 0 8px;">Feed it something</h2>
+      <p style="color:#64748b;margin:0 0 16px;font-size:0.95rem;">Pick a topic to watch it form its first opinion — or paste your own text.</p>
+      <div id="ob-samples" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
+      <textarea id="ob-custom-text" rows="3" placeholder="Or paste your own text here…"
+        style="width:100%;padding:10px;background:#0f172a;border:1px solid #334155;
+               border-radius:8px;color:#e2e8f0;font-size:0.9rem;resize:vertical;box-sizing:border-box;"></textarea>
+      <button onclick="obStep3Next()" style="margin-top:12px;width:100%;padding:12px;
+        background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;
+        border-radius:10px;font-size:1rem;cursor:pointer;">Process it →</button>
+    </div>
+
+    <!-- Step 4: Processing animation -->
+    <div id="ob-step-4" class="ob-step" style="display:none;">
+      <div style="font-size:3rem;margin-bottom:16px;">⚡</div>
+      <h2 style="color:#e2e8f0;font-size:1.6rem;margin:0 0 8px;">Learning…</h2>
+      <div id="ob-processing-log" style="
+        text-align:left;background:#0f172a;border:1px solid #1e293b;
+        border-radius:10px;padding:16px;font-size:0.82rem;color:#94a3b8;
+        font-family:monospace;max-height:160px;overflow-y:auto;margin-bottom:16px;
+      ">Ingesting…</div>
+      <div id="ob-first-opinion" style="display:none;padding:16px;background:#1e293b;
+        border-radius:10px;border-left:3px solid #8b5cf6;color:#e2e8f0;
+        font-style:italic;font-size:0.95rem;margin-bottom:16px;"></div>
+      <button id="ob-step4-next" onclick="obStep4Next()" style="display:none;width:100%;padding:12px;
+        background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;
+        border-radius:10px;font-size:1rem;cursor:pointer;">See your AI →</button>
+    </div>
+
+    <!-- Step 5: Done -->
+    <div id="ob-step-5" class="ob-step" style="display:none;">
+      <div style="font-size:3.5rem;margin-bottom:16px;">🎉</div>
+      <h2 id="ob-done-name" style="color:#e2e8f0;font-size:1.8rem;margin:0 0 8px;">Ready.</h2>
+      <p style="color:#64748b;margin:0 0 24px;font-size:0.95rem;">Your AI has formed its first take. Talk to it.</p>
+      <button onclick="obFinish()" style="width:100%;padding:14px;
+        background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;
+        border-radius:10px;font-size:1.1rem;cursor:pointer;">Enter →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Surprise event toast container -->
+<div id="surprise-toasts" style="
+  position:fixed; bottom:24px; right:24px; z-index:9998;
+  display:flex; flex-direction:column-reverse; gap:8px;
+  pointer-events:none; max-width:340px;
+"></div>
+
+<style>
+.ob-dot {
+  width:8px; height:8px; border-radius:50%;
+  background:#1e293b; border:1px solid #334155; transition:all 0.3s;
+}
+.ob-dot.active { background:#6366f1; border-color:#6366f1; transform:scale(1.3); }
+.ob-dot.done   { background:#22c55e; border-color:#22c55e; }
+.ob-step { width:100%; }
+.ob-preset-card {
+  padding:14px; background:#0f172a; border:2px solid #1e293b;
+  border-radius:10px; cursor:pointer; transition:all 0.2s;
+}
+.ob-preset-card:hover, .ob-preset-card.selected {
+  border-color:#6366f1; background:#1e1b4b;
+}
+.ob-sample-btn {
+  padding:10px 14px; background:#0f172a; border:1px solid #1e293b;
+  border-radius:8px; color:#e2e8f0; cursor:pointer;
+  text-align:left; font-size:0.9rem; transition:all 0.2s;
+}
+.ob-sample-btn:hover, .ob-sample-btn.selected { border-color:#8b5cf6; background:#1e1b4b; }
+.surprise-toast {
+  padding:12px 16px; border-radius:10px; font-size:0.85rem;
+  pointer-events:auto; animation:toastIn 0.3s ease;
+  box-shadow:0 4px 24px rgba(0,0,0,0.5);
+  border-left:3px solid;
+}
+.surprise-toast.high   { background:#1c0a0a; border-color:#ef4444; color:#fca5a5; }
+.surprise-toast.medium { background:#1c1400; border-color:#f59e0b; color:#fde68a; }
+.surprise-toast.low    { background:#0a1c0a; border-color:#22c55e; color:#86efac; }
+@keyframes toastIn {
+  from { transform:translateX(120%); opacity:0; }
+  to   { transform:translateX(0);     opacity:1; }
+}
+@keyframes toastOut {
+  from { opacity:1; transform:translateX(0); }
+  to   { opacity:0; transform:translateX(120%); }
+}
+</style>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// ONBOARDING
+// ═══════════════════════════════════════════════════════════════
+let obState    = { step: 0, name: "", preset: "", sampleId: "", presets: {}, samples: [] };
+let obSelectedPreset = "";
+let obSelectedSample = "";
+
+function obInit(state) {
+  if (state.completed) return;
+  obState   = state;
+  obSelectedPreset = state.preset || "";
+  obSelectedSample = state.sample_id || "";
+
+  // Build preset cards
+  const pg = document.getElementById("ob-presets");
+  if (pg) pg.innerHTML = Object.entries(state.presets || {}).map(([name, info]) => `
+    <div class="ob-preset-card ${obSelectedPreset===name?'selected':''}" onclick="obSelectPreset('${name}',this)">
+      <div style="font-weight:700;color:#e2e8f0;">${name}</div>
+      <div style="color:#64748b;font-size:0.82rem;margin-top:4px;">${info.description}</div>
+    </div>
+  `).join("");
+
+  // Build sample buttons
+  const sg = document.getElementById("ob-samples");
+  if (sg) sg.innerHTML = (state.samples || []).map(s => `
+    <button class="ob-sample-btn ${obSelectedSample===s.id?'selected':''}"
+      onclick="obSelectSample('${s.id}',this)">📖 ${s.label}</button>
+  `).join("");
+
+  const currentStep = state.step || 0;
+  obShowStep(currentStep > 0 ? currentStep + 1 : 1);
+  document.getElementById("axon-onboarding").style.display = "flex";
+}
+
+function obShowStep(n) {
+  [1,2,3,4,5].forEach(i => {
+    const el = document.getElementById("ob-step-" + i);
+    if (el) el.style.display = (i===n ? "block" : "none");
+  });
+  document.querySelectorAll(".ob-dot").forEach(d => {
+    const s = parseInt(d.dataset.step);
+    d.className = "ob-dot" + (s < n ? " done" : s === n ? " active" : "");
+  });
+  if (n===2 && obState.ai_name) {
+    document.getElementById("ob-done-name");
+  }
+}
+
+function obSelectPreset(name, el) {
+  obSelectedPreset = name;
+  document.querySelectorAll(".ob-preset-card").forEach(c => c.classList.remove("selected"));
+  el.classList.add("selected");
+}
+function obSelectSample(id, el) {
+  obSelectedSample = id;
+  document.querySelectorAll(".ob-sample-btn").forEach(b => b.classList.remove("selected"));
+  el.classList.add("selected");
+}
+
+function obStep1Next() {
+  const name = document.getElementById("ob-name-input").value.trim();
+  if (!name) return;
+  fetch("/api/onboarding/name", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({name})}).then(() => obShowStep(2));
+}
+function obStep2Next() {
+  if (!obSelectedPreset) return;
+  fetch("/api/onboarding/preset", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({preset: obSelectedPreset})}).then(() => obShowStep(3));
+}
+function obStep3Next() {
+  const customTxt = document.getElementById("ob-custom-text").value.trim();
+  obShowStep(4);
+  const log = document.getElementById("ob-processing-log");
+  log.innerHTML = "Routing sensory input…\n";
+
+  const doIngest = (url, body) => fetch(url, {method:"POST",
+    headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)})
+    .then(r => r.json()).then(d => {
+      log.innerHTML += "✅ Knowledge integrated\n";
+      log.scrollTop = log.scrollHeight;
+      // Ask for first opinion
+      setTimeout(() => {
+        fetch("/api/first_opinion", {method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({context: obSelectedSample || "general"})})
+        .then(r => r.json()).then(op => {
+          const el = document.getElementById("ob-first-opinion");
+          el.textContent = op.opinion || "I've processed the information and formed an initial perspective.";
+          el.style.display = "block";
+          document.getElementById("ob-step4-next").style.display = "block";
+        }).catch(() => {
+          document.getElementById("ob-step4-next").style.display = "block";
+        });
+      }, 600);
+    });
+
+  log.innerHTML += "Parsing semantic structure…\n";
+  setTimeout(() => {
+    log.innerHTML += "Forming opinion layer…\n";
+    log.scrollTop = log.scrollHeight;
+  }, 300);
+
+  if (customTxt) {
+    setTimeout(() => doIngest("/api/onboarding/ingest_text", {text: customTxt}), 600);
+  } else if (obSelectedSample) {
+    setTimeout(() => doIngest("/api/onboarding/ingest_sample", {sample_id: obSelectedSample}), 600);
+  } else {
+    setTimeout(() => { document.getElementById("ob-step4-next").style.display = "block"; }, 800);
+  }
+}
+function obStep4Next() { obShowStep(5); }
+function obFinish() {
+  fetch("/api/onboarding/complete", {method:"POST"}).then(() => {
+    document.getElementById("axon-onboarding").style.display = "none";
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SURPRISE TOASTS
+// ═══════════════════════════════════════════════════════════════
+socket.on("surprise_event", event => {
+  showSurpriseToast(event);
+});
+
+function showSurpriseToast(ev) {
+  const container = document.getElementById("surprise-toasts");
+  if (!container) return;
+  const div = document.createElement("div");
+  div.className = "surprise-toast " + (ev.severity || "medium");
+  div.innerHTML = `<div style="font-weight:700;margin-bottom:3px;">${ev.title}</div>
+    <div style="font-size:0.8rem;opacity:0.85;">${ev.detail || ""}</div>`;
+  container.appendChild(div);
+  setTimeout(() => {
+    div.style.animation = "toastOut 0.4s ease forwards";
+    setTimeout(() => div.remove(), 400);
+  }, 5000);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TRAIN / OBSERVE MODE
+// ═══════════════════════════════════════════════════════════════
+let axonObserveMode = false;
+
+function toggleObserveMode() {
+  axonObserveMode = !axonObserveMode;
+  const btn = document.getElementById("observe-mode-btn");
+  const inp = document.getElementById("user-input");
+  const sendBtn = document.querySelector(".send-btn");
+  if (btn) btn.textContent = axonObserveMode ? "⚡ Train Mode" : "👁 Observe Mode";
+  if (inp) inp.disabled = axonObserveMode;
+  const chatIn = document.getElementById("chat-in");
+  if (chatIn) chatIn.disabled = axonObserveMode;
+  if (axonObserveMode) {
+    showSurpriseToast({
+      type: "mode_change", title: "👁 Observe Mode",
+      detail: "Input disabled — watching AXON think autonomously",
+      severity: "low"
+    });
+  } else {
+    showSurpriseToast({
+      type: "mode_change", title: "⚡ Train Mode",
+      detail: "Input enabled — guide and shape behavior",
+      severity: "low"
+    });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// GOALS PANEL (mini)
+// ═══════════════════════════════════════════════════════════════
+function loadGoals() {
+  fetch("/api/goals").then(r => r.json()).then(goals => {
+    renderGoals(goals);
+  });
+}
+
+function renderGoals(goals) {
+  const el = document.getElementById("goals-panel-body");
+  if (!el || !goals) return;
+  el.innerHTML = goals.map(g => `
+    <div style="margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <span style="color:#e2e8f0;font-size:0.85rem;">${g.name.replace(/_/g," ")}</span>
+        <span style="color:${g.satisfied?'#22c55e':'#94a3b8'};font-size:0.75rem;">
+          ${g.satisfied ? "✅" : Math.round(g.progress*100)+"%"}
+        </span>
+      </div>
+      <div style="height:4px;background:#1e293b;border-radius:2px;margin-top:4px;">
+        <div style="height:100%;width:${Math.round(g.progress*100)}%;
+          background:${g.satisfied?'#22c55e':'#6366f1'};border-radius:2px;transition:width 1s;"></div>
+      </div>
+      <div style="color:#475569;font-size:0.75rem;margin-top:2px;">${g.description.slice(0,70)}</div>
+    </div>
+  `).join("") || '<div style="color:#475569;font-size:0.85rem;">No active goals</div>';
+}
+
+// Reload goals every 10s
+setInterval(loadGoals, 10000);
+
+// ═══════════════════════════════════════════════════════════════
+// BRAIN FORK + SHARE
+// ═══════════════════════════════════════════════════════════════
+function forkBrain() {
+  const name = prompt("Fork name (e.g. 'aggressive', 'empathetic'):");
+  if (!name) return;
+  fetch("/api/fork_brain", {method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({fork_name: name.trim()})})
+  .then(r => r.json()).then(d => {
+    showSurpriseToast({
+      type:"fork", title:"🧬 Fork Created",
+      detail: d.message || `Fork '${name}' saved`,
+      severity:"medium"
+    });
+  });
+}
+
+function shareBrain() {
+  fetch("/api/share_brain", {method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({label: "My AXON snapshot"})})
+  .then(r => r.json()).then(d => {
+    if (!d.ok) return;
+    const modal = document.getElementById("share-modal");
+    if (modal) {
+      document.getElementById("share-token-text").value = d.share_token;
+      document.getElementById("share-fingerprint").textContent = "ID: " + d.fingerprint;
+      modal.style.display = "flex";
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// INIT — check onboarding on load
+// ═══════════════════════════════════════════════════════════════
+document.addEventListener("DOMContentLoaded", () => {
+  fetch("/api/onboarding").then(r => r.json()).then(state => {
+    if (!state.completed) obInit(state);
+  }).catch(() => {});
+  loadGoals();
+});
+</script>
+
+<!-- Share Modal -->
+<div id="share-modal" style="
+  display:none; position:fixed; inset:0; z-index:9999;
+  background:rgba(3,7,18,0.93); align-items:center; justify-content:center;
+">
+  <div style="background:#0f172a;border:1px solid #334155;border-radius:14px;
+    padding:28px;max-width:480px;width:90%;position:relative;">
+    <button onclick="document.getElementById('share-modal').style.display='none'"
+      style="position:absolute;top:12px;right:14px;background:none;border:none;
+             color:#64748b;font-size:1.2rem;cursor:pointer;">✕</button>
+    <h3 style="color:#e2e8f0;margin:0 0 8px;">🌐 Share Brain Snapshot</h3>
+    <p id="share-fingerprint" style="color:#64748b;font-size:0.82rem;margin:0 0 12px;"></p>
+    <textarea id="share-token-text" rows="4" readonly
+      style="width:100%;padding:10px;background:#1e293b;border:1px solid #334155;
+             border-radius:8px;color:#94a3b8;font-size:0.78rem;resize:none;box-sizing:border-box;"></textarea>
+    <button onclick="navigator.clipboard.writeText(document.getElementById('share-token-text').value);this.textContent='✅ Copied!';setTimeout(()=>this.textContent='Copy',1500)"
+      style="margin-top:10px;padding:10px 20px;background:#6366f1;color:#fff;border:none;
+             border-radius:8px;cursor:pointer;">Copy</button>
+  </div>
 </div>
 
 </body>

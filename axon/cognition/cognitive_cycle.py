@@ -192,6 +192,13 @@ class CognitiveCycle:
                     diss = e.beliefs.total_dissonance()
                     if diss > 0.20:
                         e.fabric.neuromod.stress(diss * 0.08)
+                    # Surprise detection: belief dissonance
+                    if hasattr(e, "surprise") and diss > 0.30:
+                        hd = e.beliefs.high_dissonance_beliefs(0.30)
+                        for b in hd[:1]:
+                            e.surprise.check_dissonance(
+                                b.get("claim",""), b.get("dissonance", diss)
+                            )
                 except Exception:
                     pass
 
@@ -205,6 +212,13 @@ class CognitiveCycle:
         except Exception:
             activations = {}; personality = {}; neuromod = {}; emotion = {}
 
+        # Surprise: personality drift check (every 50 ticks)
+        if self._tick_n % 50 == 0 and personality and hasattr(e, "surprise"):
+            try:
+                e.surprise.check_personality_drift(personality)
+            except Exception:
+                pass
+
         # ── 5. Dominant cluster path tracking ─────────────────────────────
         if activations:
             dominant = sorted(activations.items(), key=lambda x: -x[1])
@@ -216,6 +230,13 @@ class CognitiveCycle:
                     sl = e.fabric._gpu._strategy_lib
                     if sl and hasattr(sl, "record_path"):
                         sl.record_path(path)
+                except Exception:
+                    pass
+            # Surprise: dominant cluster flip
+            if dominant and hasattr(e, "surprise"):
+                top_name, top_act = dominant[0]
+                try:
+                    e.surprise.check_dominant_cluster(top_name, top_act)
                 except Exception:
                     pass
 
@@ -261,6 +282,10 @@ class CognitiveCycle:
                 if trace:
                     self.metrics.add_thought(trace)
                     e._emit("thought_trace", {"trace": self.metrics.thought_trace[-6:]})
+                # Surprise: check prediction error spike
+                surprise_now = getattr(e.fabric, "_last_surprise", 0.0)
+                if hasattr(e, "surprise"):
+                    e.surprise.check_surprise_spike(surprise_now)
             except Exception:
                 pass
 
@@ -271,6 +296,30 @@ class CognitiveCycle:
                     e._emit("drive_state", {"drives": e.drives.all_drives()})
                 except Exception:
                     pass
+
+        # ── 9b. Goal system: distribute reward + fabric hints ───────────────
+        if hasattr(e, "goals") and e.goals and hasattr(e, "_last_reward"):
+            try:
+                raw_r = getattr(e, "_last_reward", 0.0)
+                is_nov = bool(activations and max(activations.values(), default=0) > 0.7)
+                e.goals.reward_tick(raw_r, {
+                    "is_novel":     is_nov,
+                    "low_surprise": getattr(e.fabric, "_last_surprise", 1.0) < 0.05,
+                })
+                for region, amt in e.goals.fabric_hints():
+                    e.fabric.stimulate_region(region, amt * 0.5)
+                if hasattr(e, "surprise"):
+                    for g in e.goals.all_goals():
+                        e.surprise.check_goal_progress(g["name"], g["progress"])
+            except Exception:
+                pass
+
+        # ── 9c. Memory weight decay (every 200 ticks ≈ 20s) ─────────────────
+        if self._tick_n % 200 == 0 and hasattr(e, "memory") and e.memory:
+            try:
+                e.memory.decay_hebbian_weights(decay=0.995)
+            except Exception:
+                pass
 
         # ── 10. Hobby engine idle check ────────────────────────────────────
         if hasattr(e, "hobbies") and e.hobbies:

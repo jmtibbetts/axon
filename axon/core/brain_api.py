@@ -566,3 +566,181 @@ class AxonBrain:
             except Exception:
                 pass
         return sorted(result, key=lambda x: x.get("saved_at", 0), reverse=True)
+
+    # ─── Onboarding API ───────────────────────────────────────────────────────
+
+    def get_onboarding_state(self) -> dict:
+        """Return current onboarding state for the frontend."""
+        if not hasattr(self._engine, "onboarding"):
+            return {"completed": True}
+        return self._engine.onboarding.to_client()
+
+    def onboarding_set_name(self, name: str) -> dict:
+        e = self._engine
+        if not hasattr(e, "onboarding"):
+            return {"ok": False}
+        e.onboarding.set_name(name)
+        return {"ok": True, "name": name}
+
+    def onboarding_set_preset(self, preset: str) -> dict:
+        """Apply a personality preset and update neural fabric."""
+        from axon.cognition.onboarding import PRESETS
+        e = self._engine
+        if not hasattr(e, "onboarding"):
+            return {"ok": False}
+        traits = e.onboarding.set_preset(preset)
+        if not traits:
+            return {"ok": False, "error": f"Unknown preset: {preset}"}
+        try:
+            p = e.fabric.personality
+            for k, v in traits.items():
+                if k != "description" and hasattr(p, k):
+                    setattr(p, k, float(v))
+            p.save()
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+        return {"ok": True, "preset": preset}
+
+    def onboarding_ingest_sample(self, sample_id: str) -> dict:
+        """Ingest a built-in sample topic and return the first opinion."""
+        from axon.cognition.onboarding import SAMPLE_TOPICS
+        e = self._engine
+        topic = next((s for s in SAMPLE_TOPICS if s["id"] == sample_id), None)
+        if not topic:
+            return {"ok": False, "error": "Unknown sample"}
+        if hasattr(e, "onboarding"):
+            e.onboarding.set_sample(sample_id)
+        try:
+            e.ingest(topic["text"], source=f"sample:{sample_id}", emit_events=True)
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+        return {"ok": True, "sample_id": sample_id, "label": topic["label"]}
+
+    def onboarding_complete(self) -> dict:
+        e = self._engine
+        if hasattr(e, "onboarding"):
+            e.onboarding.complete()
+        return {"ok": True}
+
+    def onboarding_ingest_text(self, text: str) -> dict:
+        """Ingest user-supplied text during onboarding."""
+        e = self._engine
+        try:
+            e.ingest(text.strip(), source="onboarding_upload", emit_events=True)
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+        return {"ok": True}
+
+    # ─── Goal API ─────────────────────────────────────────────────────────────
+
+    def get_goals(self) -> list:
+        if not hasattr(self._engine, "goals"):
+            return []
+        return self._engine.goals.all_goals()
+
+    def add_goal(self, name: str, description: str, priority: float = 0.5) -> dict:
+        if not hasattr(self._engine, "goals"):
+            return {"ok": False}
+        g = self._engine.goals.add_goal(name, description, priority)
+        return {"ok": True, "goal": g.to_dict()}
+
+    def remove_goal(self, name: str) -> dict:
+        if not hasattr(self._engine, "goals"):
+            return {"ok": False}
+        ok = self._engine.goals.remove_goal(name)
+        return {"ok": ok}
+
+    # ─── Surprise Events API ──────────────────────────────────────────────────
+
+    def recent_surprise_events(self, n: int = 20) -> list:
+        if not hasattr(self._engine, "surprise"):
+            return []
+        return self._engine.surprise.recent_events(n)
+
+    # ─── Brain Fork API ───────────────────────────────────────────────────────
+
+    def fork_brain(self, fork_name: str, trait_overrides: dict = None) -> dict:
+        """
+        Create a named fork of the current brain state.
+        Saves current snapshot under fork_name, optionally applying trait overrides.
+        """
+        result = self.save_brain(slot=f"fork_{fork_name}")
+        if not result.get("ok"):
+            return result
+        if trait_overrides:
+            snap_dir = self._data_dir / "snapshots"
+            path     = snap_dir / f"fork_{fork_name}.json"
+            try:
+                snap = json.loads(path.read_text())
+                for k, v in trait_overrides.items():
+                    if k != "description":
+                        snap.setdefault("personality", {})[k] = float(v)
+                snap["fork_name"]   = fork_name
+                snap["parent_slot"] = "default"
+                path.write_text(json.dumps(snap, indent=2, default=str))
+            except Exception as ex:
+                return {"ok": False, "error": str(ex)}
+        return {
+            "ok":        True,
+            "fork_name": fork_name,
+            "slot":      f"fork_{fork_name}",
+            "message":   f"Fork created. Load with load_brain('fork_{fork_name}') to diverge.",
+        }
+
+    def list_forks(self) -> list:
+        snap_dir = self._data_dir / "snapshots"
+        if not snap_dir.exists():
+            return []
+        result = []
+        for p in snap_dir.glob("fork_*.json"):
+            try:
+                meta = json.loads(p.read_text())
+                result.append({
+                    "fork_name":   meta.get("fork_name", p.stem),
+                    "slot":        p.stem,
+                    "saved_at":    meta.get("saved_at"),
+                    "beliefs":     len(meta.get("beliefs", [])),
+                    "personality": meta.get("personality", {}),
+                })
+            except Exception:
+                pass
+        return sorted(result, key=lambda x: x.get("saved_at", 0), reverse=True)
+
+    def generate_share_link(self, slot: str = "default", label: str = "") -> dict:
+        """
+        Generate a shareable brain snapshot summary.
+        Returns a compact JSON summary + base64 share token.
+        """
+        snap_dir = self._data_dir / "snapshots"
+        path     = snap_dir / f"{slot}.json"
+        if not path.exists():
+            self.save_brain(slot=slot)
+        try:
+            snap        = json.loads(path.read_text())
+            top_beliefs = snap.get("beliefs", [])[:5]
+            pers        = snap.get("personality", {})
+            summary = {
+                "label":         label or f"Brain snapshot @ {slot}",
+                "saved_at":      snap.get("saved_at"),
+                "version":       snap.get("version"),
+                "personality":   {k: round(float(v), 2) for k, v in pers.items()
+                                   if not isinstance(v, str)},
+                "top_beliefs":   [{"claim": b["claim"][:80],
+                                    "strength": round(b.get("strength", 0), 2)}
+                                   for b in top_beliefs],
+                "beliefs_count": len(snap.get("beliefs", [])),
+            }
+            import base64, hashlib
+            raw         = json.dumps(summary, sort_keys=True)
+            token       = base64.urlsafe_b64encode(raw.encode()).decode()
+            fingerprint = hashlib.md5(raw.encode()).hexdigest()[:8]
+            return {
+                "ok":          True,
+                "slot":        slot,
+                "fingerprint": fingerprint,
+                "summary":     summary,
+                "share_token": token,
+                "share_label": label or slot,
+            }
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
