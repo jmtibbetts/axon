@@ -2492,7 +2492,6 @@ function drawNeural() {
     const act = sharpenedRegion[key] || 0;
     const isW = winnerRegions.has(key);
     const isL = loserRegions.has(key) && act > 0.05;
-    const dom = winnerSmooth[key] || 0;
     const fat = fatigueMap[key] || 0;
 
     // Size: winners are bigger labels
@@ -3403,6 +3402,9 @@ socket.on('transcript', d => {
   addMsg(d.text, 'user');
 });
 
+socket.on('onboarding_state', state => {
+  if (!state.completed) obInit(state);
+});
 socket.on('thinking', d => {
   if (d.state) {
     thinkingEl = addMsg('thinking...', 'axon', true);
@@ -5809,11 +5811,6 @@ function loadSpeed() {
 // ═══════════════════════════════════════════════════════════════
 // INIT — check onboarding on load
 // ═══════════════════════════════════════════════════════════════
-// Engine emits this after start_engine completes (brain was not ready at DOMContentLoaded)
-socket.on("onboarding_state", state => {
-  if (!state.completed) obInit(state);
-});
-
 document.addEventListener("DOMContentLoaded", () => {
   fetch("/api/onboarding").then(r => r.json()).then(state => {
     if (!state.completed) obInit(state);
