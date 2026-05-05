@@ -215,14 +215,36 @@ class AxonEngine:
         if not vs["enabled"]:
             self._emit("log", {"msg": f"⚠ Voice output disabled — edge-tts or audio playback missing"})
 
-        # Wake thought
+        # Wake thought — stimulation burst
         threading.Timer(2.0, self._wake_thought).start()
+        # Delayed first autonomous monologue (~12s) — gives LM Studio time to be ready
+        threading.Timer(12.0, self._initial_autonomous_thought).start()
 
     def _wake_thought(self):
         self.fabric.stimulate_for_input("reward", 0.25)
         self.fabric.stimulate_region("identity_core", 0.35)
         self.fabric.stimulate_region("consciousness_gate", 0.40)
         self.fabric.stimulate_region("self_referential", 0.30)
+
+    def _initial_autonomous_thought(self):
+        """Fire one unprompted inner monologue shortly after startup."""
+        if not self.running:
+            return
+        try:
+            status = self.language.get_status()
+            if not status.get("lm_studio") and not status.get("backend"):
+                return  # LM not available yet
+            # Use the cognitive cycle's method so the same logic applies
+            if hasattr(self, "cycle") and self.cycle and not self.cycle._autonomous_busy:
+                state = self.fabric.get_state_snapshot()
+                self.cycle._fire_autonomous_thought(
+                    self,
+                    activations=state.get("clusters", {}),
+                    neuromod=state.get("neuromod", {}),
+                    emotion=state.get("emotion", {}),
+                )
+        except Exception:
+            pass
 
     def stop(self):
         self.running = False

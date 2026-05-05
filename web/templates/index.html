@@ -3435,26 +3435,30 @@ socket.on('response', d => {
 // Observe-mode inner monologue
 socket.on('chat_message', d => {
   if (!d || !d.content) return;
-  if (d.observe) {
-    // Inner monologue — distinct italic styling
-    addObserveThought(d.content);
+  if (d.observe || d.autonomous) {
+    // Inner monologue / autonomous thought — distinct italic styling
+    addObserveThought(d.content, d.autonomous);
   } else if (d.role === 'assistant') {
     addMsg(d.content, 'axon');
   }
 });
 
-function addObserveThought(text) {
+function addObserveThought(text, isAutonomous) {
   const feed = document.getElementById('chat-feed');
   if (!feed) return;
   const div = document.createElement('div');
+  // Autonomous unprompted thoughts: teal tint; observe mode: purple
+  const col = isAutonomous ? '#34d399' : '#818cf8';
+  const bdr = isAutonomous ? '#059669' : '#4338ca';
+  const bg  = isAutonomous ? 'rgba(5,150,105,0.05)' : 'rgba(67,56,202,0.06)';
   div.style.cssText = [
     'padding:8px 14px',
     'margin:4px 0',
     'font-style:italic',
-    'color:#818cf8',
+    `color:${col}`,
     'font-size:0.82rem',
-    'border-left:2px solid #4338ca',
-    'background:rgba(67,56,202,0.06)',
+    `border-left:2px solid ${bdr}`,
+    `background:${bg}`,
     'border-radius:0 6px 6px 0',
   ].join(';');
   div.textContent = text;

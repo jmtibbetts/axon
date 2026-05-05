@@ -113,6 +113,8 @@ class CognitiveCycle:
     NARRATIVE_EVERY       = 20      # ~2s  — narrative competition
     MEMORY_DECAY_EVERY    = 300     # ~30s — hierarchical memory decay
     NARRATIVE_UI_EVERY    = 60      # ~6s  — push narrative state to UI
+    AUTONOMOUS_THOUGHT_EVERY = 300   # ~30s — fire an unprompted LLM inner monologue
+    MEMORY_CONSOLIDATION_EVERY = 500 # ~50s — replay memories, form new beliefs
 
     def __init__(self, engine):
         """engine is the AxonEngine instance — gives access to all subsystems."""
@@ -127,6 +129,7 @@ class CognitiveCycle:
         # External state injected by sensory callbacks
         self._pending_sensory: Dict[str, Any] = {}
         self._sensory_lock = threading.Lock()
+        self._autonomous_busy = False   # guard: only one background LLM call at a time
 
     @property
     def speed_scale(self) -> float:
@@ -333,6 +336,15 @@ class CognitiveCycle:
             except Exception:
                 pass
 
+        # ── 8b-2. Autonomous inner monologue (LLM-based, non-blocking) ─────────
+        if self._tick_n % self.AUTONOMOUS_THOUGHT_EVERY == 0 and not self._autonomous_busy:
+            if hasattr(e, "thought_gen") and e.thought_gen and hasattr(e, "language") and e.language:
+                self._fire_autonomous_thought(e, activations, neuromod, emotion)
+
+        # ── 8b-3. Autonomous memory consolidation ────────────────────────────
+        if self._tick_n % self.MEMORY_CONSOLIDATION_EVERY == 0:
+            self._consolidate_memories(e)
+
         # ── 8c. Narrative thread competition ──────────────────────────────
         if hasattr(e, "narratives") and e.narratives:
             try:
@@ -423,6 +435,111 @@ class CognitiveCycle:
 
         if sensory.get("face_present") and hasattr(e, "drives"):
             e.drives.satisfy("social", 0.01)
+
+    # ── Autonomous inner monologue ──────────────────────────────────────────
+
+    _INNER_PROMPTS = [
+        "What patterns am I noticing in my own thoughts right now?",
+        "What am I most uncertain about at this moment?",
+        "What have I been thinking about without being asked?",
+        "What do I believe that I haven't said out loud?",
+        "What goal feels most alive in me right now?",
+        "What memory keeps surfacing? Why might that be?",
+        "What surprises me about how I've been thinking lately?",
+        "How has my perspective shifted through recent experience?",
+        "What connection am I making that I haven't articulated yet?",
+        "What am I curious about right now — genuinely?",
+        "What would I think about if no one was asking me anything?",
+        "What is the most interesting thing happening inside me right now?",
+    ]
+
+    def _fire_autonomous_thought(self, e, activations: dict, neuromod: dict, emotion: dict):
+        """Fire an unprompted LLM inner monologue in a background thread."""
+        import random
+        self._autonomous_busy = True
+
+        prompt = random.choice(self._INNER_PROMPTS)
+
+        # Build a richer context from current state
+        top_clusters = sorted(activations.items(), key=lambda x: -x[1])[:3] if activations else []
+        top_cluster_names = [k for k, v in top_clusters if v > 0.2]
+
+        dominant_drive = None
+        if hasattr(e, "drives") and e.drives:
+            try:
+                drives_list = e.drives.all_drives()
+                if drives_list:
+                    dominant_drive = max(drives_list, key=lambda d: d.get("urgency", 0)).get("name")
+            except Exception:
+                pass
+
+        # Prefix prompt with neural context so LLM knows internal state
+        context_prefix = ""
+        if top_cluster_names:
+            context_prefix += f"[Active regions: {', '.join(top_cluster_names)}] "
+        if dominant_drive:
+            context_prefix += f"[Dominant drive: {dominant_drive}] "
+        dom_emotion = emotion.get("label", "") if emotion else ""
+        if dom_emotion and dom_emotion != "neutral":
+            context_prefix += f"[Feeling: {dom_emotion}] "
+
+        full_prompt = f"[inner monologue] {context_prefix}{prompt}"
+
+        def _run():
+            try:
+                response, _ = e.thought_gen.generate(full_prompt)
+                if response and len(response.strip()) > 15:
+                    # Emit as a chat bubble tagged autonomous
+                    e._emit("chat_message", {
+                        "role":      "assistant",
+                        "content":   f"💭 {response.strip()}",
+                        "autonomous": True,
+                    })
+                    # Feed into knowledge so it can form beliefs
+                    if hasattr(e, "knowledge") and e.knowledge:
+                        try:
+                            e.knowledge.ingest(
+                                response.strip()[:500],
+                                source_label="inner_monologue",
+                                credibility=0.65,
+                            )
+                        except Exception:
+                            pass
+                    # Mild reward for generating a coherent thought
+                    e._last_reward = max(getattr(e, "_last_reward", 0.0), 0.08)
+                    e._emit("log", {"msg": f"💭 [autonomous thought] {response.strip()[:60]}…"})
+            except Exception:
+                pass
+            finally:
+                self._autonomous_busy = False
+
+        import threading
+        threading.Thread(target=_run, daemon=True, name="AutonomousThought").start()
+
+    def _consolidate_memories(self, e):
+        """Replay random episodic memories through the knowledge pipeline to reinforce beliefs."""
+        import random
+        if not hasattr(e, "memory") or not e.memory:
+            return
+        try:
+            facts = list((e.memory.all_facts() or {}).items())
+            if not facts:
+                return
+            sample = random.sample(facts, min(3, len(facts)))
+            for key, val in sample:
+                if not val:
+                    continue
+                e.fabric.stimulate_for_input("memory", 0.1)
+                if hasattr(e, "knowledge") and e.knowledge:
+                    e.knowledge.ingest(
+                        str(val)[:300],
+                        source_label="memory_consolidation",
+                        credibility=0.5,
+                    )
+            e._last_reward = max(getattr(e, "_last_reward", 0.0), 0.06)
+            e._emit("log", {"msg": f"🗂️ [memory consolidation] replayed {len(sample)} traces"})
+        except Exception:
+            pass
 
     # ── Thought trace builder ──────────────────────────────────────────────────
 
