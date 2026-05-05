@@ -4,6 +4,39 @@ All notable changes to AXON are documented here.
 
 ---
 
+## [1.3.0] — 2026-05-05
+
+### Added
+- **Reflection Engine** (`axon/cognition/reflection_engine.py`) — autonomous thought loop that fires every ~15 seconds. Reads its own cluster activations, belief tensions, drive levels, and chemical state to form first-person reflections (*"Hippocampus and amygdala are both high — I'm recalling something emotionally weighted."*). High-confidence reflections are written to Identity-tier memory and fed back into the self-model's `I notice` slot. Live **Reflections panel** added to the neural UI tab. API: `GET /api/brain/reflections`.
+- **Narrative Threads** (`axon/cognition/narrative_threads.py`) — 7 competing worldviews (Efficiency First, Explore at All Costs, Safety Above All, Social Harmony, Intellectual Dominance, Emotional Truth, Pragmatic Realist) fight for narrative dominance based on live cluster activations. Dominance flips fire surprise events. **Worldviews panel** with live salience bars added to UI. API: `GET /api/brain/narratives`. Socket: `narrative_shift` event.
+- **Memory Hierarchy** (`axon/cognition/memory_hierarchy.py`) — 4-tier memory architecture: Episodic (fast decay, 2000 cap), Semantic (medium, 5000), Value (slow, 1000), Identity (very slow, 500). Each tier has its own decay rate, salience weighting, and capacity pruning. High-surprise events and confirmed reflections receive salience boosts. **Memory Tier browser** with per-tier counts and salience bars added to UI. API: `GET /api/brain/memory_hierarchy`.
+- **Personality Vector — fully wired** — all 5 traits (curiosity, risk, stability, persistence, neuroticism) now directly drive system behavior: curiosity raises ε floor, risk raises ε ceiling, stability dampens ε volatility, persistence hardens cluster dethroning resistance, neuroticism amplifies NE swings on prediction error.
+- **Weight-driven neural canvas** — axon route lines now scale in thickness (0.5–4.5px) and glow intensity with live Hebbian weight. Strong Hebbian paths are visibly brighter and thicker. Glow halo added for connections with weight > 0.4.
+- **Cluster force-physics** — dominant clusters (dominance > 0.25) smoothly drift from fixed centroids toward a spring-repulsion equilibrium position, making the canvas physically respond to neural state.
+- **Thought bubbles** — when a cluster's dominance exceeds 0.65, a floating italic decision label pops above it (*"Evaluating options."*, *"Pattern match found."*, *"Threat detected."*, etc.). Labels float upward and fade. Defined for all 12 regions.
+- **Pruning fade** — weakened or pruned connections render as faded dashed lines for 8 seconds before disappearing. Tracked in `_prunedConnections` set.
+- **Emotional State bar** — persistent canvas overlay showing live NE level, reward trend direction, surprise magnitude, and a text mood label (curious / alert / bored / stressed / calm / entrapped / surprised).
+- **`_hebbianWeights` live map** — fed by `brain_state` socket events and hydrated on load via `GET /api/brain/memory`. Used by axon route renderer for weight-driven visuals.
+
+### Changed
+- Central cognitive loop extended from 9 to 12 steps: added `reflection_engine.tick()`, `narrative_threads.tick()`, and `memory_hierarchy.prune_if_needed()`.
+- Knowledge ingestion (`axon/cognition/knowledge_ingestion.py`) now writes to memory hierarchy tiers in addition to SQLite; emits `competing_interpretations` list per chunk.
+- Architecture diagram updated in README to include all new subsystems.
+
+---
+
+## [1.2.0] — 2026-05-05
+
+### Added
+- **Multi-provider LLM support** (`axon/cognition/providers.py`) — switch between LM Studio (default), OpenAI, Anthropic Claude, Google Gemini, and Groq at runtime via a **LLM Provider** tab in the UI. Configuration persisted in `providers.json`.
+- **DeepFace fallback** — if FER fails to load, vision pipeline falls back to DeepFace for emotion recognition automatically.
+- Face processing module patched to handle zero-length embeddings without crashing the vision thread.
+
+### Fixed
+- `ValueError` on zero-length face embeddings in `_cosine_dist` — added safety check to skip or repair invalid identity data.
+
+---
+
 ## [1.1.0] — 2026-05-04
 
 ### Added
@@ -27,16 +60,14 @@ All notable changes to AXON are documented here.
 - **Adaptive Exploration** — epsilon now driven by three compounding forces: `CognitiveState.explore_boost()`, `MetaController.explore_rate` multiplier, and a surprise spike (+0.15 when surprise > 0.10). Boredom counter (40 ticks) and entrapment detector (80 ticks) fire automatic exploration pressure.
 - **Temporal Credit Assignment** — replaced flat `mean_act` credit with proper per-timestep decay: `credit[t] = reward × 0.85^(H−1−t)`. Earlier decisions get discounted credit vs the outcome moment. Normalized across horizon length.
 - **Surprise as a First-Class Signal** — high prediction error now drives: learning rate (up to 2.5×), Hebbian trace boost, episodic memory importance (+0.4×), exploration burst, and MetaController "surprised" mode.
-- **Strategy Library + Meta panels** in Diagnostic overlay (🎛️ Meta-Controller, 🧬 Strategy Library).
+- **Strategy Library + Meta panels** in Diagnostic overlay.
 - **Diagnostic mode** now includes Meta-Controller mood, exploration multiplier, and strategy count/outcome in spoken summary.
-- **README v1.0** — full rewrite covering all current systems with updated architecture diagram.
 
 ### Changed
-- `TemporalRewardBuffer.evaluate()` now accepts `meta_sensitivity` parameter — reward/penalty magnitude is scaled by `MetaController.reward_sensitivity` before credit assignment.
-- `ConflictEngine.compete()` — fatigue penalty applied to activation before competition begins; fatigue updated after winners determined.
-- `NeuralFabric._gpu_tick()` — complete rewrite integrating all new systems; strategy replay bias blended 40/60 with memory context bias.
+- `TemporalRewardBuffer.evaluate()` now accepts `meta_sensitivity` parameter.
+- `ConflictEngine.compete()` — fatigue penalty applied before competition begins.
+- `NeuralFabric._gpu_tick()` — complete rewrite integrating all new systems.
 - `get_state_snapshot()` — now returns `meta`, `strategy_lib`, and `cluster_wear` fields.
-- Episodic memory `importance` now includes `surprise_level × 0.4` boost.
 
 ---
 
