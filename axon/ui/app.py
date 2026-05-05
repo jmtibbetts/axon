@@ -832,6 +832,14 @@ def api_brain_memory_hierarchy_store():
 if __name__ == "__main__":
     import signal, sys
 
+    # ── Pre-launch menu (skip if running as subprocess / non-interactive) ──
+    if sys.stdin.isatty():
+        try:
+            from axon.launch_menu import run as _launch_menu
+            _launch_menu()
+        except Exception as _lm_err:
+            pass  # never block startup
+
     def _shutdown(sig=None, frame=None):
         print("\n  [AXON] Shutting down…")
         global _engine
