@@ -722,6 +722,66 @@ def _speed_label(s: float) -> str:
     if s <= 5.0:   return "Focused"
     return "Hyperdrive"
 
+
+# ─── Reflection Engine API ─────────────────────────────────────────────────
+
+@app.route("/api/brain/reflections", methods=["GET"])
+def api_brain_reflections():
+    if not _engine or not hasattr(_engine, "reflection"):
+        return jsonify({"reflections": []})
+    n = int(request.args.get("n", 10))
+    return jsonify({"reflections": _engine.reflection.recent(n)})
+
+# ─── Narrative Threads API ────────────────────────────────────────────────
+
+@app.route("/api/brain/narratives", methods=["GET"])
+def api_brain_narratives():
+    if not _engine or not hasattr(_engine, "narratives"):
+        return jsonify({"narratives": [], "dominant": "", "flips": []})
+    return jsonify({
+        "dominant":  _engine.narratives.dominant(),
+        "top":       _engine.narratives.top_narratives(5),
+        "all":       _engine.narratives.all_narratives(),
+        "flips":     _engine.narratives.recent_flips(5),
+        "bias":      _engine.narratives.narrative_bias(),
+    })
+
+# ─── Memory Hierarchy API ─────────────────────────────────────────────────
+
+@app.route("/api/brain/memory_hierarchy", methods=["GET"])
+def api_brain_memory_hierarchy():
+    if not _engine or not hasattr(_engine, "mem_hierarchy"):
+        return jsonify({"stats": {}, "tiers": {}})
+    tier = request.args.get("tier", None)
+    n    = int(request.args.get("n", 15))
+    h    = _engine.mem_hierarchy
+    stats = _sanitize(h.tier_stats())
+    records = {}
+    if tier and tier in ("episodic","semantic","value","identity"):
+        records[tier] = _sanitize(h.recall(tier, n=n))
+    else:
+        for t in ("episodic","semantic","value","identity"):
+            records[t] = _sanitize(h.recall(t, n=5))
+    return jsonify({"stats": stats, "tiers": records})
+
+@app.route("/api/brain/memory_hierarchy/store", methods=["POST"])
+def api_brain_memory_hierarchy_store():
+    if not _engine or not hasattr(_engine, "mem_hierarchy"):
+        return jsonify({"ok": False, "error": "Engine not running"})
+    data    = request.json or {}
+    tier    = data.get("tier", "episodic")
+    content = data.get("content", "").strip()
+    if not content:
+        return jsonify({"ok": False, "error": "content required"})
+    row_id = _engine.mem_hierarchy.store(
+        tier     = tier,
+        content  = content,
+        salience = float(data.get("salience", 0.5)),
+        valence  = float(data.get("valence",  0.0)),
+        tags     = data.get("tags", []),
+    )
+    return jsonify({"ok": True, "id": row_id, "tier": tier})
+
 if __name__ == "__main__":
     import signal, sys
 

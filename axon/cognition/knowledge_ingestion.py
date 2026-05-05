@@ -198,10 +198,12 @@ class KnowledgeIngestionPipeline:
     """
 
     def __init__(self, memory_system, belief_system,
-                 on_concept: Optional[Callable] = None):
-        self._mem     = memory_system
-        self._beliefs = belief_system
-        self._on_concept = on_concept
+                 on_concept: Optional[Callable] = None,
+                 mem_hierarchy=None):
+        self._mem          = memory_system
+        self._beliefs      = belief_system
+        self._on_concept   = on_concept
+        self._mem_hierarchy = mem_hierarchy   # MemoryHierarchy (optional)
         self._lock    = threading.Lock()
         self._ingestion_log: List[dict] = []   # last N ingestion summaries
 
@@ -313,6 +315,45 @@ class KnowledgeIngestionPipeline:
                 "related_beliefs": related_beliefs,
             }
 
+            # ── Store into memory hierarchy if available ─────────────────
+            mem_h = getattr(self, "_mem_hierarchy", None)
+            if mem_h and concept_list:
+                try:
+                    # Every ingested concept goes to semantic tier
+                    for c in concept_list[:10]:
+                        mem_h.store(
+                            tier     = "semantic",
+                            content  = f"{c['context']} → {c['outcome']}",
+                            salience = c["confidence"] * 0.7,
+                            valence  = c["valence"],
+                            tags     = [source_label, "ingested"],
+                        )
+                    # High-dissonance interpretation → episodic (event-like)
+                    if total_dissonance > 0.25:
+                        mem_h.store(
+                            tier     = "episodic",
+                            content  = f"Encountered conflicting idea from {source_label}: {text[:120]}",
+                            salience = total_dissonance * 0.8,
+                            valence  = -total_dissonance * 0.4,
+                            tags     = ["ingestion_conflict", source_label],
+                        )
+                except Exception:
+                    pass
+
+            # ── Competing interpretations for narrative system ───────────
+            # Build a list of divergent cluster interpretations
+            competing = []
+            if interpretations:
+                for i, interp in enumerate(interpretations[:4]):
+                    if interp and abs(interp.get("valence", 0)) > 0.05:
+                        competing.append({
+                            "cluster_idx": i,
+                            "claim":       interp.get("claim", ""),
+                            "valence":     interp.get("valence", 0.0),
+                            "confidence":  interp.get("confidence", 0.5),
+                            "stance":      interp.get("stance", "neutral"),
+                        })
+
             summary = {
                 "source":            source_label,
                 "chunks":            len(chunks),
@@ -323,6 +364,7 @@ class KnowledgeIngestionPipeline:
                 "elapsed_s":         elapsed,
                 "top_concepts":      concept_list[:5],
                 "opinion":           opinion,
+                "competing_interpretations": competing,
             }
             self._ingestion_log.append(summary)
             if len(self._ingestion_log) > 20:

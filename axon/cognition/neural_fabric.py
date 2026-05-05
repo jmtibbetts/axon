@@ -1614,14 +1614,40 @@ class NeuralFabric:
         meta_mult = self.meta.explore_rate            # meta-controller multiplier
         # Surprise spike: high surprise temporarily boosts exploration
         surprise_boost = min(0.15, surprise * 0.6) if surprise > 0.10 else 0.0
-        self._explore_eps = min(0.55, (base_eps + cog_boost * 0.15 + surprise_boost) * meta_mult)
+
+        # ── Personality Trait Vector influence on exploration ─────────────
+        # curiosity trait → raises epsilon floor
+        # risk trait      → raises exploration ceiling
+        # stability trait → lowers volatility
+        p_traits = self.personality.traits if hasattr(self, "personality") else {}
+        curiosity_boost = p_traits.get("curiosity",   0.65) * 0.08  # 0–0.07
+        risk_boost      = p_traits.get("risk",        0.35) * 0.05  # 0–0.045
+        stability_damp  = (1.0 - p_traits.get("stability", 0.5)) * 0.3 + 0.7  # 0.7–1.0 mult
+
+        self._explore_eps = min(0.65,
+            (base_eps + curiosity_boost + cog_boost * 0.15 + surprise_boost + risk_boost)
+            * meta_mult * stability_damp
+        )
+
+        # Persistence trait → makes dominant cluster harder to dethrone
+        persistence = p_traits.get("persistence", p_traits.get("conscientiousness", 0.5))
+        if hasattr(self, "_persistence_mod"):
+            self._persistence_mod = 0.5 + persistence * 0.8  # 0.5–1.3
+        else:
+            self._persistence_mod = 0.5 + persistence * 0.8
+
+        # Emotional volatility → norepinephrine swing multiplier
+        # stored for use in NE spike code below
+        self._volatility = p_traits.get("neuroticism", 0.4)  # existing trait maps well
 
         # ── Prediction-error feedback loop ───────────────────────────────────
         # High surprise = high prediction error → norepinephrine spike,
         # increased exploration, and dampened belief confidence
         if surprise > 0.15:
             # Norepinephrine: attention/alertness response to unexpected events
-            nm.norepinephrine = min(1.0, nm.norepinephrine + surprise * 0.20)
+            # Emotional volatility (neuroticism trait) amplifies NE swings
+            _vol = getattr(self, "_volatility", 0.4)
+            nm.norepinephrine = min(1.0, nm.norepinephrine + surprise * 0.20 * (1.0 + _vol * 0.5))
             # Epsilon: temporarily widen search space
             self._explore_eps = min(0.65, self._explore_eps + surprise * 0.08)
             # Belief confidence damping: surprises erode certainty

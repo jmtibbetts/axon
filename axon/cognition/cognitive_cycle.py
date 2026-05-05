@@ -109,6 +109,10 @@ class CognitiveCycle:
     SELF_MODEL_EVERY      = 200     # ~20s
     DRIVE_UI_EMIT_EVERY   = 30      # ~3s
     THOUGHT_TRACE_EVERY   = 20      # ~2s
+    REFLECTION_EVERY      = 150     # ~15s — autonomous reflection
+    NARRATIVE_EVERY       = 20      # ~2s  — narrative competition
+    MEMORY_DECAY_EVERY    = 300     # ~30s — hierarchical memory decay
+    NARRATIVE_UI_EVERY    = 60      # ~6s  — push narrative state to UI
 
     def __init__(self, engine):
         """engine is the AxonEngine instance — gives access to all subsystems."""
@@ -309,6 +313,52 @@ class CognitiveCycle:
                     e.surprise.check_surprise_spike(surprise_now)
             except Exception:
                 pass
+
+        # ── 8b. Reflection engine feed + trigger ──────────────────────────
+        if hasattr(e, "reflection") and e.reflection:
+            try:
+                if trace:   # feed latest thought trace
+                    e.reflection.feed_thought_trace(trace)
+                # Maybe generate a reflection (fires every REFLECTION_EVERY ticks)
+                e.reflection.maybe_reflect(
+                    tick_n      = self._tick_n,
+                    beliefs     = getattr(e, "beliefs",      None),
+                    personality = personality,
+                    neuromod    = neuromod,
+                )
+            except Exception:
+                pass
+
+        # ── 8c. Narrative thread competition ──────────────────────────────
+        if hasattr(e, "narratives") and e.narratives:
+            try:
+                flip = e.narratives.tick(activations, getattr(e, "_last_reward", 0.0))
+                if flip and hasattr(e, "surprise"):
+                    e.surprise._fire({
+                        "type":    "narrative_flip",
+                        "title":   f"Narrative Shift: {flip['to']}",
+                        "detail":  f"Overthrew '{flip['from']}' — new worldview: '{flip['to']}'",
+                        "severity": "medium",
+                    })
+                    e._emit("log", {"msg": f"⚔️ [narrative] '{flip['from']}' → '{flip['to']}'"})
+                # Periodic narrative UI push
+                if self._tick_n % self.NARRATIVE_UI_EVERY == 0:
+                    e._emit("narrative_state", {
+                        "dominant": e.narratives.dominant(),
+                        "top":      e.narratives.top_narratives(3),
+                        "recent_flips": e.narratives.recent_flips(3),
+                        "bias":     e.narratives.narrative_bias(),
+                    })
+            except Exception:
+                pass
+
+        # ── 8d. Memory hierarchy decay (very slow) ────────────────────────
+        if self._tick_n % self.MEMORY_DECAY_EVERY == 0:
+            if hasattr(e, "mem_hierarchy") and e.mem_hierarchy:
+                try:
+                    e.mem_hierarchy.decay_tick(["episodic", "semantic", "value"])
+                except Exception:
+                    pass
 
         # ── 9. Drive meters UI emit (slow) ────────────────────────────────
         if self._tick_n % self.DRIVE_UI_EMIT_EVERY == 0:

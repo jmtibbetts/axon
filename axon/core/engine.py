@@ -27,6 +27,9 @@ from axon.cognition.cognitive_cycle     import CognitiveCycle
 from axon.cognition.goals               import GoalSystem
 from axon.cognition.onboarding          import OnboardingManager, PRESETS, SAMPLE_TOPICS
 from axon.cognition.surprise_events     import SurpriseDetector
+from axon.cognition.reflection_engine  import ReflectionEngine
+from axon.cognition.narrative_threads  import NarrativeThreads
+from axon.cognition.memory_hierarchy   import MemoryHierarchy
 
 
 class AxonEngine:
@@ -71,6 +74,7 @@ class AxonEngine:
         self.fabric._cluster_names_ref  = self.fabric._cluster_names
 
         print("  [Engine] Initializing knowledge ingestion pipeline...")
+        # (mem_hierarchy initialised below after narratives)
         self.knowledge = KnowledgeIngestionPipeline(
             memory_system = self.memory,
             belief_system = self.beliefs,
@@ -85,6 +89,22 @@ class AxonEngine:
 
         print("  [Engine] Initializing surprise detector...")
         self.surprise = SurpriseDetector(on_event=self._on_surprise_event)
+
+        print("  [Engine] Initializing reflection engine...")
+        self.reflection = ReflectionEngine(
+            on_reflection=self._on_reflection,
+            interval_ticks=150,
+        )
+
+        print("  [Engine] Initializing narrative threads...")
+        self.narratives = NarrativeThreads(data_dir)
+
+        print("  [Engine] Initializing memory hierarchy...")
+        self.mem_hierarchy = MemoryHierarchy(
+            db_path=Path(data_dir) / "memory" / "axon.db"
+        )
+        # Late-bind mem_hierarchy into knowledge pipeline
+        self.knowledge._mem_hierarchy = self.mem_hierarchy
 
         print("  [Engine] Initializing onboarding manager...")
         self.onboarding = OnboardingManager(data_dir)
@@ -219,6 +239,26 @@ class AxonEngine:
         sev = event.get("severity", "medium")
         icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(sev, "🟡")
         self._emit("log", {"msg": f"{icon} [{event['type']}] {event['title']}: {event.get('detail','')[:80]}"})
+
+    def _on_reflection(self, reflection: dict):
+        """Called by ReflectionEngine when a new autonomous thought forms."""
+        self._emit("reflection", reflection)
+        text = reflection.get("text", "")
+        if text:
+            self._emit("log", {"msg": f"💭 [reflection] {text[:100]}"})
+        # Store in identity or episodic memory hierarchy
+        if hasattr(self, "mem_hierarchy"):
+            tier = "identity" if reflection.get("belief_key") else "episodic"
+            try:
+                self.mem_hierarchy.store(
+                    tier     = tier,
+                    content  = text,
+                    salience = 0.65 if tier == "identity" else 0.5,
+                    valence  = 0.1,
+                    tags     = ["reflection", reflection.get("category","")],
+                )
+            except Exception:
+                pass
 
     # ── Sensory callbacks ─────────────────────────────────────
 

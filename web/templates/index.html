@@ -554,6 +554,55 @@ canvas.spark{display:block;}
         <div id="drive-meters" style="display:flex;flex-direction:column;gap:5px;margin-top:4px;"></div>
       </div>
 
+      <!-- Autonomous Reflections -->
+      <div class="neuro-section" style="margin-bottom:8px;" id="reflections-section">
+        <div class="neuro-title" style="display:flex;justify-content:space-between;align-items:center;">
+          <span>💭 Autonomous Reflections</span>
+          <span id="reflection-count" style="font-size:0.72rem;color:#6366f1;"></span>
+        </div>
+        <div class="section-hint" style="margin-bottom:4px;">Thoughts AXON forms without being asked</div>
+        <div id="reflection-stream" style="display:flex;flex-direction:column;gap:5px;max-height:220px;overflow-y:auto;"></div>
+      </div>
+
+      <!-- Narrative Worldviews -->
+      <div class="neuro-section" style="margin-bottom:8px;">
+        <div class="neuro-title" style="display:flex;justify-content:space-between;align-items:center;">
+          <span>⚔️ Competing Worldviews</span>
+          <span id="narrative-dominant" style="font-size:0.72rem;color:#f59e0b;font-weight:700;"></span>
+        </div>
+        <div class="section-hint" style="margin-bottom:4px;">Internal belief constellations competing for dominance</div>
+        <div id="narrative-bars" style="display:flex;flex-direction:column;gap:3px;margin-top:4px;"></div>
+      </div>
+
+      <!-- Emotional State Bar -->
+      <div class="neuro-section" style="margin-bottom:8px;">
+        <div class="neuro-title">🎭 Emotional State</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:4px;">
+          <div>
+            <div style="font-size:0.7rem;color:#94a3b8;margin-bottom:2px;">Norepinephrine (alertness)</div>
+            <div style="height:8px;background:#0f172a;border-radius:4px;overflow:hidden;border:1px solid #1e293b;">
+              <div id="emo-ne-bar" style="height:100%;width:50%;background:linear-gradient(90deg,#3b82f6,#8b5cf6);border-radius:4px;transition:width 0.4s;"></div>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:0.7rem;color:#94a3b8;margin-bottom:2px;">Reward trend</div>
+            <div style="height:8px;background:#0f172a;border-radius:4px;overflow:hidden;border:1px solid #1e293b;">
+              <div id="emo-reward-bar" style="height:100%;width:50%;background:linear-gradient(90deg,#10b981,#34d399);border-radius:4px;transition:width 0.4s;"></div>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:0.7rem;color:#94a3b8;margin-bottom:2px;">Surprise score</div>
+            <div style="height:8px;background:#0f172a;border-radius:4px;overflow:hidden;border:1px solid #1e293b;">
+              <div id="emo-surprise-bar" style="height:100%;width:20%;background:linear-gradient(90deg,#f59e0b,#f87171);border-radius:4px;transition:width 0.4s;"></div>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:0.7rem;color:#94a3b8;margin-bottom:2px;">Mood label</div>
+            <div id="emo-mood-label" style="font-size:0.85rem;font-weight:700;color:#e2e8f0;padding-top:2px;">—</div>
+          </div>
+        </div>
+      </div>
+
       <!-- Thought Trace -->
       <div class="neuro-section" style="margin-bottom:8px;">
         <div class="neuro-title">🧵 Thought Trace
@@ -578,6 +627,22 @@ canvas.spark{display:block;}
       </div>
       <!-- Memory stats row -->
       <div id="mem-stats" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;"></div>
+
+      <!-- ─ Hierarchical Memory Tiers ─ -->
+      <div class="neuro-section" style="margin-bottom:8px;">
+        <div class="neuro-title" style="display:flex;justify-content:space-between;align-items:center;">
+          <span>🗂 Memory Tiers</span>
+          <div style="display:flex;gap:4px;">
+            <button class="mem-tier-btn active" onclick="selectMemTier('episodic',this)">Episodic</button>
+            <button class="mem-tier-btn" onclick="selectMemTier('semantic',this)">Semantic</button>
+            <button class="mem-tier-btn" onclick="selectMemTier('value',this)">Value</button>
+            <button class="mem-tier-btn" onclick="selectMemTier('identity',this)">Identity</button>
+          </div>
+        </div>
+        <div id="mem-tier-stats" style="display:flex;gap:8px;margin:6px 0;font-size:0.7rem;color:#64748b;flex-wrap:wrap;"></div>
+        <div id="mem-tier-list" style="display:flex;flex-direction:column;gap:4px;max-height:220px;overflow-y:auto;font-size:0.75rem;"></div>
+      </div>
+
       <!-- Semantic facts -->
       <div class="neuro-section">
         <div class="neuro-title">Known Facts</div>
@@ -4694,6 +4759,69 @@ function saveLMStudioUrl() {
   transition:all 0.15s;
 }
 .speed-preset-btn:hover { border-color:#6366f1; color:#e2e8f0; background:#1e1b4b; }
+
+/* Reflection stream */
+.reflection-card {
+  background:#0a0014; border:1px solid #2d1b4e; border-left:3px solid #6366f1;
+  border-radius:6px; padding:7px 10px; position:relative;
+  animation: refl-in 0.4s ease;
+}
+@keyframes refl-in {
+  from { opacity:0; transform:translateX(-8px); }
+  to   { opacity:1; transform:none; }
+}
+.reflection-card .refl-text { font-size:0.8rem; color:#c4b5fd; line-height:1.45; font-style:italic; }
+.reflection-card .refl-meta { font-size:0.68rem; color:#4c1d95; margin-top:3px; }
+.reflection-card .refl-belief-dot {
+  position:absolute; top:7px; right:8px;
+  width:7px; height:7px; border-radius:50%; background:#6366f1;
+}
+
+/* Narrative bars */
+.narrative-bar-row {
+  display:flex; align-items:center; gap:6px; padding:3px 0;
+}
+.narrative-bar-label {
+  font-size:0.72rem; color:#94a3b8; min-width:120px; white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis;
+}
+.narrative-bar-track {
+  flex:1; height:8px; background:#0f172a; border-radius:4px;
+  overflow:hidden; border:1px solid #1e293b;
+}
+.narrative-bar-fill {
+  height:100%; border-radius:4px;
+  background:linear-gradient(90deg, #f59e0b, #fbbf24);
+  transition:width 0.6s ease;
+}
+.narrative-bar-fill.dominant {
+  background:linear-gradient(90deg, #10b981, #34d399);
+  box-shadow:0 0 6px #10b98180;
+}
+.narrative-bar-str {
+  font-size:0.68rem; color:#475569; min-width:28px; text-align:right;
+}
+
+/* Memory tier buttons */
+.mem-tier-btn {
+  padding:3px 8px; background:#0f172a; border:1px solid #334155;
+  border-radius:4px; color:#64748b; cursor:pointer; font-size:0.7rem;
+  transition:all 0.15s;
+}
+.mem-tier-btn:hover { border-color:#6366f1; color:#c4b5fd; }
+.mem-tier-btn.active { border-color:#6366f1; color:#c4b5fd; background:#1e1b4b; }
+
+/* Memory tier records */
+.mem-record {
+  background:#080011; border:1px solid #1e293b; border-radius:4px;
+  padding:5px 8px; font-size:0.72rem; color:#94a3b8;
+}
+.mem-record .rec-content { color:#e2e8f0; margin-bottom:2px; line-height:1.4; }
+.mem-record .rec-meta { display:flex; gap:8px; font-size:0.66rem; color:#334155; }
+.rec-salience-bar {
+  display:inline-block; height:4px; border-radius:2px;
+  background:#6366f1; vertical-align:middle; margin-right:4px;
+}
 .ob-dot.active { background:#6366f1; border-color:#6366f1; transform:scale(1.3); }
 .ob-dot.done   { background:#22c55e; border-color:#22c55e; }
 .ob-step { width:100%; }
@@ -4963,6 +5091,308 @@ function shareBrain() {
   });
 }
 
+
+// ═══════════════════════════════════════════════════════════════
+// AUTONOMOUS REFLECTIONS
+// ═══════════════════════════════════════════════════════════════
+let _reflectionCount = 0;
+
+socket.on("reflection", (d) => {
+  _reflectionCount++;
+  const el = document.getElementById("reflection-count");
+  if (el) el.textContent = `${_reflectionCount} thoughts`;
+  renderReflection(d);
+});
+
+function renderReflection(r) {
+  const list = document.getElementById("reflection-stream");
+  if (!list) return;
+  const hasBelief = !!r.belief_key;
+  const card = document.createElement("div");
+  card.className = "reflection-card";
+  const age = r.t ? new Date(r.t * 1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}) : "";
+  card.innerHTML = `
+    ${hasBelief ? '<div class="refl-belief-dot" title="Formed a belief from this thought"></div>' : ""}
+    <div class="refl-text">"${r.text}"</div>
+    <div class="refl-meta">${r.category || "reflection"} · ${age}</div>
+  `;
+  list.insertBefore(card, list.firstChild);
+  // Keep max 12 reflections visible
+  while (list.children.length > 12) list.removeChild(list.lastChild);
+}
+
+function loadReflections() {
+  fetch("/api/brain/reflections?n=10").then(r=>r.json()).then(d=>{
+    const list = document.getElementById("reflection-stream");
+    if (!list || !d.reflections) return;
+    list.innerHTML = "";
+    _reflectionCount = d.reflections.length;
+    const countEl = document.getElementById("reflection-count");
+    if (countEl) countEl.textContent = `${_reflectionCount} thoughts`;
+    d.reflections.slice().reverse().forEach(renderReflection);
+  }).catch(()=>{});
+}
+
+// ═══════════════════════════════════════════════════════════════
+// NARRATIVE WORLDVIEWS
+// ═══════════════════════════════════════════════════════════════
+socket.on("narrative_state", (d) => {
+  renderNarratives(d);
+});
+
+function renderNarratives(d) {
+  const domEl   = document.getElementById("narrative-dominant");
+  const barsEl  = document.getElementById("narrative-bars");
+  if (!barsEl) return;
+  if (domEl && d.dominant) domEl.textContent = d.dominant;
+
+  const items = d.top || d.all || [];
+  barsEl.innerHTML = "";
+  items.slice(0, 5).forEach(n => {
+    const pct = Math.round(n.strength * 100);
+    const isDom = n.name === d.dominant;
+    const row = document.createElement("div");
+    row.className = "narrative-bar-row";
+    row.innerHTML = `
+      <div class="narrative-bar-label" title="${n.name}">${isDom ? "★ " : ""}${n.name}</div>
+      <div class="narrative-bar-track">
+        <div class="narrative-bar-fill ${isDom ? 'dominant' : ''}"
+             style="width:${pct}%"></div>
+      </div>
+      <div class="narrative-bar-str">${pct}%</div>
+    `;
+    barsEl.appendChild(row);
+  });
+
+  // Show recent flip
+  const flips = d.recent_flips || d.flips || [];
+  if (flips.length) {
+    const latest = flips[flips.length - 1];
+    const flipEl = document.createElement("div");
+    flipEl.style.cssText = "font-size:0.68rem;color:#f59e0b;margin-top:4px;padding:3px 6px;background:#451a03;border-radius:4px;";
+    flipEl.textContent = `⚔ ${latest.from} → ${latest.to}`;
+    barsEl.appendChild(flipEl);
+  }
+}
+
+function loadNarratives() {
+  fetch("/api/brain/narratives").then(r=>r.json()).then(d => {
+    renderNarratives(d);
+  }).catch(()=>{});
+}
+
+// ═══════════════════════════════════════════════════════════════
+// EMOTIONAL STATE BAR
+// ═══════════════════════════════════════════════════════════════
+let _rewardTrend = 0.5;
+const _MOOD_LABELS = [
+  [0.85, 0.7,  "🔥 Hyperfocused"],
+  [0.65, 0.5,  "⚡ Alert"],
+  [0.5,  0.3,  "😊 Engaged"],
+  [0.3,  0.0,  "😌 Calm"],
+  [0.3, -0.3,  "😶 Neutral"],
+  [0.0, -0.5,  "😕 Uneasy"],
+  [0.0, -1.0,  "😰 Stressed"],
+];
+function moodLabel(ne, reward) {
+  if (ne > 0.75) return reward > 0.5 ? "🔥 Hyperfocused" : "⚡ Tense";
+  if (ne > 0.55) return reward > 0.4 ? "⚡ Alert" : "😟 Anxious";
+  if (ne > 0.35) return reward > 0.4 ? "😊 Engaged" : "😐 Cautious";
+  return reward > 0.5 ? "😌 Satisfied" : ne < 0.25 ? "💤 Drifting" : "😶 Neutral";
+}
+
+function updateEmotionBars(neuromod, rewardScore, surpriseScore) {
+  const ne  = typeof neuromod === "object" ? (neuromod.norepinephrine || 0.4) : 0.4;
+  if (rewardScore != null) _rewardTrend = _rewardTrend * 0.85 + rewardScore * 0.15;
+  const surp = surpriseScore || 0;
+
+  const neBar = document.getElementById("emo-ne-bar");
+  const rwBar = document.getElementById("emo-reward-bar");
+  const spBar = document.getElementById("emo-surprise-bar");
+  const moodLbl = document.getElementById("emo-mood-label");
+
+  if (neBar)  neBar.style.width  = Math.round(ne * 100) + "%";
+  if (rwBar)  rwBar.style.width  = Math.round(_rewardTrend * 100) + "%";
+  if (spBar)  spBar.style.width  = Math.round(Math.min(1,surp) * 100) + "%";
+  if (moodLbl) moodLbl.textContent = moodLabel(ne, _rewardTrend);
+
+  // Color NE bar by intensity
+  if (neBar) {
+    neBar.style.background = ne > 0.7 ? "linear-gradient(90deg,#f87171,#fbbf24)"
+      : ne > 0.45 ? "linear-gradient(90deg,#8b5cf6,#6366f1)"
+      : "linear-gradient(90deg,#3b82f6,#6366f1)";
+  }
+}
+
+// Hook into existing neuromodulator update
+const _origNmUpdate = window._nmUpdateHook;
+socket.on("brain_state", (d) => {
+  if (d && d.neuromod) {
+    const reward = d.recent_reward || d.reward_avg || 0;
+    const surprise = d.last_surprise || 0;
+    updateEmotionBars(d.neuromod, reward, surprise);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// MEMORY TIER BROWSER
+// ═══════════════════════════════════════════════════════════════
+let _currentMemTier = "episodic";
+
+function selectMemTier(tier, btn) {
+  _currentMemTier = tier;
+  document.querySelectorAll(".mem-tier-btn").forEach(b => b.classList.remove("active"));
+  if (btn) btn.classList.add("active");
+  loadMemTier(tier);
+}
+
+function loadMemTier(tier) {
+  fetch(`/api/brain/memory_hierarchy?tier=${tier}&n=20`).then(r=>r.json()).then(d => {
+    // Stats row
+    const statsEl = document.getElementById("mem-tier-stats");
+    if (statsEl && d.stats) {
+      statsEl.innerHTML = Object.entries(d.stats).map(([t, s]) =>
+        `<span style="color:${t===tier?'#c4b5fd':'#475569'};">${t}: ${s.count} · ${(s.avg_salience*100).toFixed(0)}% sal</span>`
+      ).join("&nbsp;&nbsp;·&nbsp;&nbsp;");
+    }
+    // Record list
+    const listEl = document.getElementById("mem-tier-list");
+    if (!listEl) return;
+    const records = d.tiers[tier] || [];
+    if (!records.length) {
+      listEl.innerHTML = `<div style="font-size:0.72rem;color:#334155;padding:8px 0;">No ${tier} memories yet.</div>`;
+      return;
+    }
+    listEl.innerHTML = records.map(r => {
+      const sal = Math.round(r.salience * 100);
+      const val = r.valence > 0.1 ? "🟢" : r.valence < -0.1 ? "🔴" : "⚫";
+      const tags = (r.tags || []).join(", ");
+      const age = r.created_at ? new Date(r.created_at * 1000).toLocaleDateString() : "";
+      return `<div class="mem-record">
+        <div class="rec-content">${r.content}</div>
+        <div class="rec-meta">
+          <span>${val} val: ${r.valence>0?"+":""}${r.valence?.toFixed(2)||"0"}</span>
+          <span><span class="rec-salience-bar" style="width:${Math.round(sal*0.5)}px;"></span>${sal}%</span>
+          ${tags ? `<span>${tags}</span>` : ""}
+          <span>${age}</span>
+        </div>
+      </div>`;
+    }).join("");
+  }).catch(()=>{});
+}
+
+// ═══════════════════════════════════════════════════════════════
+// NEURAL CANVAS UPGRADES — connection glow + conflict physics
+// ═══════════════════════════════════════════════════════════════
+(function() {
+  // Patch the existing Hebbian arc renderer to support weight-based line thickness
+  // This hook runs after the main neural canvas script initialises
+  window._neuralCanvasEnhanced = false;
+
+  function enhanceNeuralCanvas() {
+    const canvas = document.getElementById("neural-canvas");
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx || window._neuralCanvasEnhanced) return;
+
+    // Patch the drawArc function if it exists in the global scope
+    // (safe no-op if the existing canvas code doesn't expose it)
+    const origDraw = window.drawHebbianArc;
+    if (typeof origDraw === "function") {
+      window.drawHebbianArc = function(x1, y1, x2, y2, weight, active) {
+        const w = Math.max(0.5, weight * 3.5);
+        const alpha = Math.min(0.9, 0.15 + weight * 0.75);
+        ctx.save();
+        ctx.lineWidth = w;
+        ctx.globalAlpha = active ? Math.min(1.0, alpha * 1.4) : alpha * 0.5;
+        if (active && weight > 0.6) {
+          ctx.shadowBlur  = 8 + weight * 10;
+          ctx.shadowColor = `rgba(99,102,241,${alpha})`;
+        }
+        origDraw.call(this, x1, y1, x2, y2, weight, active);
+        ctx.restore();
+      };
+      window._neuralCanvasEnhanced = true;
+    }
+  }
+
+  // Cluster force-layout physics for conflict visualization
+  const _clusterForce = {};  // {name: {x, y, vx, vy, r}}
+  let   _forceRunning = false;
+  let   _lastActMap   = {};
+
+  function initClusterForce(clusterNames, canvasW, canvasH) {
+    const n = clusterNames.length;
+    clusterNames.forEach((name, i) => {
+      if (!_clusterForce[name]) {
+        const angle = (i / n) * Math.PI * 2;
+        const r     = Math.min(canvasW, canvasH) * 0.35;
+        _clusterForce[name] = {
+          x:  canvasW / 2 + Math.cos(angle) * r,
+          y:  canvasH / 2 + Math.sin(angle) * r,
+          vx: 0, vy: 0,
+          r:  14,
+        };
+      }
+    });
+  }
+
+  function stepClusterPhysics(actMap, canvasW, canvasH) {
+    const names = Object.keys(_clusterForce);
+    const CX = canvasW / 2, CY = canvasH / 2;
+    names.forEach(n => {
+      const c    = _clusterForce[n];
+      const act  = actMap[n] || 0;
+      c.r        = 10 + act * 18;   // dominant = bigger
+
+      // Attraction to center
+      const dx = CX - c.x, dy = CY - c.y;
+      c.vx += dx * 0.002;
+      c.vy += dy * 0.002;
+
+      // Repulsion from neighbours
+      names.forEach(m => {
+        if (m === n) return;
+        const o  = _clusterForce[m];
+        const ex = c.x - o.x, ey = c.y - o.y;
+        const d  = Math.sqrt(ex*ex + ey*ey) || 1;
+        const minD = c.r + o.r + 8;
+        if (d < minD) {
+          const f = (minD - d) / d * 0.08;
+          c.vx += ex * f;
+          c.vy += ey * f;
+        }
+      });
+
+      // Damping
+      c.vx *= 0.85;
+      c.vy *= 0.85;
+      c.x  += c.vx;
+      c.y  += c.vy;
+
+      // Clamp to canvas
+      c.x = Math.max(c.r + 5, Math.min(canvasW - c.r - 5, c.x));
+      c.y = Math.max(c.r + 5, Math.min(canvasH - c.r - 5, c.y));
+    });
+  }
+
+  // Expose for external use by the main canvas renderer
+  window._axonClusterForce    = _clusterForce;
+  window._stepClusterPhysics  = stepClusterPhysics;
+  window._initClusterForce    = initClusterForce;
+  window._updateClusterActs   = function(actMap) { _lastActMap = actMap; };
+
+  // Run physics loop
+  function physicsLoop() {
+    const canvas = document.getElementById("neural-canvas");
+    if (!canvas) { setTimeout(physicsLoop, 500); return; }
+    stepClusterPhysics(_lastActMap, canvas.width, canvas.height);
+    requestAnimationFrame(physicsLoop);
+  }
+  setTimeout(physicsLoop, 1500);
+  setTimeout(enhanceNeuralCanvas, 2000);
+})();
+
 // ═══════════════════════════════════════════════════════════════
 // TIME-SCALE / COGNITIVE SPEED
 // ═══════════════════════════════════════════════════════════════
@@ -5061,6 +5491,9 @@ document.addEventListener("DOMContentLoaded", () => {
   }).catch(() => {});
   loadGoals();
   loadSpeed();
+  loadReflections();
+  loadNarratives();
+  loadMemTier("episodic");
 });
 </script>
 
