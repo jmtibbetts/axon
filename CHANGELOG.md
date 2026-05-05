@@ -4,6 +4,34 @@ All notable changes to AXON are documented here.
 
 ---
 
+## [1.4.0] — 2026-05-05
+
+### Added
+- **Thought Generator** (`axon/cognition/thought_generator.py`) — the LLM is no longer the brain; it is the imagination engine. Before every response, a full 7-step pipeline runs:
+  1. **Goal Conditioning** — injects current goal, emotional state prose (NE/DA/SE), personality vector + behavioral stance, active drives, and dominant worldview into a `[GOAL CONDITIONING]` system prefix seen by the LLM before generation.
+  2. **Intelligent Memory Injection** — selects and weights relevant memories from: top strategy outcomes, keyword-overlapping episodic memories, current explore/exploit bias, and one relevant high-confidence belief. Never a raw dump.
+  3. **Candidate Generation** — LLM generates `N=3` distinct candidate responses in "THOUGHT GENERATION MODE" (possibilities, not answers). Parsed by numbered list pattern.
+  4. **Candidate Scoring** — each candidate is mapped to a cluster activation profile across 12 brain regions via `ACTIVATION_KEYWORDS`. Scored by: neural alignment (dot product vs live activations), personality trait affinity (`TRAIT_REGION_AFFINITY`), reward plausibility (DA/NE/valence → word-level signals), and a de-weighted position prior.
+  5. **Conflict Resolution** — `ConflictEngine`-aligned winner: candidate whose activation profile best matches live neural state wins. Fallback to highest score.
+  6. **Winner Reasoning** — each candidate annotated with dominant region, score delta vs winner, and reason for winning or suppression.
+  7. **Learning Loop** — `record_outcome(delta_valence)` closes the cycle after emotional feedback: rewards winning cluster activations proportional to valence delta, updates strategy library, boosts memory salience for recent episodes, emits `prediction_error` socket event.
+- **`ACTIVATION_KEYWORDS`** map — 12 brain regions → keyword lists used to build per-candidate activation profiles.
+- **`TRAIT_REGION_AFFINITY`** map — 5 personality traits × region modifiers that bias scoring toward candidate profiles matching the dominant trait.
+- **`ThoughtCandidate`** dataclass — `text`, `activations`, `base_score`, `reward_score`, `final_score`, `winner`, `reasoning`.
+- **`competition_history`** ring buffer — last 20 thought competitions stored, accessible via `recent_competitions(n)`.
+- **"Competing Thoughts" UI panel** — live panel above Autonomous Reflections showing each round: all candidates with score bars, dominant region annotation, ✓ WINNER badge, suppression reasoning. Glows amber when a new round arrives. Displays up to 5 most recent rounds.
+- **`socket.on('thought_competition')`** — live prepend of each new competition round to the UI panel.
+- **`GET /api/brain/thought_competition`** — REST endpoint returning last N competition rounds.
+- **`socket emit 'prediction_error'`** — emitted from `record_outcome()` with error magnitude, delta, source, and winning candidate preview.
+
+### Changed
+- `_think()` in `engine.py` — routes through `thought_gen.generate()` instead of `language.think()` directly. History, memory storage, user model ingestion, and Hebbian co-activations preserved as direct calls post-generation. Falls back to `language.think()` if ThoughtGenerator errors.
+- `engine.py` — emits `thought_competition` socket event with full candidate log after each response.
+- `engine.py` — emotional feedback block now calls `thought_gen.record_outcome(delta_valence)` to close the learning loop.
+- `ThoughtGenerator` initialized after `CognitiveCycle` starts — receives `language`, `fabric`, `memory`, and `engine` references.
+
+---
+
 ## [1.3.0] — 2026-05-05
 
 ### Added

@@ -4,7 +4,7 @@
 
 ### Emerging Artificial Intelligence
 
-*A biologically-inspired AI that sees, hears, recognises faces, reads your voice, learns, remembers, competes, forms beliefs, builds opinions, reflects on itself, narrates competing worldviews, manages four tiers of memory, disagrees when it should, explains its decisions, exposes a clean API — and speaks through any LLM you choose, local or cloud.*
+*A biologically-inspired AI that sees, hears, recognises faces, reads your voice, learns, remembers, competes, forms beliefs, builds opinions, reflects on itself, narrates competing worldviews, manages four tiers of memory, uses the LLM as an imagination engine rather than an answer machine, evaluates competing thoughts before speaking, closes a real learning loop — and speaks through any LLM you choose, local or cloud.*
 
 [![Python](https://img.shields.io/badge/Python-3.12-blue?style=flat-square&logo=python)](https://python.org)
 [![PyTorch](https://img.shields.io/badge/PyTorch-CUDA%2012.8-orange?style=flat-square&logo=pytorch)](https://pytorch.org)
@@ -25,6 +25,8 @@ It has real-time vision (YOLOv8 face detection + FER emotion recognition), **fac
 It talks to an LLM of your choice — **local via [LM Studio](https://lmstudio.ai) (no API key, fully private) or cloud via OpenAI, Anthropic Claude, Google Gemini, or Groq** — switchable at runtime through the built-in LLM provider panel.
 
 What separates AXON from other "neural" AI projects is genuine internal depth that goes beyond signal routing. Every 100ms, a **synchronized central cognitive loop** sequences all subsystems in explicit dependency order. **Clusters compete for dominance** via lateral inhibition. **Four internal drives** (curiosity, social, competence, stability) accumulate pressure when unmet and discharge when satisfied. The system forms **weighted beliefs** that update from lived experience and challenge external knowledge. A **multi-dimensional value system** scores the same outcome differently depending on personality. A **structured self-model** (I am, I believe, I like, I avoid, I want) is rebuilt continuously and injected into every decision. AXON now **reflects autonomously** every ~15 seconds — forming conclusions from its own activation patterns. **Seven competing worldviews** fight for narrative dominance on every tick. A **four-tier memory hierarchy** (Episodic → Semantic → Value → Identity) manages what gets kept, what decays, and what becomes part of the self. **Personality traits** (curiosity, risk, stability, persistence, neuroticism) are fully wired — each one directly shapes exploration rate, cluster resistance, and neuromodulator swings. And a **weight-driven neural canvas** makes Hebbian learning, thought bubbles, and pruning events visible in real time.
+
+The most fundamental shift is in how the LLM is used. The LLM is no longer the brain — it is the **imagination engine**. Before every response, a **Thought Generator** injects goal conditioning (current goal, emotional state, personality vector, active drives, dominant worldview) and **intelligently selected memory** (relevant past outcomes, episodes, beliefs, and current bias) into the LLM, which then generates **N distinct candidate responses**. Each candidate is mapped to a cluster activation profile across 12 brain regions, scored by neural alignment with the live state, personality trait affinity, reward plausibility, and an ordering prior — and the **Conflict Engine resolves the winner**. After the response is delivered, a **learning loop** closes: emotional feedback fires `record_outcome()`, the winning cluster activations are rewarded, the strategy library is updated, memory salience is boosted, and a prediction error event is emitted. The LLM call is now part of a continuous learning cycle, not a one-off event. Every round is visible in the live **Competing Thoughts** panel in the UI.
 
 ---
 
@@ -90,6 +92,10 @@ What separates AXON from other "neural" AI projects is genuine internal depth th
                         |  |  MEMORY HIERARCHY  (4-tier, tiered decay)|   |
                         |  |  MEMORY DECAY     (Ebbinghaus forgetting)|   |
                         |  |  COGNITIVE SPEED  (0.05–5× real-time)    |   |
+                        |  |  THOUGHT GENERATOR (LLM as imagination)  |   |
+                        |  |  GOAL CONDITIONING (goal+state+pers+drive)|   |
+                        |  |  MEMORY INJECTION  (intelligent selection)|   |
+                        |  |  CANDIDATE SCORING (neural alignment)     |   |
                         |  |  PUBLIC BRAIN API (clean external layer) |   |
                         |  +------------------------------------------+   |
                         +------------------------+--------------------------+
@@ -148,6 +154,9 @@ while True:  # 0.05–50 Hz, adjustable with the time-scale slider
     thought_trace.emit(cognitive_state)
     time.sleep(1 / cognitive_speed)
 ```
+
+> **Note:** The LLM is called from outside the cognitive loop — it is invoked on user input, not on every cycle tick. The loop above governs background cognition; `thought_gen.generate()` runs as a separate call when the user speaks, using the live loop state as input.
+
 
 ---
 
@@ -216,6 +225,103 @@ Traits drift slowly based on reward history — repeated rewards for a pattern r
 
 ---
 
+
+## Thought Generator — LLM as Imagination Engine
+
+The core architectural shift in v1.4.0: the LLM no longer generates the final answer directly. It generates **possibilities**. AXON's neural systems pick the winner.
+
+### Pipeline
+
+```
+User input
+    │
+    ▼
+[1] Goal Conditioning
+    Inject: current goal, emotional state (NE/DA/SE prose),
+            personality vector + behavioral stance,
+            active drives, dominant worldview
+    │
+    ▼
+[2] Intelligent Memory Injection
+    Select: top strategy outcomes (relevant past performance)
+            relevant episodic memories (keyword overlap with input)
+            current bias (explore/exploit state)
+            one relevant high-confidence belief
+    │
+    ▼
+[3] Candidate Generation (LLM as imagination)
+    Prompt: "Generate 3 distinct candidate responses — not answers, possibilities."
+    Output: 3 candidates with genuinely different angles, tones, strategies
+    │
+    ▼
+[4] Candidate Scoring (neural alignment)
+    For each candidate:
+      - Map text → cluster activation profile (12 regions, keyword→region)
+      - Score: neural alignment (dot product vs live activations)
+               + personality trait affinity (TRAIT_REGION_AFFINITY)
+               + reward plausibility (DA/NE/valence → word-level signals)
+               + position prior (LLM ordering, de-weighted)
+    │
+    ▼
+[5] Conflict Resolution
+    ConflictEngine aligns each candidate's activation profile with live neural state.
+    Highest combined score wins.
+    │
+    ▼
+[6] Winner Reasoning
+    Each candidate annotated: why it won or was suppressed.
+    Emitted as 'thought_competition' socket event → UI panel.
+    │
+    ▼
+[7] Learning Loop (closes the cycle)
+    After emotional feedback arrives:
+      record_outcome(delta_valence)
+        → reward winning cluster activations
+        → update strategy library
+        → boost memory salience for relevant episodes
+        → emit prediction_error event
+```
+
+### Goal Conditioning in Detail
+
+Before the LLM sees the user's message, it receives a `[GOAL CONDITIONING]` block:
+
+```
+CURRENT GOAL: understand what Jon is trying to build
+EMOTIONAL STATE: under pressure, highly motivated, mood neutral (NE=0.71, DA=0.64, SE=0.49)
+PERSONALITY VECTOR: curiosity=0.82, risk=0.61, stability=0.44
+BEHAVIORAL STANCE (from curiosity=0.82): prioritise novelty and exploration over safe answers
+ACTIVE DRIVES: social pressure=0.71, competence unmet (0.58), curiosity high (0.83)
+ACTIVE WORLDVIEW: Intellectual Dominance
+```
+
+This means every LLM response is shaped by AXON's actual neural state — not just the text of the question.
+
+### Intelligent Memory Injection in Detail
+
+```
+[MEMORY-GUIDED CONTEXT]
+Relevant past outcomes:
+  - direct_explanation → high reward (score +0.42)
+  - technical_deep_dive → failure under stress (score -0.18)
+Relevant memories:
+  - [curious] User asked about neural fabric architecture last session
+  - building something biologically inspired
+Current bias: favor novelty over consistency
+Relevant belief (87% confidence, biased toward): "depth is valued over brevity here"
+```
+
+### Personality → Exploration Mapping
+
+| Trait | Effect on ε / behavior |
+|---|---|
+| **Curiosity** (high) | ε floor raised — always willing to explore |
+| **Risk** (high) | ε ceiling raised — willing to push further |
+| **Stability** (high) | ε volatility damped — resists sudden changes |
+| **Persistence** (high) | Winning clusters hold dominance longer |
+| **Neuroticism** (high) | NE swings amplified on prediction error |
+
+---
 ## Neural Canvas — Visual Systems
 
 The real-time brain visualization has been significantly upgraded:
@@ -284,6 +390,7 @@ All brain state is exposed over a RESTful API. The socket also emits real-time e
 | `GET /api/brain/self_model` | Current self-model (I am, I believe, ...) |
 | `GET /api/brain/goals` | Current goal list |
 | `GET /api/brain/personality` | Personality trait vector |
+| `GET /api/brain/thought_competition` | Last N thought competition rounds (candidates, scores, winner, reasoning) |
 
 ### Interaction
 | Endpoint | Description |
@@ -301,6 +408,8 @@ All brain state is exposed over a RESTful API. The socket also emits real-time e
 | `surprise` | Surprise event fired |
 | `reflection` | New reflection formed |
 | `narrative_shift` | Worldview dominance flipped |
+| `thought_competition` | Full candidate competition log (candidates, scores, winner) |
+| `prediction_error` | Prediction error + delta from learning loop closure |
 | `synapse_formed` | New Hebbian connection established |
 
 ---
