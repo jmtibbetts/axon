@@ -4992,8 +4992,24 @@ function obStep1Next() {
 }
 function obStep2Next() {
   if (!obSelectedPreset) return;
+  const btn = document.querySelector('#ob-step-2 button[onclick="obStep2Next()"]');
+  if (btn) { btn.disabled = true; btn.textContent = "Applying…"; }
   fetch("/api/onboarding/preset", {method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({preset: obSelectedPreset})}).then(() => obShowStep(3));
+    body: JSON.stringify({preset: obSelectedPreset})})
+    .then(r => r.json())
+    .then(d => {
+      if (btn) { btn.disabled = false; btn.textContent = "Continue →"; }
+      if (d && d.ok === false) {
+        console.error("Preset error:", d.error);
+      }
+      obShowStep(3);
+    })
+    .catch(err => {
+      console.error("obStep2Next fetch failed:", err);
+      if (btn) { btn.disabled = false; btn.textContent = "Continue →"; }
+      // Proceed anyway — personality defaults will be used
+      obShowStep(3);
+    });
 }
 function obStep3Next() {
   const customTxt = document.getElementById("ob-custom-text").value.trim();

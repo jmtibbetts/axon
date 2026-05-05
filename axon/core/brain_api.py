@@ -593,9 +593,13 @@ class AxonBrain:
             return {"ok": False, "error": f"Unknown preset: {preset}"}
         try:
             p = e.fabric.personality
+            # PersonalityMatrix stores traits in self.traits dict, not as direct
+            # attributes — hasattr(p, k) always returns False for trait names.
+            # Write directly into the dict for all known trait keys.
+            known = set(p.ALL_TRAITS)
             for k, v in traits.items():
-                if k != "description" and hasattr(p, k):
-                    setattr(p, k, float(v))
+                if k != "description" and k in known:
+                    p.traits[k] = float(v)
             p.save()
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
