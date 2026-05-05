@@ -193,13 +193,18 @@ class FERDetector:
         if backend == "deepface":
             try:
                 from deepface import DeepFace
-                face = cv2.resize(face_bgr, (96, 96))
-                result = DeepFace.analyze(face, actions=["emotion"],
+                # Use a slightly larger crop — DeepFace works better at 112x112
+                face = cv2.resize(face_bgr, (112, 112))
+                # Convert BGR → RGB (DeepFace expects RGB)
+                face_rgb = cv2.cvtColor(face, cv2.COLOR_BGR2RGB)
+                result = DeepFace.analyze(face_rgb, actions=["emotion"],
                                           enforce_detection=False, silent=True)
                 # result is a list; take first entry
                 if isinstance(result, list):
                     result = result[0]
                 raw_emo = result.get("emotion", {})
+                if not raw_emo:
+                    return self._heuristic(face_bgr)
                 # normalize to 0–1 range (deepface returns percentages)
                 total = sum(raw_emo.values()) or 1.0
                 emotions = {k: v / total for k, v in raw_emo.items()}

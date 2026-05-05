@@ -171,8 +171,8 @@ canvas.spark{display:block;}
 #vision-canvas{width:100%;height:100%;display:block;image-rendering:pixelated;}
 
 /* -- SYSTEM LOG -- */
-.log-area{font-size:8px;color:var(--muted);overflow-y:auto;
-          padding:4px 8px;height:100%;}
+.log-area{font-size:9px;color:#94a3b8;overflow-y:auto;
+          padding:4px 8px;height:100%;line-height:1.6;}
 .log-entry{padding:1px 0;border-bottom:1px solid #0a0a0a;}
 .log-entry.err{color:var(--red);}
 
@@ -257,9 +257,9 @@ canvas.spark{display:block;}
         </select>
         <div id="mic-scan-status" style="font-size:7.5px;color:#64748b;margin-top:2px;"></div>
         <div class="settings-row" style="margin-top:6px;">
-          <button class="ctrl-btn active" onclick="startAxon()">> ACTIVATE</button>
-          <button class="ctrl-btn"        onclick="reprobe()" style="flex:.5">?</button>
-          <button class="ctrl-btn danger" onclick="stopAxon()">?</button>
+          <button class="ctrl-btn active" id="btn-activate" onclick="startAxon()">▶ ACTIVATE</button>
+          <button class="ctrl-btn"        onclick="reprobe()" style="flex:.6;font-size:9px;" title="Re-probe LM Studio">⟳ Reprobe</button>
+          <button class="ctrl-btn danger" onclick="stopAxon()" style="flex:.6;font-size:9px;" title="Stop engine">■ Stop</button>
         </div>
         <div class="settings-row" style="margin-top:4px;">
           <button class="ctrl-btn" onclick="requestDiagnostic()" style="border-color:#6366f1;color:#6366f1;font-size:8px;letter-spacing:.06em;">⚡ DIAGNOSTIC MODE</button>
@@ -302,9 +302,9 @@ canvas.spark{display:block;}
       </div>
     </div>
 
-    <div class="panel" style="flex:0 0 100px;">
-      <div class="panel-title">? System Log</div>
-      <div class="log-area" id="sys-log"></div>
+    <div class="panel" style="flex:0 0 180px;">
+      <div class="panel-title">📋 System Log</div>
+      <div class="log-area" id="sys-log" style="height:calc(100% - 22px);font-size:9px;line-height:1.5;"></div>
     </div>
 
   </div>
@@ -2961,7 +2961,17 @@ function stopAxon()  { socket.emit('stop_engine'); }
 function reprobe()   { socket.emit('reprobe_lm'); sysLog('Re-probing LM Studio...'); }
 
 // -- Socket events ---------------------------------------------
-socket.on('connect', () => sysLog('Socket connected.'));
+socket.on('connect', () => {
+  sysLog('Socket connected.');
+  // Auto-start the engine on every (re)connect so no manual ACTIVATE needed
+  if (!window._axonStarted) {
+    window._axonStarted = true;
+    setTimeout(() => {
+      sysLog('Auto-starting AXON...');
+      startAxon();
+    }, 800);   // brief delay so cfg fields are ready
+  }
+});
 
 socket.on('lm_status', d => {
   const s = document.getElementById('llm-status');
