@@ -30,6 +30,7 @@ from axon.cognition.surprise_events     import SurpriseDetector
 from axon.cognition.reflection_engine  import ReflectionEngine
 from axon.cognition.narrative_threads  import NarrativeThreads
 from axon.cognition.memory_hierarchy   import MemoryHierarchy
+from axon.cognition.thought_generator  import ThoughtGenerator
 
 
 class AxonEngine:
@@ -181,6 +182,12 @@ class AxonEngine:
         # ── Central Cognitive Cycle ────────────────────────────────────────
         self.cycle = CognitiveCycle(self)
         self.cycle.start()
+        self.thought_gen = ThoughtGenerator(
+            language=self.language,
+            fabric=self.fabric,
+            memory=self.memory,
+            engine=self,
+        )
         self._emit("log", {"msg": "⚙ Cognitive cycle online — 10Hz synchronized loop"})
 
         if enable_camera:
@@ -650,7 +657,51 @@ class AxonEngine:
                 "self_model":      self_model_str,
             }
             try:
-                response = self.language.think(user_input, visual_context=visual_ctx)
+                # ── THOUGHT GENERATOR — LLM as imagination engine ─────────
+                # Generate N candidates, score via neural state, conflict-resolve winner
+                competition_log = []
+                if hasattr(self, "thought_gen"):
+                    try:
+                        response, competition_log = self.thought_gen.generate(
+                            user_input,
+                            visual_context=visual_ctx,
+                            n=3,
+                        )
+                        # Also run language.think()-style side-effects (memory, user model, Hebbian)
+                        # by re-using think() but WITHOUT a second LLM call — inject winner as "input"
+                        # We do this by calling the post-processing steps directly:
+                        self.language._history.append({"role": "user",      "content": user_input})
+                        self.language._history.append({"role": "assistant",  "content": response})
+                        if len(self.language._history) > 8:
+                            self.language._history = self.language._history[-8:]
+                        # Memory, user model, Hebbian co-activations
+                        detected_topics = self.language._extract_topics(user_input)
+                        emotion_tag = visual_ctx.get("emotion") if visual_ctx else None
+                        importance = 0.75 if (emotion_tag and emotion_tag not in ("neutral","calm")) else 0.5
+                        if "?" in user_input: importance = max(importance, 0.6)
+                        self.memory.store_episode("auditory", {"text": user_input, "role": "user"},
+                                                   emotion=emotion_tag, importance=importance, topics=detected_topics)
+                        if self.language.user_model:
+                            self.language.user_model.ingest(user_input)
+                        for topic in detected_topics:
+                            self.memory.record_topic(topic)
+                        self.memory.coactivate("auditory_cortex", "working_memory")
+                        self.memory.coactivate("working_memory", "prefrontal_cortex")
+                    except Exception as tg_err:
+                        print(f"  [ThoughtGen] fallback to direct think(): {tg_err}")
+                        response = self.language.think(user_input, visual_context=visual_ctx)
+                        competition_log = []
+                else:
+                    response = self.language.think(user_input, visual_context=visual_ctx)
+                    competition_log = []
+
+                # Emit competition log to UI so "competing thoughts" panel can show it
+                if competition_log:
+                    self._emit("thought_competition", {
+                        "candidates":  competition_log,
+                        "input":       user_input[:80],
+                    })
+
                 self._emit("response",  {"text": response})
                 self._emit("thinking",  {"state": False})
                 # Push fresh profile to UI after each turn (user_model.ingest ran inside language.think)
@@ -697,6 +748,13 @@ class AxonEngine:
                 face_present   = bool(self._emotion_history)
 
                 if face_present:
+                    # ── LEARNING LOOP CLOSURE — close the thought competition cycle ──
+                    if hasattr(self, "thought_gen"):
+                        try:
+                            self.thought_gen.record_outcome(delta_valence, source="emotional_feedback")
+                        except Exception:
+                            pass
+
                     if delta_valence >= 0.3:
                         # Positive reaction — reward the pathways that fired
                         reward_amt = min(0.25, delta_valence * 0.5)

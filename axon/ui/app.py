@@ -748,6 +748,16 @@ def api_brain_narratives():
 
 # ─── Memory Hierarchy API ─────────────────────────────────────────────────
 
+
+@app.route("/api/brain/thought_competition", methods=["GET"])
+def api_brain_thought_competition():
+    """Recent thought competitions — the internal struggle before each output."""
+    if not _engine or not hasattr(_engine, "thought_gen"):
+        return jsonify({"competitions": []})
+    n = int(request.args.get("n", 5))
+    return jsonify({"competitions": _sanitize(_engine.thought_gen.recent_competitions(n))})
+
+
 @app.route("/api/brain/memory_hierarchy", methods=["GET"])
 def api_brain_memory_hierarchy():
     if not _engine or not hasattr(_engine, "mem_hierarchy"):
