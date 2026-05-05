@@ -309,6 +309,9 @@ class CognitiveCycle:
                     e._emit("thought_trace", {"trace": self.metrics.thought_trace[-6:]})
                 # Surprise: check prediction error spike
                 surprise_now = getattr(e.fabric, "_last_surprise", 0.0)
+                # Wire surprise into _last_reward so goals accumulate progress
+                if surprise_now > 0.05 and not getattr(e, "_last_reward", 0.0) > 0:
+                    e._last_reward = surprise_now * 0.4
                 if hasattr(e, "surprise"):
                     e.surprise.check_surprise_spike(surprise_now)
             except Exception:
@@ -377,6 +380,12 @@ class CognitiveCycle:
                     "is_novel":     is_nov,
                     "low_surprise": getattr(e.fabric, "_last_surprise", 1.0) < 0.05,
                 })
+                # Push goal progress to frontend every 50 ticks (~5s)
+                if self._tick_n % 50 == 0:
+                    try:
+                        e._emit("goals_update", {"goals": e.goals.all_goals()})
+                    except Exception:
+                        pass
                 for region, amt in e.goals.fabric_hints():
                     e.fabric.stimulate_region(region, amt * 0.5)
                 if hasattr(e, "surprise"):

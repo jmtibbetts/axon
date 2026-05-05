@@ -323,35 +323,65 @@ class AxonBrain:
             return {"ok": False, "error": "No engine attached"}
 
         def _run():
+            import random as _rnd
             e = self._engine
-            start_snap  = e.fabric.get_state_snapshot()
             start_pers  = e.fabric.personality.to_dict() if hasattr(e.fabric, "personality") else {}
             reward_acc  = 0.0
             belief_changes = 0
             explored    = []
 
+            # Self-reflection prompts for inner monologue
+            _self_prompts = [
+                "What patterns am I noticing in recent memory?",
+                "What do I believe with high confidence right now?",
+                "What is uncertain or contradictory in my knowledge?",
+                "What goal feels most urgent to me right now?",
+                "What have I learned from recent interactions?",
+                "What surprises me about my own thought patterns?",
+                "How has my internal state shifted recently?",
+            ]
+
             for i in range(steps):
                 # Stimulate default-mode + memory consolidation pathways
-                e.fabric.stimulate_region("hippocampus",         0.06)
-                e.fabric.stimulate_region("default_mode_network",0.08)
-                e.fabric.stimulate_region("prefrontal_cortex",   0.05)
-                e.fabric.stimulate_region("temporal_lobe",       0.04)
+                e.fabric.stimulate_region("hippocampus",          0.06)
+                e.fabric.stimulate_region("default_mode_network", 0.08)
+                e.fabric.stimulate_region("prefrontal_cortex",    0.05)
+                e.fabric.stimulate_region("temporal_lobe",        0.04)
 
                 # Occasionally replay a random memory
                 if i % 20 == 0:
                     try:
                         facts = list((e.memory.all_facts() or {}).items())
                         if facts:
-                            import random
-                            k, v = random.choice(facts)
+                            k, v = _rnd.choice(facts)
                             e.fabric.stimulate_for_input("memory", 0.15)
-                            explored.append(f"Recalled: {k}")
+                            explored.append(f"recalled: {k}")
                             e.knowledge.ingest(
                                 str(v)[:200],
                                 source_label="autonomous_replay",
                                 credibility=0.5,
                             )
                             belief_changes += 1
+                            e._last_reward = max(getattr(e, "_last_reward", 0.0), 0.12)
+                    except Exception:
+                        pass
+
+                # Self-prompt the LLM for genuine inner monologue (once per batch)
+                if i == steps // 2:
+                    try:
+                        prompt = _rnd.choice(_self_prompts)
+                        if hasattr(e, "thought_gen") and e.thought_gen:
+                            response, _ = e.thought_gen.generate(
+                                f"[inner monologue] {prompt}"
+                            )
+                            if response and len(response.strip()) > 10:
+                                e._emit("chat_message", {
+                                    "role":    "assistant",
+                                    "content": f"💭 {response.strip()}",
+                                    "observe": True,
+                                })
+                                explored.append(f"thought: {response.strip()[:80]}")
+                                e._last_reward = max(getattr(e, "_last_reward", 0.0), 0.2)
                     except Exception:
                         pass
 
@@ -359,7 +389,7 @@ class AxonBrain:
                 if hasattr(e, "drives"):
                     e.drives.tick()
 
-                # Cognitive cycle tick (if running, already ticking — else manual)
+                # Cognitive cycle tick (if not already running)
                 if not (hasattr(e, "cycle") and e.cycle and e.cycle._running):
                     try:
                         e.fabric._gpu_tick(0.1)

@@ -91,6 +91,11 @@ def on_connect():
     if _engine:
         emit("lm_status", _engine.language.get_status())
 
+@socketio.on("disconnect")
+def on_disconnect():
+    global _observe_active
+    _observe_active = False   # kill any running observe loop on disconnect
+
 @socketio.on("chat")
 def on_chat(data):
     if _engine:
@@ -199,6 +204,35 @@ def on_run_autonomous(data):
     steps  = int(data.get("steps", 100))
     result = _brain.run_autonomous(steps=steps)
     emit("log", {"msg": f"🧠 Autonomous run started ({steps} steps)"})
+
+# ── Observe Mode: continuous autonomous thinking loop ──────────────────────
+_observe_active = False
+
+@socketio.on("observe_mode")
+def on_observe_mode(data):
+    global _observe_active
+    enabled = bool(data.get("enabled", False))
+    _observe_active = enabled
+    if not _brain:
+        return
+    if enabled:
+        emit("log", {"msg": "👁 Observe Mode ON — AXON is thinking autonomously"})
+        _start_observe_loop()
+    else:
+        emit("log", {"msg": "⚡ Train Mode — awaiting your input"})
+
+def _start_observe_loop():
+    import time
+    def _loop():
+        global _observe_active
+        while _observe_active and _brain:
+            try:
+                _brain.run_autonomous(steps=20, interval_ms=80)
+            except Exception:
+                pass
+            time.sleep(2.0)  # pause between bursts so UI can breathe
+    import threading
+    threading.Thread(target=_loop, daemon=True).start()
 
 @socketio.on("get_explanation")
 def on_get_explanation(_data=None):

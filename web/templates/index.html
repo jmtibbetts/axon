@@ -229,6 +229,13 @@ canvas.spark{display:block;}
               transition:all .2s;}
 .provider-btn:hover{border-color:#6366f1;color:#e2e8f0;}
 .provider-btn.active{background:#6366f122;border-color:#6366f1;color:#a5b4fc;}
+
+/* ── Observe Mode pulse ─────────────────────────────────────── */
+@keyframes observePulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+  50%      { box-shadow: 0 0 0 6px rgba(34,197,94,0.35); }
+}
+.observe-pulse { animation: observePulse 1.4s ease-in-out infinite; }
 </style>
 </head>
 <body>
@@ -1373,7 +1380,7 @@ function fmt(n) {
 </script>
 
 <script>
-const socket = io();
+var socket = io(); // global — used across multiple script blocks
 
 // ═══════════════════════════════════════════════════════════════
 // DIAGNOSTIC MODE  — defined here so socket is in scope
@@ -3425,6 +3432,36 @@ socket.on('response', d => {
   }
 });
 
+// Observe-mode inner monologue
+socket.on('chat_message', d => {
+  if (!d || !d.content) return;
+  if (d.observe) {
+    // Inner monologue — distinct italic styling
+    addObserveThought(d.content);
+  } else if (d.role === 'assistant') {
+    addMsg(d.content, 'axon');
+  }
+});
+
+function addObserveThought(text) {
+  const feed = document.getElementById('chat-feed');
+  if (!feed) return;
+  const div = document.createElement('div');
+  div.style.cssText = [
+    'padding:8px 14px',
+    'margin:4px 0',
+    'font-style:italic',
+    'color:#818cf8',
+    'font-size:0.82rem',
+    'border-left:2px solid #4338ca',
+    'background:rgba(67,56,202,0.06)',
+    'border-radius:0 6px 6px 0',
+  ].join(';');
+  div.textContent = text;
+  feed.appendChild(div);
+  feed.scrollTop = feed.scrollHeight;
+}
+
 // User profile polling
 function renderProfile() {
   fetch('/api/user_profile').then(r => r.json()).then(p => {
@@ -3795,6 +3832,20 @@ socket.on('autonomous_run_complete', d => {
   if (d.personality_drift && Object.keys(d.personality_drift).length) {
     const drifts = Object.entries(d.personality_drift).map(([k,v])=>`${k}: ${v>0?'+':''}${v}`).join(', ');
     addTimelineEvent('belief', 'Personality drift', drifts);
+  }
+  // In observe mode: surface inner monologue in the chat window
+  if (typeof axonObserveMode !== 'undefined' && axonObserveMode) {
+    let thoughts = [];
+    if (d.explored && d.explored.length) thoughts = d.explored.slice(0, 3);
+    if (d.personality_drift && Object.keys(d.personality_drift).length) {
+      const drifts = Object.entries(d.personality_drift)
+        .map(([k,v]) => `${k} ${v>0?'▲':'▼'}${Math.abs(v).toFixed(2)}`).join('  ');
+      thoughts.push(`personality drift: ${drifts}`);
+    }
+    if (d.belief_updates > 0) thoughts.push(`processed ${d.belief_updates} belief update${d.belief_updates>1?'s':''}`);
+    if (thoughts.length) {
+      addMsg("[ " + thoughts.join(" · ") + " ]", "axon");
+    }
   }
 });
 
@@ -5089,19 +5140,33 @@ let axonObserveMode = false;
 
 function toggleObserveMode() {
   axonObserveMode = !axonObserveMode;
-  const btn = document.getElementById("observe-mode-btn");
-  const inp = document.getElementById("user-input");
-  const sendBtn = document.querySelector(".send-btn");
-  if (btn) btn.textContent = axonObserveMode ? "⚡ Train Mode" : "👁 Observe Mode";
-  if (inp) inp.disabled = axonObserveMode;
+  const btn    = document.getElementById("observe-mode-btn");
+  const inp    = document.getElementById("user-input");
   const chatIn = document.getElementById("chat-in");
+  const sendBtn = document.querySelector(".send-btn");
+
+  if (btn) {
+    btn.textContent = axonObserveMode ? "⚡ Train Mode" : "👁 Observe Mode";
+    btn.style.borderColor = axonObserveMode ? "#22c55e" : "#6366f1";
+    btn.style.color       = axonObserveMode ? "#22c55e" : "#a5b4fc";
+    if (axonObserveMode) btn.classList.add("observe-pulse");
+    else                 btn.classList.remove("observe-pulse");
+  }
+  if (inp)    inp.disabled    = axonObserveMode;
   if (chatIn) chatIn.disabled = axonObserveMode;
+  if (sendBtn) sendBtn.disabled = axonObserveMode;
+
+  // Tell the backend
+  socket.emit("observe_mode", { enabled: axonObserveMode });
+
   if (axonObserveMode) {
     showSurpriseToast({
       type: "mode_change", title: "👁 Observe Mode",
-      detail: "Input disabled — watching AXON think autonomously",
+      detail: "AXON is now thinking autonomously — watch the Brain panel",
       severity: "low"
     });
+    // Surface a live thought indicator in chat
+    addMsg("[ entering observe mode — thinking autonomously... ]", "axon");
   } else {
     showSurpriseToast({
       type: "mode_change", title: "⚡ Train Mode",
@@ -5142,6 +5207,11 @@ function renderGoals(goals) {
 
 // Reload goals every 10s
 setInterval(loadGoals, 10000);
+
+// Real-time goal push from cognitive cycle
+socket.on("goals_update", d => {
+  if (d && d.goals) renderGoals(d.goals);
+});
 
 // ═══════════════════════════════════════════════════════════════
 // BRAIN FORK + SHARE

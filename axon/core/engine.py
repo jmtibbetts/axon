@@ -759,6 +759,7 @@ class AxonEngine:
                         # Positive reaction — reward the pathways that fired
                         reward_amt = min(0.25, delta_valence * 0.5)
                         self.fabric.inject_reward(reward_amt, source="emotional_feedback")
+                        self._last_reward = max(self._last_reward, reward_amt)
                         self.fabric.stimulate_for_input("reward_signal", 0.60)
                         self._emit("log", {"msg": f"😊 Emotional reward +{reward_amt:.2f} — user {emotion_before}→{emotion_after}"})
                         self._emit("memory_event", {
@@ -774,6 +775,7 @@ class AxonEngine:
                         # Negative reaction — apply stress penalty
                         stress_amt = min(0.20, abs(delta_valence) * 0.4)
                         self.fabric.inject_penalty(stress_amt, source="emotional_feedback")
+                        self._last_reward = min(self._last_reward, -stress_amt)
                         self._emit("log", {"msg": f"😟 Emotional penalty -{stress_amt:.2f} — user {emotion_before}→{emotion_after}"})
                         self._emit("memory_event", {
                             "type":   "episode",
