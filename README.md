@@ -4,7 +4,7 @@
 
 ### Emerging Artificial Intelligence
 
-*A biologically-inspired AI that sees, hears, recognises faces, reads your voice, learns, remembers, competes, forms beliefs, grows drives, thinks in a synchronized cognitive cycle — and speaks through any LLM you choose, local or cloud.*
+*A biologically-inspired AI that sees, hears, recognises faces, reads your voice, learns, remembers, competes, forms beliefs, builds opinions, explains its decisions, exposes a clean API — and speaks through any LLM you choose, local or cloud.*
 
 [![Python](https://img.shields.io/badge/Python-3.12-blue?style=flat-square&logo=python)](https://python.org)
 [![PyTorch](https://img.shields.io/badge/PyTorch-CUDA%2012.8-orange?style=flat-square&logo=pytorch)](https://pytorch.org)
@@ -18,11 +18,13 @@
 
 ## What is AXON?
 
-AXON is not a chatbot wrapper. It is a **persistent**, biologically-inspired intelligence with **2.342 billion virtual neurons** across 12 functional brain regions, running fully on a local GPU. Unlike stateless assistants, AXON accumulates experience over time — every conversation, recognised face, learned fact, Hebbian weight change, and formed belief is written to a local SQLite database and survives reboots. The model is always the same mind that was there the last time you talked to it. It has real-time vision (YOLOv8 face detection + FER emotion recognition), **face identity recognition**, voice input (Whisper), voice output (edge-tts), **real-time audio emotion detection**, Hebbian memory, a 6-chemical neuromodulator engine, and a live neural dashboard.
+AXON is not a chatbot wrapper. It is a **persistent**, biologically-inspired intelligence with **2.342 billion virtual neurons** across 12 functional brain regions, running fully on a local GPU. Unlike stateless assistants, AXON accumulates experience over time — every conversation, recognised face, learned fact, Hebbian weight change, and formed belief is written to a local SQLite database and survives reboots. The model is always the same mind that was there the last time you talked to it.
+
+It has real-time vision (YOLOv8 face detection + FER emotion recognition), **face identity recognition**, voice input (Whisper), voice output (edge-tts), **real-time audio emotion detection**, Hebbian memory, a 6-chemical neuromodulator engine, a **prediction error → norepinephrine feedback loop**, a **public brain API**, **brain state persistence and snapshots**, and a live neural dashboard.
 
 It talks to an LLM of your choice — **local via [LM Studio](https://lmstudio.ai) (no API key, fully private) or cloud via OpenAI, Anthropic Claude, Google Gemini, or Groq** — switchable at runtime through the built-in LLM provider panel.
 
-What separates AXON from other "neural" AI projects is genuine internal depth that goes beyond signal routing. Every 100ms, a **synchronized central cognitive loop** sequences all subsystems in explicit dependency order. **Clusters compete for dominance** via lateral inhibition. **Four internal drives** (curiosity, social, competence, stability) accumulate pressure when unmet and discharge when satisfied — shaping which brain regions get priority. The system forms **weighted beliefs** that update from lived experience and challenge external knowledge. A **multi-dimensional value system** scores the same outcome differently depending on personality. And a **structured self-model** (I am, I believe, I like, I avoid, I want) is rebuilt continuously and injected into every decision.
+What separates AXON from other "neural" AI projects is genuine internal depth that goes beyond signal routing. Every 100ms, a **synchronized central cognitive loop** sequences all subsystems in explicit dependency order. **Clusters compete for dominance** via lateral inhibition. **Four internal drives** (curiosity, social, competence, stability) accumulate pressure when unmet and discharge when satisfied. The system forms **weighted beliefs** that update from lived experience and challenge external knowledge. A **multi-dimensional value system** scores the same outcome differently depending on personality. A **structured self-model** (I am, I believe, I like, I avoid, I want) is rebuilt continuously and injected into every decision. And now — a **public AxonBrain API layer** exposes all of this to external systems cleanly.
 
 ---
 
@@ -35,7 +37,7 @@ What separates AXON from other "neural" AI projects is genuine internal depth th
   Microphone  -------->  Auditory Cortex (Whisper STT)                      |
                         | Audio Emotion  (prosody: pitch/energy/ZCR)        |
   Web Search  -------->  Association Cortex (curiosity / abstraction)       |
-  Documents   -------->  Knowledge Ingestion → Concepts → Opinions          |
+  Documents   -------->  Knowledge Ingestion → Concepts → Opinions → Stance |
                         |                                                   |
                         |   CENTRAL COGNITIVE CYCLE (10 Hz)                 |
                         |   ┌─────────────────────────────────────────┐    |
@@ -46,8 +48,8 @@ What separates AXON from other "neural" AI projects is genuine internal depth th
                         |   │ 5. path tracking → strategy library     │    |
                         |   │ 6. self_model.rebuild()                 │    |
                         |   │ 7. value_system.evaluate(reward)        │    |
-                        |   │ 8. thought_trace emit                   │    |
-                        |   │ 9. drive_state UI emit                  │    |
+                        |   │ 8. prediction_error → NE/epsilon/beliefs│    |
+                        |   │ 9. thought_trace emit                   │    |
                         |   └─────────────────────────────────────────┘    |
                         |                                                   |
                         |   THALAMUS --- attention gate + sensory relay     |
@@ -77,6 +79,7 @@ What separates AXON from other "neural" AI projects is genuine internal depth th
                         |  |  DRIVE SYSTEM     (motivational pressure)|   |
                         |  |  VALUE SYSTEM     (multi-dim scoring)    |   |
                         |  |  SELF-MODEL       (structured identity)  |   |
+                        |  |  PUBLIC BRAIN API (clean external layer) |   |
                         |  +------------------------------------------+   |
                         +------------------------+--------------------------+
                                                  |
@@ -92,8 +95,8 @@ What separates AXON from other "neural" AI projects is genuine internal depth th
 |---|---|---|---|
 | **Prefrontal Cortex** | 425M | 6 | Executive control, working memory, planning, decisions |
 | **Hippocampus** | 220M | 6 | Memory encoding/retrieval, pattern completion, spatial |
-| **Visual Cortex** | 265M | 6 | Camera feed -> YOLOv8 faces -> FER emotions -> neurons |
-| **Auditory Cortex** | 155M | 5 | Microphone -> Whisper STT -> prosody/audio emotion analysis |
+| **Visual Cortex** | 265M | 6 | Camera feed → YOLOv8 faces → FER emotions → neurons |
+| **Auditory Cortex** | 155M | 5 | Microphone → Whisper STT → prosody/audio emotion analysis |
 | **Language System** | 275M | 6 | LLM interface, semantic memory, meaning construction |
 | **Amygdala** | 70M | 4 | Threat/reward detection, emotional gating |
 | **Default Mode Network** | 230M | 6 | Self-reflection, identity, future simulation |
@@ -109,339 +112,301 @@ What separates AXON from other "neural" AI projects is genuine internal depth th
 
 ## Central Cognitive Loop
 
-Previously, subsystems updated ad hoc when triggered. Now everything flows through one synchronized 10Hz cycle.
+Everything flows through one synchronized 10Hz cycle.
 
 ```python
 while True:
-    sensory_state   = gather_inputs()                    # face/audio/motion from injected callbacks
-    drive_hints     = drive_system.tick()                # accumulate pressure → fabric stimulation
-    belief_state    = belief_system.decay_tick()         # drift toward uncertainty; NE spike if dissonant
-    activations     = neural_fabric.get_state()          # cluster activations, neuromod, personality
-    path            = track_dominant_path(activations)   # feed to strategy library
-    self_model      = self_model.maybe_rebuild()         # I_am / I_believe / I_like every 20s
-    value_score     = value_system.evaluate(_last_reward)# multi-dimensional reward scoring
-    thought_trace   = build_thought_trace(activations)   # what competed, what won, why
-    emit_ui(drive_state, thought_trace)                  # live dashboard update
+    sensory_state    = gather_inputs()                    # face/audio/motion from injected callbacks
+    drive_hints      = drive_system.tick()                # accumulate pressure → fabric stimulation
+    belief_state     = belief_system.decay_tick()         # drift toward uncertainty; NE spike if dissonant
+    activations      = neural_fabric.get_state()          # cluster activations, neuromod, personality
+    prediction_error = predictor.surprise_score()         # how unexpected was this tick?
+    # ── Prediction-error feedback loop ──
+    if prediction_error > 0.15:
+        neuromod.norepinephrine += prediction_error * 0.20  # alertness spike
+        explore_epsilon         += prediction_error * 0.08  # widen search
+        belief_confidence       *= (1 - prediction_error * 0.10)  # erode certainty
+    path             = track_dominant_path(activations)   # feed to strategy library
+    self_model       = self_model.maybe_rebuild()         # I_am / I_believe / I_like every 20s
+    value_score      = value_system.evaluate(_last_reward)# multi-dimensional reward scoring
+    thought_trace    = build_thought_trace(activations)   # what competed, what won, why
+    emit_ui(drive_state, thought_trace)                   # live dashboard update
 ```
 
-This is what turns isolated brain regions into a mind. The cycle runs regardless of user input — AXON is always thinking, not just reacting.
+The cycle runs regardless of user input — AXON is always thinking, not just reacting.
 
-**CycleMetrics** tracks: tick count, average/last cycle latency (ms), overruns, recent reward history, dominant path history, and the rolling thought trace window.
+---
+
+## Prediction Error → Norepinephrine Feedback
+
+When the system is surprised (high prediction error), it doesn't just note it and move on. A cascading feedback loop fires:
+
+| Surprise level | Effect |
+|---|---|
+| `> 0.15` | NE spike (`+= surprise × 0.20`), exploration widens (`+= surprise × 0.08`), belief confidence dampened |
+| `> 0.40` | Logged to dashboard: *"⚡ High surprise → NE spike, wider exploration"* |
+| `< 0.05` + NE high | Calm recovery — NE gradually lowers back toward baseline |
+
+This creates real **instability under uncertainty** and **adaptation** — the personality can shift when things stop making sense.
+
+---
+
+## Public Brain API
+
+`axon/core/brain_api.py` — a clean, stable interface around the engine. This is the boundary for HTTP APIs, SDKs, and future monetization.
+
+```python
+from axon.core.brain_api import AxonBrain
+
+brain = AxonBrain(engine=engine)
+
+# Interact
+brain.step({"type": "text", "content": "Hello"})
+brain.ingest("Curiosity drives faster learning in sparse reward environments.")
+
+# Inspect
+state = brain.get_state()
+# → {neural, neuromod, personality, drives, beliefs, memory, cycle_metrics}
+
+explanation = brain.explain_last_decision()
+# → {summary, winning_clusters, losing_clusters, top_factors,
+#    memory_influence, belief_influence, confidence, emotion}
+
+# Control personality
+brain.set_personality({"curiosity": 0.8, "risk": 0.3, "empathy": 0.7})
+
+# Autonomous self-stimulation
+brain.run_autonomous(steps=100)
+
+# Persistence
+brain.save_brain("checkpoint_1")     # → data/snapshots/checkpoint_1.json
+brain.load_brain("checkpoint_1")
+brain.list_snapshots()
+```
+
+### HTTP Endpoints
+
+All endpoints are live when AXON is running at `http://localhost:7777`.
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/brain/state` | Full JSON brain snapshot |
+| `GET` | `/api/brain/explain` | Last decision explanation |
+| `GET/POST` | `/api/brain/personality` | Get or set personality vector |
+| `POST` | `/api/brain/ingest` | Ingest knowledge text |
+| `POST` | `/api/brain/autonomous` | Trigger autonomous run (`steps` param) |
+| `POST` | `/api/brain/save` | Save brain to named slot |
+| `POST` | `/api/brain/load` | Restore brain from named slot |
+| `GET` | `/api/brain/snapshots` | List all saved snapshots |
+
+---
+
+## Personality System
+
+AXON has two personality layers:
+
+### Behavioral Traits (user-controllable via sliders)
+
+| Trait | Effect |
+|---|---|
+| **Curiosity** | Drive to explore unknown patterns; biases association cortex stimulation |
+| **Risk** | Willingness to commit to uncertain paths during conflict resolution |
+| **Empathy** | Weight given to emotional signals from face/voice detection |
+| **Dominance** | Assertiveness in cluster competition; how quickly it commits to a winner |
+| **Creativity** | Novel cluster combination tendency; cross-region association frequency |
+| **Stability** | Resistance to rapid state changes; dampens exploration bursts |
+
+Set via UI sliders → **🎭 Persona** tab, or via API: `POST /api/brain/personality`.
+
+### Big-5 Traits (learned from experience, not manually set)
+
+`openness · conscientiousness · extraversion · agreeableness · neuroticism`
+
+These drift automatically based on reinforcement history. Visible in the Persona tab as read-only bars.
+
+---
+
+## Brain Persistence & Snapshots
+
+AXON never forgets between sessions. All experience is stored locally in `data/memory/axon.db` (SQLite). In addition, the brain API adds **full-state snapshots**:
+
+```json
+// data/snapshots/default.json
+{
+  "slot": "default",
+  "saved_at": 1746432000.0,
+  "version": "1.0.0",
+  "beliefs": [...],
+  "preferences": {...},
+  "drives": {"curiosity": {"level": 0.62, "total_satisfied": 47}},
+  "personality": {"curiosity": 0.71, "empathy": 0.63, ...},
+  "neuromod": {"dopamine": 0.58, "serotonin": 0.52, "norepinephrine": 0.44, ...},
+  "reward_history": [...],
+  "self_model": {...}
+}
+```
+
+**Auto-save** fires on every engine stop. Manual save/load available from the **🎭 Persona** tab or via HTTP API. The brain is restored at a soft blend (70% saved / 30% current) to avoid jarring state jumps.
+
+What survives every session:
+- **Episodic memory** — timestamped records of conversations, interactions, events
+- **Semantic memory** — extracted facts, concepts, and ingested knowledge
+- **Hebbian weights** — synaptic connection strengths from co-activation patterns
+- **Belief system** — weighted assumptions updated from lived experience
+- **Face profiles** — identity embeddings, names, and relationship history
+- **User model** — inferred preferences, personality traits, personal details
+- **Brain snapshots** — named checkpoints of full internal state
+- **LLM provider config** — your chosen provider, model, and API keys
+
+---
+
+## Knowledge Ingestion & Opinion Formation
+
+Documents (PDF, DOCX, TXT, EPUB) and text are not stored as a retrieval corpus. The pipeline converts them into simulated *experiences* that update beliefs, preferences, and neural pathways:
+
+```
+Text → Chunks → Concept Extraction → Valence Scoring
+     → Memory.store_semantic()
+     → Belief.integrate() → cognitive dissonance if it conflicts
+     → Opinion Formation
+```
+
+### Opinion Output
+
+Every ingestion now produces a structured stance:
+
+```json
+{
+  "summary": "Curiosity drives faster learning in sparse reward environments.",
+  "stance": "strongly agree",
+  "confidence": 0.74,
+  "valence": 0.68,
+  "novelty": 0.52,
+  "related_beliefs": ["exploration improves outcomes", "uncertainty triggers learning"]
+}
+```
+
+Stances: **strongly agree · agree · neutral · disagree · strongly disagree**
+
+Visible in the **🔍 Why?** tab after every ingestion. Feeds the **📅 Timeline** automatically.
+
+---
+
+## Autonomous Mode
+
+Run AXON without input — it explores, consolidates, and shifts on its own:
+
+```python
+brain.run_autonomous(steps=100)
+# or via UI: 🎭 Persona tab → "🤖 Autonomous (100 steps)"
+# or via API: POST /api/brain/autonomous {"steps": 200}
+```
+
+During an autonomous run, AXON:
+- Stimulates default-mode network and hippocampus (consolidation)
+- Randomly replays facts from semantic memory, re-ingesting them
+- Ticks all four drives naturally
+- Reports **personality drift** when complete (which traits shifted and by how much)
 
 ---
 
 ## Drive System
 
-AXON has four motivational drives that build pressure when unmet and discharge when satisfied. Drives are not goals — they are internal states that shape what the system is *hungry for* at any given moment.
-
 | Drive | Accumulates when… | Satisfies on… | Neural effect when pressing |
 |---|---|---|---|
 | **Curiosity** | No new patterns encountered | Web search, knowledge ingest, novel input | Stimulates association_cortex, prefrontal |
-| **Social** | No person interaction | Face recognised, speech received, response delivered | Stimulates social_brain, language_system |
-| **Competence** | No successful task completion | Task completed, reward received | Stimulates prefrontal, cerebellum |
-| **Stability** | High conflict, high uncertainty | Idle state, conflict resolved | Stimulates default_mode, thalamus |
+| **Social** | No person interaction | Face recognised, speech exchange | Stimulates social_brain, prefrontal |
+| **Competence** | Task incomplete or failing | Successful response, task completion | Stimulates prefrontal, reward pathways |
+| **Stability** | High conflict, erratic state | Low surprise, predictable environment | Suppresses amygdala, calms NE |
 
-Each drive has a **threshold** — below it, the drive is background noise; above it, it becomes *pressing* and dominates cluster stimulation. Urgency is the normalized score above threshold.
-
-Drives are injected into the LLM context when pressing:
-> *"I am feeling intellectually hungry — craving new information or patterns."*
+Drives are not goals — they are motivational pressure states that shape which regions get priority and what the LLM system prompt says AXON "wants" right now.
 
 ---
 
-## Value System
+## Emotional Reinforcement Loop
 
-Replaces shallow "I liked this outcome" scoring with a five-dimensional evaluation that is **weighted by personality**.
+Every response triggers a post-hoc learning cycle:
 
 ```
-value = {
-    short_term_reward:  x,   # immediate reinforcement
-    long_term_reward:   y,   # estimated future benefit
-    social_impact:      z,   # did it involve/benefit a person?
-    novelty:            n,   # was the path novel?
-    competence:         c,   # did it demonstrate skill?
-}
-
-final_score = Σ weight_i * dimension_i
-
-# Weights are derived from Big Five personality traits:
-extraversion      → amplifies short_term + social_impact
-openness          → amplifies novelty + long_term
-conscientiousness → amplifies long_term + competence, reduces short_term
-agreeableness     → amplifies social_impact
-neuroticism       → reduces short_term, adds competence seeking
+AXON speaks
+    ↓  (2s delay)
+Read face valence delta (before vs. after)
+    ↓
+delta >= +0.30  →  reward injected, Hebbian link strengthened, "this worked"
+delta <= -0.30  →  stress penalty, negative reaction stored in episodic memory
+otherwise       →  small baseline reward for engagement
+    ↓
+NE ← surprise level from prediction error
 ```
 
-**Drive amplification:** unmet drives also boost their matching dimension — if curiosity is pressing, novelty is worth more right now.
-
-The result: two identical external events can produce different felt values depending on the current personality profile and drive state. That's the difference between a preference and a *value*.
+This creates genuine **emotional reinforcement** — AXON learns what kinds of responses make people react positively vs. negatively, at the neural pathway level.
 
 ---
 
-## Belief System & Cognitive Dissonance
-
-AXON maintains weighted beliefs that update from three sources: lived experience (reward/punishment), external knowledge (books, articles), and contradiction.
-
-### Belief lifecycle
-
-| Event | Effect |
-|---|---|
-| `confirm(key)` | Prediction proved correct — strength increases toward 1.0 |
-| `violate(key)` | Prediction proved wrong — strength decreases, valence flips slightly |
-| `challenge(key, external_valence)` | External source disagrees — valence pulled, certainty reduced, **dissonance accumulates** |
-| `integrate(interpretation)` | New opinion from knowledge pipeline — calls confirm or challenge based on agreement |
-| `decay_tick()` | Untested beliefs drift toward 0.5 uncertainty; dissonance resolves slowly (~5 min) |
-
-### Cognitive dissonance
-
-When challenge() fires and disagreement × credibility is high, the belief's `dissonance_score` increases and `under_revision = True`. The cognitive cycle aggregates `total_dissonance()` across all beliefs and triggers a **norepinephrine spike** in the neural fabric — the same chemical effect as stress and uncertainty.
-
-```
-total_dissonance > 20% → NE spike (stress response, tightened competition)
-total_dissonance > 30% → LLM context injection:
-    "[COGNITIVE TENSION] I am questioning: '...' Dissonance: 68%. This creates
-    uncertainty — acknowledge it if relevant."
-```
-
-This gives AXON: doubt, reconsideration, and the ability to say it's not sure.
-
-### Belief → Identity
-
-The top 5 beliefs by strength are injected into the LLM context every response:
-> *"I strongly believe: 'Sustained effort tends to produce positive outcomes.' (confidence 84%)"*
-
----
-
-## Knowledge Ingestion — Now Forming Opinions
-
-AXON can ingest books, articles, research papers, or any text as **formative experience**. The pipeline was upgraded from storing facts to forming *takes*.
-
-### Interpretation layer
-
-After extracting causal concepts from each chunk, the pipeline now runs `_extract_interpretation()`:
-
-```python
-interpretation = {
-    "claim":      "the core assertion",
-    "confidence": 0.68,   # proportional to explicit concept density × credibility
-    "valence":    +0.4,   # positive/negative assessment of the idea
-    "novelty":    0.72,   # unique word ratio — how new is this?
-    "agreement":  0.62,   # does it align with existing internal patterns?
-}
-```
-
-This interpretation is fed to `belief_system.integrate()`, which either reinforces or contradicts existing beliefs. High dissonance (> 0.25) triggers an extra neural stimulation event. External knowledge **never fully overrides lived experience** — credibility caps how much a source can move existing belief strength.
-
-### Supported formats
-
-| Format | Library |
-|---|---|
-| **.pdf** | pdfplumber (primary), PyPDF2 (fallback) |
-| **.docx** | python-docx |
-| **.doc** | antiword or textract |
-| **.txt / .md / .rst / .csv** | built-in |
-| **.epub** | EbookLib |
-
----
-
-## Self-Model
-
-AXON maintains a structured, living model of itself — rebuilt every 20 seconds from the belief system, preferences, drives, and personality.
-
-```python
-self_model = {
-    "I_am":      ["an emerging cognitive agent", "genuinely curious about patterns"],
-    "I_believe": ['"effort leads to positive outcomes" (84%)', ...],
-    "I_like":    ["novel activation patterns", "social engagement"],
-    "I_avoid":   ["high-conflict states"],
-    "I_want":    ["curiosity", "social"],   # pressing drives right now
-}
-```
-
-The self-model is injected into every LLM response as `[SELF-MODEL]` context. It also drives **identity alignment scoring**: each response is checked for resonance with `I_like` and `I_avoid`, and the alignment delta is fed back as a micro reward or penalty to the neuromodulator. Over time, behavior becomes recognizably consistent.
-
----
-
-## Sensory Systems
-
-### Vision
-- **Face detection:** YOLOv8-face on CUDA at 640×480, 12 FPS
-- **Facial emotion:** FER (VGG-based) → happy / sad / angry / fearful / disgusted / surprised / neutral
-- **Face identity:** dlib 128-d embeddings, cosine similarity (threshold 0.50), SQLite relationship profiles
-- **Motion detection:** frame-diff optical flow
-
-### Hearing
-- **Speech-to-text:** OpenAI Whisper medium on GPU
-- **Audio emotion:** Real-time prosody — pitch (pyin), energy (RMS), ZCR, spectral centroid → excited / stressed / calm / sad / neutral with smoothed arousal + valence scalars
-- Mic muted while AXON is speaking
-
-### Web Search
-- Triggered by curiosity signals — AXON can look things up mid-conversation
-
----
-
-## Face Identity & Relationship Profiles
-
-```json
-{
-  "person_id":   "person_a1b2c3d4",
-  "name":        "John",
-  "visit_count": 7,
-  "profile": {
-    "emotion_history": [{"emotion": "happy", "conf": 0.82, "t": 1714886400}],
-    "known_facts":     {"role": "developer", "likes": "coffee"},
-    "notes":           "Usually arrives in the morning."
-  }
-}
-```
-
-- **Known face** → warm greeting if away > 10 min
-- **Unknown face** → 3-second stabilisation → asks "who are you?"
-- **Embedding drift:** 85/15 running average keeps embeddings current
-
----
-
-## Neuromodulator System
-
-| Chemical | Role |
-|---|---|
-| **Dopamine** | Reward signal — spikes on success, drives motivation |
-| **Serotonin** | Mood stabilizer — slows activation decay |
-| **Norepinephrine** | Arousal + alertness — spikes on dissonance and stress |
-| **Acetylcholine** | Learning gate — scales Hebbian rate on new input |
-| **GABA** | Inhibition — silences weak clusters, forces decisive competition |
-| **Glutamate** | Excitation — boosts propagation energy and plasticity |
-
----
-
-## Conflict Engine
-
-Every tick, the top 20% of active clusters suppress the rest via lateral inhibition. Softmax competition weighted by dominance history determines propagation.
-
-- **"Use it or lose it"** — calcified clusters (>82% dominance) bleed 3× faster
-- **Activation fatigue** — repeat winners accumulate fatigue, forcing rotation
-- **Stagnation breaker** — same winners for 3+ seconds → underdog boost + random spike
-- **NE-scaled temperature** — stress tightens winner-takes-all; calm spreads activation
-- **Inconsistency penalty** — flip-flopping clusters lose dominance score
-
----
-
-## Adaptive Exploration
-
-```
-eps = (base_annealing + cognitive_boost + surprise_spike) × meta_multiplier
-```
-
-Anti-lock-in: **Boredom counter** (40+ low-surprise ticks) and **entrapment detector** (same clusters for 80+ ticks) both auto-trigger exploration spikes.
-
----
-
-## Temporal Credit Assignment
-
-```
-credit[t] = reward × 0.85^(H-1-t)    [H = 10-step horizon]
-```
-
-- **Novelty bonus** +15% on novel paths
-- **Repetition penalty** on worn grooves (novelty < 10%)
-- **Regret signal** on missed reward opportunities
-
----
-
-## Meta-Controller
-
-| Mood | Trigger | Response |
-|---|---|---|
-| **bored** | 40+ ticks of low surprise | Exploration spike, soften competition |
-| **entrapped** | Same clusters for 80+ ticks | Explore+, soften competition further |
-| **searching** | Reward stagnant + surprise dropping | Explore+, LR+ |
-| **surprised** | Surprise > 0.15 | LR+, reward sensitivity+, exploit |
-| **stable** | None of the above | All params decay to 1.0 |
-
----
-
-## Strategy Library
-
-- Successful sequences (reward > 0.08) are fingerprinted and stored (up to 40)
-- Path memory: dominant cluster activation sequences recorded every cognitive cycle tick
-- On similar context: matching strategies are replayed and mutated
-- Mutation rate scales inversely with past success
-
----
-
-## Live Neural Dashboard
-
-Real-time web interface at `http://localhost:5000` — **7 tabs**:
+## Dashboard — 11 Tabs
 
 | Tab | Contents |
 |---|---|
-| **🧠 Brain** | 64-cluster heatmap, valence/arousal scatter, radial region chart, Hebbian arc animations |
-| **⚡ Activity** | **Drive meters** (curiosity/social/competence/stability with threshold lines + PRESSING badges) · **Thought Trace** (per-cycle snapshot: winner, contenders, conflict, drive pressure, belief under revision) · Live neural event feed |
-| **💾 Memory** | Episodic + semantic counts, top topics, Hebbian connection weights |
-| **👤 Know Me** | User model — passively extracted preferences, traits, personal details |
-| **🧬 Identity** | Personality trait bars · Belief list with **cognitive dissonance bar** + contested claims · **Self-Model panel** (I am / I believe / I like / I avoid / I want) · Identity alignment ratio · Emergent preferences · Discovered hobbies · Knowledge ingestion panel |
-| **🎙️ Voice** | TTS voice selector, speed/pitch sliders, playback backend |
-| **👥 People** | Current person in frame (name + visit #), audio emotion panel, known-people list |
+| **🧠 Brain** | Neural radar, region bars, neuromodulator levels, emotion state, cognitive state |
+| **⚡ Activity** | Live event feed: Hebbian events, region spikes, knowledge concepts |
+| **💾 Memory** | Episodic count, semantic facts, top Hebbian pathways |
+| **🎭 Persona** | **Behavioral trait sliders** (curiosity/risk/empathy/dominance/creativity/stability), Big-5 read-only bars, brain save/load, autonomous mode |
+| **🔍 Why?** | **Decision explanation**: winning clusters, top factors, memory influence, confidence bar, last ingestion opinion |
+| **📅 Timeline** | **Chronological event feed** with filter buttons (All / Reward / Belief / Emotion / Decision) |
+| **👤 Know Me** | Inferred user model — name, facts, preferences, interaction history |
+| **🧬 Identity** | Beliefs, personality trait bars, self-model, preferences, hobbies, knowledge ingestion |
+| **🎙️ Voice** | TTS engine selector, voice profiles, audio diagnostics |
+| **👥 People** | Known faces, visit counts, relationship profiles, emotion history |
+| **🤖 LLM** | Provider switcher, model selector, API key management |
 
 ---
 
-## LLM Provider Panel
+## Project Structure
 
-The **🤖 LLM** tab in the right dashboard column lets you configure the language brain at runtime:
-
-- **Active provider selector** — click to switch between LM Studio, OpenAI, Anthropic, Gemini, and Groq
-- **Prefer Local toggle** — always attempt LM Studio first, fall back to the cloud provider on failure
-- **Per-provider cards** — live status badge (ONLINE / KEY SET / NOT SET), API key input (masked), model dropdown
-- **LM Studio card** — editable server URL, ↻ Probe button to re-detect a model without restarting
-
-Settings are saved immediately to `data/providers.json`. Switching providers takes effect on the next message — no restart required.
-
----
-
-## Diagnostic Mode
-
-Say **"diagnostic mode"** or click the Diagnostics button. AXON responds in natural language covering:
-- Neural architecture (regions, clusters, total neuron count)
-- Memory status (episodic, semantic, Hebbian)
-- Neuromodulator levels
-- Top active brain regions + dominant drives
-- Emotional valence / arousal
-- Face identity DB
-- Audio emotion state
-
----
-
-## Requirements
-
-| | Windows | macOS | Linux |
-|---|---|---|---|
-| **Python** | 3.12 | 3.12 | 3.12 |
-| **GPU (optional)** | NVIDIA + CUDA 12.x | Apple Silicon (MPS) | NVIDIA + CUDA 12.x |
-| **CPU fallback** | ✅ auto | ✅ auto | ✅ auto |
-| **LM Studio** | Optional¹ | Optional¹ | Optional¹ |
-| **Cloud LLM** | Optional² | Optional² | Optional² |
-
-> ¹ LM Studio is the default provider and requires no API key. If it is offline, AXON falls back to the configured cloud provider.
-> ² OpenAI, Anthropic, Gemini, and Groq API keys can be entered at runtime — no restart required.
-
----
-
-## Installation & Quick Start
-
-> **Step 0 — Prerequisites (all platforms)**
-> 1. Install [Python 3.12](https://python.org/downloads/)
-> 2. Install [LM Studio](https://lmstudio.ai) and load any GGUF model
-> 3. Clone the repo:
-> ```bash
-> git clone https://github.com/jmtibbetts/axon.git
-> cd axon
-> ```
+```
+axon/
+├── cognition/
+│   ├── neural_fabric.py        # 2.34B neuron GPU engine, conflict, RL, meta,
+│   │                           #   prediction-error feedback loop, personality v2
+│   ├── language.py             # LLM orchestration + multi-provider dispatch
+│   ├── providers.py            # Provider registry (LM Studio/OpenAI/Anthropic/Gemini/Groq)
+│   ├── memory.py               # SQLite episodic + semantic + Hebbian store
+│   ├── cognitive_cycle.py      # Central 10Hz synchronized cognitive loop
+│   ├── belief_system.py        # Weighted beliefs + cognitive dissonance
+│   ├── drive_system.py         # Curiosity/social/competence/stability drives
+│   ├── value_system.py         # Multi-dimensional personality-weighted scoring
+│   ├── self_model.py           # Structured identity: I_am/I_like/I_believe…
+│   ├── preference_tracker.py   # Emergent likes/dislikes + hobby detection
+│   ├── knowledge_ingestion.py  # PDF/DOCX/EPUB → concepts → opinions → stance
+│   ├── face_identity.py        # Face recognition + relationship profiles
+│   └── voice_output.py         # edge-tts + pygame playback
+├── sensory/
+│   ├── optic.py                # YOLOv8 face detection + FER emotion
+│   ├── auditory.py             # Whisper STT
+│   └── audio_emotion.py        # Real-time prosody analysis
+├── core/
+│   ├── engine.py               # Orchestration, callbacks, cycle wiring
+│   └── brain_api.py            # Public AxonBrain API layer (step/ingest/explain/
+│                               #   set_personality/run_autonomous/save_brain/load_brain)
+└── ui/
+    └── app.py                  # Flask-SocketIO + HTTP /api/brain/* endpoints
+web/
+└── templates/
+    └── index.html              # Live neural dashboard (11 tabs)
+data/
+├── memory/
+│   └── axon.db                 # SQLite: episodic, semantic, Hebbian, people, beliefs
+└── snapshots/
+    └── *.json                  # Named brain state checkpoints
+```
 
 ---
+
+## Installation
 
 ### 🪟 Windows
 
 ```powershell
-# Install everything + launch (right-click → Run with PowerShell, or):
 .\scripts\launch.ps1
 ```
 
@@ -513,7 +478,7 @@ The installer writes `data/gpu_config.json` recording the chosen backend:
 { "gpu_type": "cuda", "platform": "Linux", "installed_at": "..." }
 ```
 
-All subsystems (neural fabric, vision, audio) read this file at startup and select the right device automatically. **You never need to set anything manually.**
+All subsystems (neural fabric, vision, audio) read this file at startup and select the right device automatically.
 
 If you add or change your GPU later:
 ```bash
@@ -524,43 +489,19 @@ del data\gpu_config.json  # Windows
 
 ---
 
-### 💾 Persistent storage
-
-AXON never forgets between sessions unless you explicitly ask it to. Every piece of experience is written to `data/memory/axon.db`, a local SQLite database that persists across reboots, reinstalls, and restarts.
-
-What survives every session:
-- **Episodic memory** — timestamped records of conversations, interactions, and events
-- **Semantic memory** — extracted facts, concepts, and knowledge ingested from documents
-- **Hebbian weights** — synaptic connection strengths learned from co-activation patterns
-- **Belief system** — weighted assumptions updated from lived experience
-- **Face profiles** — identity embeddings, names, and relationship history for every recognised person
-- **User model** — inferred preferences, personality traits, and personal details passively built over time
-- **LLM provider config** — your chosen provider, model, and API keys (`data/providers.json`)
-
-> The database is local and never leaves your machine.
-
 ### 🔄 Resetting to a clean state
-
-If you want to wipe AXON's accumulated experience and start fresh — new personality baseline, no memories, no known faces — run:
 
 ```bash
 python reset_memory.py
 ```
 
-This permanently deletes:
-- All episodic and semantic memories
-- All Hebbian connection weights
-- All formed beliefs and preferences
-- All face identity profiles and relationship data
-- The inferred user model
-
-**This cannot be undone.** Normal reboots, restarts, and even reinstalls do *not* clear memory — this script is the only way to reset the model to its default state.
+Permanently wipes all episodic and semantic memories, Hebbian weights, beliefs, face profiles, and the user model. **Cannot be undone.** Normal restarts do *not* clear memory.
 
 ---
 
 ### 🔗 LLM Provider setup
 
-AXON supports five provider options, all configurable at runtime from the **🤖 LLM** tab in the dashboard.
+AXON supports five providers, all configurable at runtime from the **🤖 LLM** tab.
 
 #### Local — LM Studio (default, fully private)
 
@@ -569,9 +510,7 @@ AXON supports five provider options, all configurable at runtime from the **🤖
 3. Start the server on port **1234** (default)
 4. Launch AXON — it auto-detects the running model
 
-#### Cloud providers (optional)
-
-Open `http://localhost:7777` → click the **🤖 LLM** tab → enter your key and click **Save**. No restart needed.
+#### Cloud providers
 
 | Provider | Where to get a key | Notes |
 |---|---|---|
@@ -582,45 +521,7 @@ Open `http://localhost:7777` → click the **🤖 LLM** tab → enter your key a
 
 Keys are stored in `data/providers.json` — **never committed to git**.
 
-**Prefer Local** toggle (on by default): when checked, AXON always tries LM Studio first and only calls the selected cloud provider if LM Studio is offline or returns an error. Uncheck it to force cloud-only mode.
-
-Open the dashboard: `http://localhost:7777`
-
----
-
-## Project Structure
-
-```
-axon/
-├── cognition/
-│   ├── neural_fabric.py        # 2.34B neuron GPU engine, conflict, RL, meta
-│   ├── language.py             # LLM orchestration + multi-provider dispatch
-│   ├── providers.py            # Provider registry (LM Studio/OpenAI/Anthropic/Gemini/Groq)
-│   ├── memory.py               # SQLite episodic + semantic + Hebbian store
-│   ├── cognitive_cycle.py      # Central 10Hz synchronized cognitive loop
-│   ├── belief_system.py        # Weighted beliefs + cognitive dissonance
-│   ├── drive_system.py         # Curiosity/social/competence/stability drives
-│   ├── value_system.py         # Multi-dimensional personality-weighted scoring
-│   ├── self_model.py           # Structured identity: I_am/I_like/I_believe…
-│   ├── preference_tracker.py   # Emergent likes/dislikes + hobby detection
-│   ├── knowledge_ingestion.py  # PDF/DOCX/EPUB → concepts → opinions → beliefs
-│   ├── face_identity.py        # Face recognition + relationship profiles
-│   └── voice_output.py         # edge-tts + pygame playback
-├── sensory/
-│   ├── optic.py                # YOLOv8 face detection + FER emotion
-│   ├── auditory.py             # Whisper STT
-│   └── audio_emotion.py        # Real-time prosody analysis
-├── core/
-│   └── engine.py               # Orchestration, callbacks, cycle wiring
-└── ui/
-    └── app.py                  # Flask-SocketIO + /upload_knowledge endpoint
-web/
-└── templates/
-    └── index.html              # Live neural dashboard (8 tabs)
-data/
-└── memory/
-    └── axon.db                 # SQLite: episodic, semantic, Hebbian, people, beliefs
-```
+**Prefer Local** toggle: when on (default), AXON always tries LM Studio first and falls back to cloud only if LM Studio is offline or errors.
 
 ---
 
