@@ -190,7 +190,7 @@ fi
 step "5/10" "Core dependencies..."
 "$PIP" install --quiet \
     flask flask-socketio flask-cors eventlet \
-    anthropic openai-whisper \
+    anthropic openai groq openai-whisper \
     sounddevice \
     opencv-python \
     edge-tts pygame \

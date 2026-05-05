@@ -3,6 +3,8 @@ flask-socketio
 flask-cors
 eventlet
 anthropic
+openai
+groq
 openai-whisper
 sounddevice
 opencv-python

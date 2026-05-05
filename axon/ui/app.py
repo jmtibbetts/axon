@@ -107,6 +107,35 @@ def on_reprobe():
         _engine.language._probe_lm_studio()
         emit("lm_status", _engine.language.get_status())
 
+@socketio.on("get_provider_status")
+def on_get_provider_status():
+    if _engine:
+        emit("provider_status", _engine.language.get_provider_status())
+    else:
+        from axon.cognition.providers import load_config, provider_status
+        emit("provider_status", provider_status(load_config()))
+
+@socketio.on("update_provider")
+def on_update_provider(data):
+    """data: {provider, key?, model?, set_active?, prefer_local?, lmstudio_url?}"""
+    provider = data.get("provider", "lmstudio")
+    kwargs   = {k: v for k, v in data.items() if k != "provider" and v is not None}
+    if _engine:
+        status = _engine.language.update_provider(provider, **kwargs)
+    else:
+        # Engine not started yet — update config on disk so it persists
+        from axon.cognition.providers import load_config, save_config, provider_status
+        cfg = load_config()
+        if "key" in kwargs:         cfg[f"{provider}_key"]   = kwargs["key"]
+        if "model" in kwargs:       cfg[f"{provider}_model"] = kwargs["model"]
+        if "set_active" in kwargs and kwargs["set_active"]:
+            cfg["active_provider"] = provider
+        if "prefer_local" in kwargs: cfg["prefer_local"]      = kwargs["prefer_local"]
+        if "lmstudio_url" in kwargs: cfg["lmstudio_url"]      = kwargs["lmstudio_url"]
+        save_config(cfg)
+        status = provider_status(cfg)
+    emit("provider_status", status)
+
 @socketio.on("start_engine")
 def on_start(config):
     global _engine

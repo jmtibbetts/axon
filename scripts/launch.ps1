@@ -135,7 +135,7 @@ Write-Host "  Re-pinning numpy>=2.0..." -ForegroundColor DarkGray
 Write-Host "  [4/10] Core dependencies..." -ForegroundColor Yellow
 & $venvPip install --quiet `
     flask flask-socketio flask-cors eventlet `
-    anthropic openai-whisper `
+    anthropic openai groq openai-whisper `
     sounddevice pyaudio `
     opencv-python `
     edge-tts pygame `
@@ -289,6 +289,8 @@ REQUIRED = [
     ("cv2",             "OpenCV",           "pip install opencv-python"),
     ("ultralytics",     "YOLOv8",           "pip install ultralytics"),
     ("flask",           "Flask",            "pip install flask"),
+    ("openai",          "openai",           "pip install openai"),
+    ("groq",            "groq",             "pip install groq"),
     ("flask_socketio",  "Flask-SocketIO",   "pip install flask-socketio"),
     ("flask_cors",      "Flask-CORS",       "pip install flask-cors"),
     ("eventlet",        "eventlet",         "pip install eventlet"),

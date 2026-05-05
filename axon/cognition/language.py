@@ -13,7 +13,8 @@ import json
 import time
 import urllib.request
 import urllib.parse
-from axon.cognition.user_model import UserModel
+from axon.cognition.user_model  import UserModel
+from axon.cognition.providers   import load_config, save_config, provider_status, DEFAULT_MODELS
 import urllib.error
 from typing import Optional
 
@@ -318,31 +319,82 @@ class LanguageCore:
                  lm_studio_model: str = None,
                  prefer_local: bool = True,
                  neural_fabric=None):
-        self.memory          = memory_system
-        self.api_key         = api_key or os.getenv("ANTHROPIC_API_KEY", "")
-        self.lm_studio_url   = lm_studio_url.rstrip("/")
-        self.lm_studio_model = lm_studio_model
-        self.prefer_local    = prefer_local
-        self.fabric          = neural_fabric
-        self.search          = WebSearchTool()
-        # UserModel is wired up by engine after FaceIdentitySystem is ready
-        # (engine calls language.init_user_model(face_id))
-        self.user_model      = None
+        self.memory  = memory_system
+        self.fabric  = neural_fabric
+        self.search  = WebSearchTool()
+        self.user_model = None
 
+        # Load multi-provider config
+        self._cfg = load_config()
+
+        # Back-compat: if caller passed legacy args, store them in config
+        if api_key:
+            self._cfg["anthropic_key"] = api_key
+        if lm_studio_url != "http://localhost:1234":
+            self._cfg["lmstudio_url"] = lm_studio_url
+        if lm_studio_model:
+            self._cfg["lmstudio_model"] = lm_studio_model
+        if not prefer_local:
+            self._cfg["prefer_local"] = False
+
+        # Convenience aliases kept for back-compat with other modules
+        self.api_key         = self._cfg.get("anthropic_key", "")
+        self.lm_studio_url   = self._cfg.get("lmstudio_url", "http://localhost:1234").rstrip("/")
+        self.lm_studio_model = self._cfg.get("lmstudio_model")
+        self.prefer_local    = self._cfg.get("prefer_local", True)
+
+        # Lazy-init client handles
         self._anthropic_client = None
-        self._lm_client        = None
+        self._openai_client    = None
+        self._gemini_client    = None
+        self._groq_client      = None
+
         self._history          = []
         self._detected_model   = None
+        self._last_probe_time  = 0
 
         self._probe_lm_studio()
+
+    # ── Provider config helpers ────────────────────────────────
+
+    def update_provider(self, provider: str, key: str = None, model: str = None,
+                        set_active: bool = False, prefer_local: bool = None,
+                        lmstudio_url: str = None):
+        """Update a provider's API key / model / active status. Called by UI."""
+        if key is not None:
+            self._cfg[f"{provider}_key"] = key
+            if provider == "anthropic":
+                self.api_key = key
+        if model is not None:
+            self._cfg[f"{provider}_model"] = model
+            if provider == "lmstudio":
+                self.lm_studio_model = model
+        if lmstudio_url is not None:
+            self._cfg["lmstudio_url"] = lmstudio_url.rstrip("/")
+            self.lm_studio_url = self._cfg["lmstudio_url"]
+        if set_active:
+            self._cfg["active_provider"] = provider
+        if prefer_local is not None:
+            self._cfg["prefer_local"] = prefer_local
+            self.prefer_local = prefer_local
+        # Reset lazy clients so they re-init with new keys
+        self._anthropic_client = None
+        self._openai_client    = None
+        self._gemini_client    = None
+        self._groq_client      = None
+        save_config(self._cfg)
+        return self.get_provider_status()
+
+    def get_provider_status(self) -> dict:
+        return provider_status(self._cfg, self._detected_model)
 
     # ── LM Studio ─────────────────────────────────────────────
 
     def _probe_lm_studio(self):
         """Check if LM Studio is running and grab the loaded model."""
+        url = self._cfg.get("lmstudio_url", "http://localhost:1234").rstrip("/")
         try:
-            url = f"{self.lm_studio_url}/v1/models"
-            req = urllib.request.Request(url, headers={"User-Agent": "AXON/1.0"})
+            req = urllib.request.Request(f"{url}/v1/models", headers={"User-Agent": "AXON/1.0"})
             with urllib.request.urlopen(req, timeout=3) as r:
                 data = json.loads(r.read().decode())
             models = data.get("data", [])
@@ -352,65 +404,162 @@ class LanguageCore:
             else:
                 print("  [Language] LM Studio running but no model loaded.")
         except Exception as e:
-            print(f"  [Language] LM Studio not detected ({e}). Will use Claude.")
+            print(f"  [Language] LM Studio not detected ({e}).")
 
     def _lm_studio_available(self) -> bool:
-        # Auto-reprobe every 30 seconds so late-loading models get detected
-        # and recovered connections are noticed without a manual reprobe
         now = time.time()
-        if not hasattr(self, '_last_probe_time'):
-            self._last_probe_time = 0
         if (now - self._last_probe_time) > 30:
             self._last_probe_time = now
             self._probe_lm_studio()
-        return bool(self._detected_model or self.lm_studio_model)
+        return bool(self._detected_model or self._cfg.get("lmstudio_model"))
 
     def _call_lm_studio(self, messages: list, system: str) -> str:
         """Call LM Studio's OpenAI-compatible /v1/chat/completions."""
-        model = self.lm_studio_model or self._detected_model or "local-model"
-
-        # Sanitise messages — LM Studio requires strict user/assistant alternation.
-        # Drop any consecutive same-role messages (keep the last one of the pair).
-        clean = []
-        for msg in messages:
-            if clean and clean[-1]["role"] == msg["role"]:
-                clean[-1] = msg   # overwrite — keep latest of duplicate role
-            else:
-                clean.append(dict(msg))
-        # Must start with user
-        while clean and clean[0]["role"] != "user":
-            clean.pop(0)
-        if not clean:
-            clean = [{"role": "user", "content": "(no input)"}]
-
+        url   = self._cfg.get("lmstudio_url", "http://localhost:1234").rstrip("/")
+        model = self._cfg.get("lmstudio_model") or self._detected_model or "local-model"
+        clean = self._sanitise_messages(messages)
         payload = json.dumps({
-            "model":       model,
-            "messages":    [{"role": "system", "content": system}] + clean,
-            "max_tokens":  400,
-            "temperature": 0.75,
-            "stream":      False,
+            "model": model, "messages": [{"role": "system", "content": system}] + clean,
+            "max_tokens": 400, "temperature": 0.75, "stream": False,
         }).encode()
         req = urllib.request.Request(
-            f"{self.lm_studio_url}/v1/chat/completions",
-            data=payload,
-            headers={"Content-Type": "application/json", "User-Agent": "AXON/1.0"},
-            method="POST",
+            f"{url}/v1/chat/completions", data=payload,
+            headers={"Content-Type": "application/json", "User-Agent": "AXON/1.0"}, method="POST",
         )
         with urllib.request.urlopen(req, timeout=45) as r:
             data = json.loads(r.read().decode())
         return data["choices"][0]["message"]["content"].strip()
 
+    # ── Cloud providers ────────────────────────────────────────
+
+    def _call_openai(self, messages: list, system: str) -> str:
+        """Call OpenAI chat completions."""
+        if not self._openai_client:
+            from openai import OpenAI
+            self._openai_client = OpenAI(api_key=self._cfg.get("openai_key"))
+        clean = self._sanitise_messages(messages)
+        model = self._cfg.get("openai_model", DEFAULT_MODELS["openai"])
+        resp = self._openai_client.chat.completions.create(
+            model=model,
+            messages=[{"role": "system", "content": system}] + clean,
+            max_tokens=400,
+            temperature=0.75,
+        )
+        return resp.choices[0].message.content.strip()
+
     def _call_claude(self, messages: list, system: str) -> str:
+        """Call Anthropic Claude."""
         if not self._anthropic_client:
             import anthropic
-            self._anthropic_client = anthropic.Anthropic(api_key=self.api_key)
+            self._anthropic_client = anthropic.Anthropic(
+                api_key=self._cfg.get("anthropic_key") or self.api_key
+            )
+        clean = self._sanitise_messages(messages)
+        model = self._cfg.get("anthropic_model", DEFAULT_MODELS["anthropic"])
         resp = self._anthropic_client.messages.create(
-            model="claude-opus-4-5",
-            max_tokens=400,
-            system=system,
-            messages=messages,
+            model=model, max_tokens=400, system=system, messages=clean,
         )
         return resp.content[0].text.strip()
+
+    def _call_gemini(self, messages: list, system: str) -> str:
+        """Call Google Gemini via REST (no extra SDK needed)."""
+        api_key = self._cfg.get("gemini_key", "")
+        model   = self._cfg.get("gemini_model", DEFAULT_MODELS["gemini"])
+        clean   = self._sanitise_messages(messages)
+        # Build Gemini-format contents
+        contents = []
+        for m in clean:
+            role = "user" if m["role"] == "user" else "model"
+            contents.append({"role": role, "parts": [{"text": m["content"]}]})
+        payload = json.dumps({
+            "system_instruction": {"parts": [{"text": system}]},
+            "contents": contents,
+            "generationConfig": {"maxOutputTokens": 400, "temperature": 0.75},
+        }).encode()
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        req = urllib.request.Request(
+            url, data=payload,
+            headers={"Content-Type": "application/json"}, method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=45) as r:
+            data = json.loads(r.read().decode())
+        return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+
+    def _call_groq(self, messages: list, system: str) -> str:
+        """Call Groq (OpenAI-compatible API)."""
+        if not self._groq_client:
+            from groq import Groq
+            self._groq_client = Groq(api_key=self._cfg.get("groq_key"))
+        clean = self._sanitise_messages(messages)
+        model = self._cfg.get("groq_model", DEFAULT_MODELS["groq"])
+        resp = self._groq_client.chat.completions.create(
+            model=model,
+            messages=[{"role": "system", "content": system}] + clean,
+            max_tokens=400,
+            temperature=0.75,
+        )
+        return resp.choices[0].message.content.strip()
+
+    # ── Unified dispatch ───────────────────────────────────────
+
+    def _dispatch(self, messages: list, system: str) -> str:
+        """Route to the correct provider based on active_provider + prefer_local."""
+        active = self._cfg.get("active_provider", "lmstudio")
+        prefer_local = self._cfg.get("prefer_local", True)
+
+        # If local is preferred and LM Studio is up, always use it first
+        if prefer_local and self._lm_studio_available():
+            try:
+                return self._call_lm_studio(messages, system)
+            except Exception as e:
+                print(f"  [Language] LM Studio error: {e} — falling back to {active}")
+                self._detected_model  = None
+                self._last_probe_time = 0
+                if active == "lmstudio":
+                    active = "anthropic"  # graceful fallback
+
+        # Route to configured cloud provider
+        if active == "openai" and self._cfg.get("openai_key"):
+            return self._call_openai(messages, system)
+        elif active == "anthropic" and self._cfg.get("anthropic_key"):
+            return self._call_claude(messages, system)
+        elif active == "gemini" and self._cfg.get("gemini_key"):
+            return self._call_gemini(messages, system)
+        elif active == "groq" and self._cfg.get("groq_key"):
+            return self._call_groq(messages, system)
+        elif active == "lmstudio":
+            if self._lm_studio_available():
+                return self._call_lm_studio(messages, system)
+            return "LM Studio is not running. Please start it or configure a cloud provider in Settings."
+
+        # Last-resort: try any configured cloud key
+        if self._cfg.get("openai_key"):
+            return self._call_openai(messages, system)
+        if self._cfg.get("anthropic_key"):
+            return self._call_claude(messages, system)
+        if self._cfg.get("gemini_key"):
+            return self._call_gemini(messages, system)
+        if self._cfg.get("groq_key"):
+            return self._call_groq(messages, system)
+
+        return "No LLM provider is configured. Start LM Studio or add an API key in ⚙ Settings → LLM Provider."
+
+    # ── Message sanitiser (shared) ────────────────────────────
+
+    @staticmethod
+    def _sanitise_messages(messages: list) -> list:
+        """Enforce strict user/assistant alternation and non-empty content."""
+        clean = []
+        for msg in messages:
+            if clean and clean[-1]["role"] == msg["role"]:
+                clean[-1] = dict(msg)
+            else:
+                clean.append(dict(msg))
+        while clean and clean[0]["role"] != "user":
+            clean.pop(0)
+        if not clean:
+            clean = [{"role": "user", "content": "(no input)"}]
+        return clean
 
 
     def init_user_model(self, face_id_system):
@@ -452,11 +601,7 @@ class LanguageCore:
             messages = [{"role": "user", "content": "Respond naturally based on the system observation above."}]
             try:
                 # Use LM Studio or Claude depending on availability
-                if self._lm_studio_available():
-                    return self._call_lm_studio(messages, sys_prompt)
-                elif self.client:
-                    return self._call_claude(messages, sys_prompt)
-                return ""
+                return self._dispatch(messages, sys_prompt)
             except Exception as e:
                 print(f"  [Language] respond() error: {e}")
                 return ""
@@ -634,37 +779,7 @@ class LanguageCore:
 
         text = ""
         try:
-            use_local = self.prefer_local and self._lm_studio_available()
-            if use_local:
-                try:
-                    text = self._call_lm_studio(self._history, sys_prompt)
-                except urllib.error.HTTPError as e:
-                    body = ""
-                    try:
-                        body = e.read().decode()[:200]
-                    except Exception:
-                        pass
-                    print(f"  [Language] LM Studio HTTP {e.code} ({body}), falling back to Claude.")
-                    # Force a fresh probe next call — model may have changed
-                    self._last_probe_time = 0
-                    if self.api_key:
-                        text = self._call_claude(self._history, sys_prompt)
-                    else:
-                        text = "LM Studio returned an error and no Claude key is configured."
-                except Exception as e:
-                    print(f"  [Language] LM Studio error ({e}), falling back to Claude.")
-                    # Reset so next call probes again — catches connection drops
-                    self._detected_model  = None
-                    self._last_probe_time = 0
-                    if self.api_key:
-                        text = self._call_claude(self._history, sys_prompt)
-                    else:
-                        text = "LM Studio error and no fallback configured."
-            elif self.api_key:
-                text = self._call_claude(self._history, sys_prompt)
-            else:
-                text = "My language core isn't connected — please start LM Studio or provide an API key."
-
+            text = self._dispatch(self._history, sys_prompt)
         except Exception as e:
             text = f"Processing disrupted: {str(e)[:80]}"
 

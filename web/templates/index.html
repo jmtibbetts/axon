@@ -198,6 +198,14 @@ canvas.spark{display:block;}
 ::-webkit-scrollbar{width:3px;height:3px;}
 ::-webkit-scrollbar-track{background:transparent;}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+
+/* -- Provider cards -- */
+.provider-card{background:#0a0f1a;border:1px solid #1e3a5f;border-radius:6px;padding:8px;margin-bottom:8px;}
+.provider-btn{padding:4px 10px;font-family:var(--font);font-size:9px;cursor:pointer;
+              border-radius:3px;border:1px solid #1e3a5f;background:#0d1117;color:#64748b;
+              transition:all .2s;}
+.provider-btn:hover{border-color:#6366f1;color:#e2e8f0;}
+.provider-btn.active{background:#6366f122;border-color:#6366f1;color:#a5b4fc;}
 </style>
 </head>
 <body>
@@ -362,6 +370,7 @@ canvas.spark{display:block;}
       <button class="info-tab"        data-tab="identity"  onclick="switchTab('identity')">🧬 Identity</button>
       <button class="info-tab"        data-tab="voice"     onclick="switchTab('voice')">🎙️ Voice</button>
       <button class="info-tab"        data-tab="people"   onclick="switchTab('people')">👥 People</button>
+      <button class="info-tab"        data-tab="llm"      onclick="switchTab('llm')">🤖 LLM</button>
     </div>
 
     <!-- TAB: Brain State -->
@@ -762,6 +771,142 @@ canvas.spark{display:block;}
       <!-- Known people list -->
       <div style="font-size:9px;color:#64748b;margin-bottom:6px;">KNOWN PEOPLE (<span id="people-count">0</span>)</div>
       <div id="people-list" style="display:flex;flex-direction:column;gap:5px;"></div>
+    </div>
+
+    <div id="tab-llm" class="tab-pane" style="overflow-y:auto;flex:1;display:none;padding:8px;">
+      <div class="neuro-title" style="margin-bottom:8px;">🤖 LLM Provider
+        <span class="section-hint">Configure which AI brain powers AXON</span>
+      </div>
+
+      <!-- Active provider selector -->
+      <div style="background:#0a0f1a;border:1px solid #1e3a5f;border-radius:6px;padding:8px;margin-bottom:8px;">
+        <div style="font-size:9px;color:#64748b;margin-bottom:6px;letter-spacing:1px;">ACTIVE PROVIDER</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;" id="provider-btns">
+          <button class="provider-btn active" data-p="lmstudio" onclick="setActiveProvider('lmstudio')">🖥️ LM Studio</button>
+          <button class="provider-btn" data-p="openai"    onclick="setActiveProvider('openai')">⚡ OpenAI</button>
+          <button class="provider-btn" data-p="anthropic" onclick="setActiveProvider('anthropic')">🔮 Anthropic</button>
+          <button class="provider-btn" data-p="gemini"    onclick="setActiveProvider('gemini')">✨ Gemini</button>
+          <button class="provider-btn" data-p="groq"      onclick="setActiveProvider('groq')">⚡ Groq</button>
+        </div>
+        <div style="margin-top:6px;display:flex;align-items:center;gap:6px;">
+          <input type="checkbox" id="prefer-local-chk" onchange="setPreferLocal(this.checked)" style="accent-color:#6366f1;">
+          <label for="prefer-local-chk" style="font-size:9px;color:#94a3b8;cursor:pointer;">
+            Always use LM Studio when available (fallback to active provider)
+          </label>
+        </div>
+      </div>
+
+      <!-- LM Studio -->
+      <div class="provider-card" id="card-lmstudio">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+          <span style="font-size:9px;color:#64748b;letter-spacing:1px;">🖥️ LM STUDIO (LOCAL)</span>
+          <span id="lms-status-badge" style="font-size:8px;padding:2px 6px;border-radius:3px;background:#14532d22;color:#4ade80;border:1px solid #166534;">OFFLINE</span>
+        </div>
+        <div style="font-size:9px;color:#94a3b8;margin-bottom:4px;">Server URL</div>
+        <div style="display:flex;gap:4px;margin-bottom:6px;">
+          <input id="lms-url-in" type="text" placeholder="http://localhost:1234"
+            style="flex:1;background:#060610;border:1px solid #1e3a5f;color:#e2e8f0;
+                   padding:4px 6px;font-family:var(--font);font-size:10px;border-radius:3px;">
+          <button class="ctrl-btn" onclick="saveLMStudioUrl()" style="padding:4px 8px;font-size:9px;">Save</button>
+          <button class="ctrl-btn" onclick="reprobe()" style="padding:4px 8px;font-size:9px;">↻ Probe</button>
+        </div>
+        <div style="font-size:9px;color:#94a3b8;margin-bottom:2px;">Detected model: <span id="lms-model-detected" style="color:#6366f1;">none</span></div>
+        <div style="font-size:8px;color:#475569;margin-top:4px;">No API key needed. Start LM Studio and load a GGUF model.</div>
+      </div>
+
+      <!-- OpenAI -->
+      <div class="provider-card" id="card-openai">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+          <span style="font-size:9px;color:#64748b;letter-spacing:1px;">⚡ OPENAI</span>
+          <span id="openai-status-badge" style="font-size:8px;padding:2px 6px;border-radius:3px;background:#1e293b;color:#475569;border:1px solid #334155;">NOT SET</span>
+        </div>
+        <div style="font-size:9px;color:#94a3b8;margin-bottom:4px;">API Key</div>
+        <div style="display:flex;gap:4px;margin-bottom:6px;">
+          <input id="openai-key-in" type="password" placeholder="sk-..."
+            style="flex:1;background:#060610;border:1px solid #1e3a5f;color:#e2e8f0;
+                   padding:4px 6px;font-family:var(--font);font-size:10px;border-radius:3px;">
+          <button class="ctrl-btn" onclick="saveProviderKey('openai')" style="padding:4px 8px;font-size:9px;">Save</button>
+        </div>
+        <div style="font-size:9px;color:#94a3b8;margin-bottom:4px;">Model</div>
+        <select id="openai-model-sel" onchange="saveProviderModel('openai')"
+          style="width:100%;background:#060610;border:1px solid #1e3a5f;color:#e2e8f0;
+                 padding:4px 6px;font-family:var(--font);font-size:10px;border-radius:3px;">
+          <option value="gpt-4o">gpt-4o</option>
+          <option value="gpt-4o-mini">gpt-4o-mini</option>
+          <option value="gpt-4-turbo">gpt-4-turbo</option>
+          <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
+        </select>
+      </div>
+
+      <!-- Anthropic -->
+      <div class="provider-card" id="card-anthropic">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+          <span style="font-size:9px;color:#64748b;letter-spacing:1px;">🔮 ANTHROPIC CLAUDE</span>
+          <span id="anthropic-status-badge" style="font-size:8px;padding:2px 6px;border-radius:3px;background:#1e293b;color:#475569;border:1px solid #334155;">NOT SET</span>
+        </div>
+        <div style="font-size:9px;color:#94a3b8;margin-bottom:4px;">API Key</div>
+        <div style="display:flex;gap:4px;margin-bottom:6px;">
+          <input id="anthropic-key-in" type="password" placeholder="sk-ant-..."
+            style="flex:1;background:#060610;border:1px solid #1e3a5f;color:#e2e8f0;
+                   padding:4px 6px;font-family:var(--font);font-size:10px;border-radius:3px;">
+          <button class="ctrl-btn" onclick="saveProviderKey('anthropic')" style="padding:4px 8px;font-size:9px;">Save</button>
+        </div>
+        <div style="font-size:9px;color:#94a3b8;margin-bottom:4px;">Model</div>
+        <select id="anthropic-model-sel" onchange="saveProviderModel('anthropic')"
+          style="width:100%;background:#060610;border:1px solid #1e3a5f;color:#e2e8f0;
+                 padding:4px 6px;font-family:var(--font);font-size:10px;border-radius:3px;">
+          <option value="claude-opus-4-5">claude-opus-4-5</option>
+          <option value="claude-3-5-sonnet-20241022">claude-3-5-sonnet</option>
+          <option value="claude-3-haiku-20240307">claude-3-haiku</option>
+        </select>
+      </div>
+
+      <!-- Gemini -->
+      <div class="provider-card" id="card-gemini">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+          <span style="font-size:9px;color:#64748b;letter-spacing:1px;">✨ GOOGLE GEMINI</span>
+          <span id="gemini-status-badge" style="font-size:8px;padding:2px 6px;border-radius:3px;background:#1e293b;color:#475569;border:1px solid #334155;">NOT SET</span>
+        </div>
+        <div style="font-size:9px;color:#94a3b8;margin-bottom:4px;">API Key</div>
+        <div style="display:flex;gap:4px;margin-bottom:6px;">
+          <input id="gemini-key-in" type="password" placeholder="AIza..."
+            style="flex:1;background:#060610;border:1px solid #1e3a5f;color:#e2e8f0;
+                   padding:4px 6px;font-family:var(--font);font-size:10px;border-radius:3px;">
+          <button class="ctrl-btn" onclick="saveProviderKey('gemini')" style="padding:4px 8px;font-size:9px;">Save</button>
+        </div>
+        <div style="font-size:9px;color:#94a3b8;margin-bottom:4px;">Model</div>
+        <select id="gemini-model-sel" onchange="saveProviderModel('gemini')"
+          style="width:100%;background:#060610;border:1px solid #1e3a5f;color:#e2e8f0;
+                 padding:4px 6px;font-family:var(--font);font-size:10px;border-radius:3px;">
+          <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+          <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+          <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+        </select>
+      </div>
+
+      <!-- Groq -->
+      <div class="provider-card" id="card-groq">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+          <span style="font-size:9px;color:#64748b;letter-spacing:1px;">⚡ GROQ (FAST INFERENCE)</span>
+          <span id="groq-status-badge" style="font-size:8px;padding:2px 6px;border-radius:3px;background:#1e293b;color:#475569;border:1px solid #334155;">NOT SET</span>
+        </div>
+        <div style="font-size:9px;color:#94a3b8;margin-bottom:4px;">API Key</div>
+        <div style="display:flex;gap:4px;margin-bottom:6px;">
+          <input id="groq-key-in" type="password" placeholder="gsk_..."
+            style="flex:1;background:#060610;border:1px solid #1e3a5f;color:#e2e8f0;
+                   padding:4px 6px;font-family:var(--font);font-size:10px;border-radius:3px;">
+          <button class="ctrl-btn" onclick="saveProviderKey('groq')" style="padding:4px 8px;font-size:9px;">Save</button>
+        </div>
+        <div style="font-size:9px;color:#94a3b8;margin-bottom:4px;">Model</div>
+        <select id="groq-model-sel" onchange="saveProviderModel('groq')"
+          style="width:100%;background:#060610;border:1px solid #1e3a5f;color:#e2e8f0;
+                 padding:4px 6px;font-family:var(--font);font-size:10px;border-radius:3px;">
+          <option value="llama3-70b-8192">llama3-70b-8192</option>
+          <option value="llama3-8b-8192">llama3-8b-8192</option>
+          <option value="mixtral-8x7b-32768">mixtral-8x7b-32768</option>
+          <option value="gemma2-9b-it">gemma2-9b-it</option>
+        </select>
+      </div>
     </div>
   </div>
 
@@ -3939,6 +4084,93 @@ function renderSelfModel(model) {
     alignVal.textContent = pct + "%";
     alignVal.style.color  = pct > 60 ? "#22c55e" : pct > 40 ? "#fbbf24" : "#ef4444";
   }
+}
+
+
+// ── LLM Provider panel ──────────────────────────────────────────────────────
+socket.on("provider_status", function(s) {
+  // Active provider buttons
+  document.querySelectorAll(".provider-btn").forEach(function(b) {
+    b.classList.toggle("active", b.dataset.p === s.active_provider);
+  });
+  // prefer_local checkbox
+  var chk = document.getElementById("prefer-local-chk");
+  if (chk) chk.checked = !!s.prefer_local;
+
+  // LM Studio
+  var lms = s.lmstudio || {};
+  var lmsB = document.getElementById("lms-status-badge");
+  if (lmsB) {
+    if (lms.available) {
+      lmsB.textContent = "ONLINE";
+      lmsB.style.color = "#4ade80"; lmsB.style.background = "#14532d22"; lmsB.style.borderColor = "#166534";
+    } else {
+      lmsB.textContent = "OFFLINE";
+      lmsB.style.color = "#f87171"; lmsB.style.background = "#7f1d1d22"; lmsB.style.borderColor = "#991b1b";
+    }
+  }
+  var lmsU = document.getElementById("lms-url-in");
+  if (lmsU && lms.url) lmsU.value = lms.url;
+  var lmsM = document.getElementById("lms-model-detected");
+  if (lmsM) lmsM.textContent = lms.model || "none";
+
+  // Cloud providers
+  ["openai", "anthropic", "gemini", "groq"].forEach(function(p) {
+    var info  = s[p] || {};
+    var badge = document.getElementById(p + "-status-badge");
+    if (badge) {
+      if (info.configured) {
+        badge.textContent = "KEY SET ✓";
+        badge.style.color = "#4ade80"; badge.style.background = "#14532d22"; badge.style.borderColor = "#166534";
+      } else {
+        badge.textContent = "NOT SET";
+        badge.style.color = "#475569"; badge.style.background = "#1e293b"; badge.style.borderColor = "#334155";
+      }
+    }
+    var sel = document.getElementById(p + "-model-sel");
+    if (sel && info.model) sel.value = info.model;
+  });
+});
+
+function loadProviderStatus() {
+  socket.emit("get_provider_status");
+}
+
+function setActiveProvider(p) {
+  socket.emit("update_provider", {provider: p, set_active: true});
+}
+
+function setPreferLocal(v) {
+  socket.emit("update_provider", {provider: "lmstudio", prefer_local: v});
+}
+
+function saveProviderKey(p) {
+  var el = document.getElementById(p + "-key-in");
+  if (!el || !el.value.trim()) return;
+  socket.emit("update_provider", {provider: p, key: el.value.trim(), set_active: true});
+  el.value = "";
+  el.placeholder = "saved ✓";
+  setTimeout(function(){ el.placeholder = el.dataset.ph || ""; }, 2000);
+}
+
+function saveProviderModel(p) {
+  var sel = document.getElementById(p + "-model-sel");
+  if (!sel) return;
+  socket.emit("update_provider", {provider: p, model: sel.value});
+}
+
+function saveLMStudioUrl() {
+  var el = document.getElementById("lms-url-in");
+  if (!el) return;
+  socket.emit("update_provider", {provider: "lmstudio", lmstudio_url: el.value.trim()});
+  reprobe();
+}
+
+// Load provider status when tab is switched to llm
+var _origSwitchTab = switchTab;
+function switchTab(name) {
+  _origSwitchTab(name);
+  if (name === "llm") loadProviderStatus();
 }
 
 </script>
