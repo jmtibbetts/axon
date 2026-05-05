@@ -169,6 +169,9 @@ def on_start(config):
     _brain = AxonBrain(engine=_engine)
     # Allow fabric to emit log events
     _engine.fabric._socket_emit = lambda ev, d: socketio.emit(ev, _sanitize(d))
+    # Push onboarding state to client so it can show the overlay
+    # (the DOMContentLoaded fetch fires before the engine is ready)
+    emit("onboarding_state", _sanitize(_brain.get_onboarding_state()))
 
 @socketio.on("stop_engine")
 def on_stop():

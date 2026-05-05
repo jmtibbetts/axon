@@ -4760,7 +4760,7 @@ function saveLMStudioUrl() {
       <h2 style="color:#e2e8f0;font-size:1.6rem;margin:0 0 8px;">Choose a personality</h2>
       <p style="color:#64748b;margin:0 0 20px;font-size:0.95rem;">You can evolve this over time.</p>
       <div id="ob-presets" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;text-align:left;"></div>
-      <button onclick="obStep2Next()" style="margin-top:20px;width:100%;padding:12px;
+      <button id="ob-step2-btn" onclick="obStep2Next()" style="margin-top:20px;width:100%;padding:12px;
         background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;
         border-radius:10px;font-size:1rem;cursor:pointer;">Continue →</button>
     </div>
@@ -4992,7 +4992,7 @@ function obStep1Next() {
 }
 function obStep2Next() {
   if (!obSelectedPreset) return;
-  const btn = document.querySelector('#ob-step-2 button[onclick="obStep2Next()"]');
+  const btn = document.getElementById("ob-step2-btn");
   if (btn) { btn.disabled = true; btn.textContent = "Applying…"; }
   fetch("/api/onboarding/preset", {method:"POST", headers:{"Content-Type":"application/json"},
     body: JSON.stringify({preset: obSelectedPreset})})
@@ -5809,6 +5809,11 @@ function loadSpeed() {
 // ═══════════════════════════════════════════════════════════════
 // INIT — check onboarding on load
 // ═══════════════════════════════════════════════════════════════
+// Engine emits this after start_engine completes (brain was not ready at DOMContentLoaded)
+socket.on("onboarding_state", state => {
+  if (!state.completed) obInit(state);
+});
+
 document.addEventListener("DOMContentLoaded", () => {
   fetch("/api/onboarding").then(r => r.json()).then(state => {
     if (!state.completed) obInit(state);
