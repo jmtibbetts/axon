@@ -35,7 +35,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);
 /* -- MAIN GRID -- */
 .grid{display:grid;grid-template-columns:220px 1fr;
       grid-template-rows:1fr;gap:6px;padding:6px;
-      flex:1;overflow:hidden;}
+      flex:1;min-height:0;overflow:hidden;}
 
 /* -- PANELS -- */
 .panel{background:var(--panel);border:1px solid var(--border);
@@ -334,7 +334,7 @@ canvas.spark{display:block;}
   <div class="panel" style="grid-row:1/3;grid-column:2;min-height:0;display:flex;flex-direction:column;">
     <div class="panel-title">🧠 Neural Activity -- <span id="neuron-count">0</span> neurons | <span id="conn-count" style="color:#00ff88;transition:color 0.3s;">0</span> synaptic connections</div>
     <div class="panel-body" id="neural-panel-body" style="padding:0;background:#020205;position:relative;overflow:hidden;flex:1;min-height:0;">
-      <canvas id="neural-canvas" style="display:block;"></canvas>
+      <canvas id="neural-canvas" style="position:absolute;inset:0;display:block;"></canvas>
       <div id="region-legend" style="
         position:absolute;top:8px;right:8px;
         display:flex;flex-direction:column;gap:3px;
@@ -1120,13 +1120,20 @@ function scheduleSpikeWave(regionName, intensity) {
 function drawNeural() {
   try {
 
-  // Self-heal: if buffer is 0×0, read canvas CSS rect directly
-  if (nCanvas.width < 10 || nCanvas.height < 10) {
-    const r = nCanvas.getBoundingClientRect();
-    if (r.width < 10 || r.height < 10) { requestAnimationFrame(drawNeural); return; }
-    nCanvas.width  = Math.round(r.width);
-    nCanvas.height = Math.round(r.height);
-    if (neuronNodes.length === 0) { initNeurons(nCanvas.width, nCanvas.height); buildLegend(); }
+  // Self-heal: if buffer is too small, read parent size
+  if (nCanvas.width < 20 || nCanvas.height < 20) {
+    const p = document.getElementById('neural-panel-body');
+    const pw = p ? p.offsetWidth : 0;
+    const ph = p ? p.offsetHeight : 0;
+    if (pw < 20 || ph < 20) { requestAnimationFrame(drawNeural); return; }
+    nCanvas.width  = pw;
+    nCanvas.height = ph;
+    if (neuronNodes.length === 0) { initNeurons(pw, ph); buildLegend(); }
+  }
+  // Guard: if neurons not yet initialized, init now
+  if (neuronNodes.length === 0 && nCanvas.width > 20 && nCanvas.height > 20) {
+    initNeurons(nCanvas.width, nCanvas.height);
+    buildLegend();
   }
   axonFrame++;
   const W = nCanvas.width, H = nCanvas.height;
@@ -2474,7 +2481,7 @@ function updateNeuralPanel(state) {
   for (const [k,v] of Object.entries(state.personality||{})) {
     traits += makeBar(k.replace('_',' '), v, 'trait-bar');
   }
-  document.getElementById('trait-bars').innerHTML = traits;
+  const _tb = document.getElementById('trait-bars'); if (_tb) _tb.innerHTML = traits;
 
   // Top clusters with descriptions
   const CLUSTER_DESC = {
@@ -2593,15 +2600,16 @@ function updateNeuralPanel(state) {
     confusion:'#c084fc', empathy:'#f9a8d4', wonder:'#7ec8e3',
   };
   const eColor = eColors[eName] || '#a855f7';
-  document.getElementById('e-circle').style.borderColor = eColor;
-  document.getElementById('e-circle').style.boxShadow = `0 0 28px ${eColor}55, 0 0 8px ${eColor}33`;
-  document.getElementById('e-name').textContent = eName;
-  document.getElementById('e-label').style.color = eColor;
-  document.getElementById('e-label').textContent = eName;
+  const _ec = document.getElementById('e-circle');
+  const _en = document.getElementById('e-name');
+  const _el = document.getElementById('e-label');
+  if (_ec) { _ec.style.borderColor = eColor; _ec.style.boxShadow = `0 0 28px ${eColor}55, 0 0 8px ${eColor}33`; }
+  if (_en) _en.textContent = eName;
+  if (_el) { _el.style.color = eColor; _el.textContent = eName; }
   const vVal = parseFloat(emo.valence||0).toFixed(2);
   const aVal = parseFloat(emo.arousal||0).toFixed(2);
   const iVal = parseFloat(emo.intensity||0).toFixed(2);
-  document.getElementById('e-coords').textContent = `v:${vVal}  a:${aVal}  i:${iVal}`;
+  const _ecoord = document.getElementById('e-coords'); if (_ecoord) _ecoord.textContent = `v:${vVal}  a:${aVal}  i:${iVal}`;
   document.getElementById('emotion-pill').textContent = eName;
   document.getElementById('emotion-pill').style.borderColor = eColor;
   document.getElementById('emotion-pill').style.color = eColor;
@@ -3425,59 +3433,52 @@ window.addEventListener('resize', () => {
 window.addEventListener('load', () => {
   buildPersonalitySliders();
 
-  // ── Neural canvas sizing ──────────────────────────────────────────────────
-  // The canvas has no CSS size — we set it explicitly in JS using the parent div's
-  // clientWidth/clientHeight (most reliable cross-browser approach).
-  // Parent: #neural-panel-body (flex:1 inside .panel column — always has real height)
-  let _neuralStarted = false;
+  // ── Neural Canvas Boot ────────────────────────────────────────────────────
+  // Canvas is position:absolute;inset:0 inside a position:relative parent.
+  // The parent div (#neural-panel-body) fills via flex:1 in its column.
+  // We MUST set nCanvas.width/height (the pixel buffer) to match the PARENT's
+  // rendered size. We read offsetWidth/offsetHeight from the parent — these are
+  // always real pixel values once the browser has laid out the page.
+  let _neuralBooted = false;
 
-  function _sizeAndBoot(w, h) {
-    w = Math.floor(w); h = Math.floor(h);
-    if (_neuralStarted || w < 20 || h < 20) return;
-    _neuralStarted = true;
+  function _bootCanvas() {
+    if (_neuralBooted) return;
+    const p = document.getElementById('neural-panel-body');
+    if (!p) { setTimeout(_bootCanvas, 100); return; }
+    const w = p.offsetWidth;
+    const h = p.offsetHeight;
+    console.log('[AXON] boot attempt: parent', w, 'x', h);
+    if (w < 20 || h < 20) { setTimeout(_bootCanvas, 100); return; }
+    _neuralBooted = true;
     nCanvas.width  = w;
     nCanvas.height = h;
-    nCanvas.style.width  = w + 'px';
-    nCanvas.style.height = h + 'px';
     initNeurons(w, h);
     buildLegend();
     drawNeural();
-    console.log('[AXON] neural canvas booted', w, 'x', h);
-  }
+    console.log('[AXON] neural canvas running', w, 'x', h);
 
-  function _pollParent() {
-    if (_neuralStarted) return;
-    const p = document.getElementById('neural-panel-body');
-    if (!p) return;
-    const w = p.clientWidth, h = p.clientHeight;
-    console.log('[AXON] poll:', w, 'x', h);
-    if (w > 20 && h > 20) _sizeAndBoot(w, h);
-  }
-
-  // ResizeObserver on the parent — fires when it gets real dimensions
-  if (window.ResizeObserver) {
-    const ro = new ResizeObserver(entries => {
-      for (const e of entries) {
-        const w = Math.floor(e.contentRect.width);
-        const h = Math.floor(e.contentRect.height);
-        if (!_neuralStarted) {
-          _sizeAndBoot(w, h);
-        } else if (Math.abs(nCanvas.width - w) > 4 || Math.abs(nCanvas.height - h) > 4) {
-          nCanvas.width = w; nCanvas.height = h;
-          nCanvas.style.width = w+'px'; nCanvas.style.height = h+'px';
-          initNeurons(w, h);
+    // Handle window resizes
+    if (window.ResizeObserver) {
+      new ResizeObserver(entries => {
+        for (const e of entries) {
+          const nw = Math.floor(e.contentRect.width);
+          const nh = Math.floor(e.contentRect.height);
+          if (nw > 20 && nh > 20 && (Math.abs(nCanvas.width - nw) > 4 || Math.abs(nCanvas.height - nh) > 4)) {
+            nCanvas.width = nw; nCanvas.height = nh;
+            initNeurons(nw, nh);
+          }
         }
-      }
-    });
-    const p = document.getElementById('neural-panel-body');
-    if (p) ro.observe(p);
+      }).observe(p);
+    }
   }
 
-  // Timed fallbacks
-  [0, 50, 150, 350, 700, 1500, 3000].forEach(t => setTimeout(_pollParent, t));
+  // Try immediately, then via rAF (ensures layout is done), then polled fallbacks
+  _bootCanvas();
+  requestAnimationFrame(() => { requestAnimationFrame(_bootCanvas); });
+  [100, 300, 700, 1500, 3000].forEach(t => setTimeout(_bootCanvas, t));
 
-  // Brain radar idle baseline
-  [100, 500, 1500].forEach(t => setTimeout(() => { drawBrainRadar({}); }, t));
+  // Brain radar idle baseline (doesn't depend on canvas boot)
+  [200, 600, 1500].forEach(t => setTimeout(() => { if (typeof drawBrainRadar === 'function') drawBrainRadar({}); }, t));
 });
 
 // ── Personality Sliders ─────────────────────────────────────────────────────
@@ -3727,10 +3728,14 @@ socket.on('voice_config', cfg => {
   _selectedVoiceId  = cfg.voice || 'en-US-AriaNeural';
   const rate  = parseInt((cfg.rate  || '-5%').replace('%',''));
   const pitch = parseInt((cfg.pitch || '-3Hz').replace('Hz',''));
-  document.getElementById('rate-slider').value  = rate;
-  document.getElementById('pitch-slider').value = pitch;
-  document.getElementById('rate-val').textContent  = cfg.rate  || '-5%';
-  document.getElementById('pitch-val').textContent = cfg.pitch || '-3Hz';
+  const _rs = document.getElementById('rate-slider');
+  const _ps = document.getElementById('pitch-slider');
+  const _rv = document.getElementById('rate-val');
+  const _pv = document.getElementById('pitch-val');
+  if (_rs) _rs.value = rate;
+  if (_ps) _ps.value = pitch;
+  if (_rv) _rv.textContent = cfg.rate  || '-5%';
+  if (_pv) _pv.textContent = cfg.pitch || '-3Hz';
   renderVoiceList();
   updateVoiceCurrentLabel();
 });
@@ -5832,7 +5837,7 @@ function setSpeed(scale) {
     headers:{"Content-Type":"application/json"},
     body: JSON.stringify({speed_scale: scale})})
   .then(r => r.json()).then(d => {
-    if (d.label) document.getElementById("speed-label").textContent = d.label;
+    if (d.label) { const _sl = document.getElementById("speed-label"); if (_sl) _sl.textContent = d.label; }
     const slider = document.getElementById("speed-slider");
     if (slider) slider.value = scaleToSliderVal(scale);
   });

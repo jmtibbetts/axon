@@ -263,16 +263,44 @@ canvas.spark{display:block;}
       border-bottom: 1px solid var(--border);
       flex-shrink: 0;
     }
-  </style>
+  
+/* === Diagnostic Overlay === */
+.diag-section{background:#060610;border:1px solid #1e293b;border-radius:6px;padding:14px 16px;margin-bottom:12px;}
+.diag-h{font-size:9px;color:#6366f1;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;
+         border-bottom:1px solid #1e293b;padding-bottom:6px;}
+.diag-row{display:flex;justify-content:space-between;align-items:baseline;
+          padding:3px 0;border-bottom:1px solid #0a0a12;}
+.diag-row:last-child{border-bottom:none;}
+.diag-key{font-size:9px;color:#64748b;letter-spacing:.04em;}
+.diag-val{font-size:10px;color:#e2e8f0;font-weight:600;font-variant-numeric:tabular-nums;text-align:right;max-width:65%;}
+.diag-val.accent{color:#6366f1;}
+.diag-val.green{color:#10b981;}
+.diag-val.red{color:#ef4444;}
+.diag-val.yellow{color:#eab308;}
+.diag-cap{display:inline-flex;align-items:center;gap:4px;background:#0d1117;border:1px solid #1e293b;
+          border-radius:12px;padding:3px 10px;font-size:8.5px;color:#a5b4fc;margin:3px;}
+.diag-cap.active{border-color:#10b981;color:#10b981;}
+.diag-bar-row{display:flex;align-items:center;gap:6px;margin:3px 0;}
+.diag-bar-label{width:120px;font-size:8px;color:#64748b;flex-shrink:0;
+                overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.diag-bar-track{flex:1;height:7px;background:#0a0a18;border-radius:3px;overflow:hidden;}
+.diag-bar-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,#1e1b4b,#6366f1);}
+.diag-bar-val{width:60px;text-align:right;font-size:8px;color:#64748b;font-variant-numeric:tabular-nums;}
+.diag-loading{text-align:center;padding:40px;color:#374151;font-size:10px;letter-spacing:.1em;}
+.diag-pathway{font-size:8.5px;color:#94a3b8;padding:3px 0;border-bottom:1px solid #0a0a12;
+              display:flex;justify-content:space-between;align-items:center;}
+.diag-pathway:last-child{border-bottom:none;}
+.diag-pathway .strength{color:#10b981;font-size:8px;flex-shrink:0;}
+</style>
 </head>
 <body>
-
 <div class="monitor-topbar">
   <div class="logo" style="font-size:1rem;letter-spacing:8px;">A X O N</div>
   <div style="font-size:0.7rem;color:#6366f1;letter-spacing:3px;text-transform:uppercase;">NEURAL MONITOR</div>
   <div style="margin-left:auto;display:flex;gap:6px;align-items:center;">
     <div class="status-pill off" id="pill-engine">OFFLINE</div>
     <div class="status-pill off" id="pill-cam">CAM</div>
+    <span id="llm-status" style="font-size:8px;color:#4ade80;padding:0 6px;letter-spacing:.03em;"></span>
     <a href="/" style="font-size:0.72rem;color:#475569;text-decoration:none;padding:3px 8px;border:1px solid #334155;border-radius:4px;">← Main</a>
   </div>
 </div>
@@ -1079,7 +1107,45 @@ canvas.spark{display:block;}
 <!-- Hidden elements that JS references -->
 <div id="sys-log" style="display:none;"></div>
 <div id="chat-messages" style="display:none;"></div>
-<div id="diag-overlay" style="display:none;"></div>
+<div id="diag-overlay" style="
+  display:none;position:fixed;inset:0;z-index:999;
+  background:rgba(0,0,0,0.94);
+  overflow-y:auto;padding:24px 16px;font-family:var(--font);">
+  <div style="max-width:680px;margin:0 auto;">
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+      <div>
+        <div style="font-size:11px;color:#6366f1;letter-spacing:3px;text-transform:uppercase;margin-bottom:2px;">⚡ AXON DIAGNOSTIC MODE</div>
+        <div id="diag-timestamp" style="font-size:8px;color:#374151;"></div>
+      </div>
+      <button onclick="closeDiagnostic()" style="background:none;border:1px solid #374151;color:#6b7280;padding:4px 12px;font-family:var(--font);font-size:9px;cursor:pointer;border-radius:3px;letter-spacing:.05em;">✕ CLOSE</button>
+    </div>
+
+    <!-- Neural Architecture -->
+    <div class="diag-section" id="diag-neural"></div>
+
+    <!-- Memory -->
+    <div class="diag-section" id="diag-memory"></div>
+
+    <!-- Senses & Capabilities -->
+    <div class="diag-section" id="diag-caps"></div>
+
+    <!-- Current State -->
+    <div class="diag-section" id="diag-state"></div>
+
+    <!-- Platform -->
+    <div class="diag-section" id="diag-platform"></div>
+
+    <!-- Meta-Controller -->
+    <div class="diag-section" id="diag-meta"></div>
+
+    <!-- Strategy Library -->
+    <div class="diag-section" id="diag-strategy"></div>
+
+    <!-- Cluster breakdown -->
+    <div class="diag-section" id="diag-clusters"></div>
+  </div>
+</div>
 <div id="share-modal" style="display:none;"></div>
 <div id="neuron-count" style="display:none;"></div>
 <div id="conn-count" style="display:none;"></div>
@@ -2617,15 +2683,15 @@ function startPlayback() {
   if (playbackBuffer.length < 2) return;
   playbackActive = true;
   playbackStep   = 0;
-  document.getElementById('playback-btn').style.display     = 'none';
-  document.getElementById('playback-scrubber').style.display = 'flex';
+  const _pbb1 = document.getElementById('playback-btn'); if (_pbb1) _pbb1.style.display = 'none';
+  const _pbs1 = document.getElementById('playback-scrubber'); if (_pbs1) _pbs1.style.display = 'flex';
   renderPlaybackStep();
 }
 
 function stopPlayback() {
   playbackActive = false;
-  document.getElementById('playback-btn').style.display     = 'inline-block';
-  document.getElementById('playback-scrubber').style.display = 'none';
+  const _pbb2 = document.getElementById('playback-btn'); if (_pbb2) _pbb2.style.display = 'inline-block';
+  const _pbs2 = document.getElementById('playback-scrubber'); if (_pbs2) _pbs2.style.display = 'none';
   // Restore live state
   if (neuralState && neuralState.regions) {
     for (const [k,v] of Object.entries(neuralState.regions)) {
@@ -3209,9 +3275,8 @@ function updateNeuralPanel(state) {
   const aVal = parseFloat(emo.arousal||0).toFixed(2);
   const iVal = parseFloat(emo.intensity||0).toFixed(2);
   document.getElementById('e-coords').textContent = `v:${vVal}  a:${aVal}  i:${iVal}`;
-  document.getElementById('emotion-pill').textContent = eName;
-  document.getElementById('emotion-pill').style.borderColor = eColor;
-  document.getElementById('emotion-pill').style.color = eColor;
+  const _ep = document.getElementById('emotion-pill');
+  if (_ep) { _ep.textContent = eName; _ep.style.borderColor = eColor; _ep.style.color = eColor; }
   // Update VA scatter plot
   updateVAPlot({ valence: emo.valence||0, arousal: emo.arousal||0, _color: eColor });
 
@@ -3357,12 +3422,13 @@ socket.on('disconnect', () => {
 
 socket.on('lm_status', d => {
   const s = document.getElementById('llm-status');
+  if (!s) return;
   if (d.lm_studio) {
     s.style.color = 'var(--green)';
-    s.textContent = '? LM Studio: ' + d.lm_model;
+    s.textContent = '✓ LM Studio: ' + d.lm_model;
   } else {
     s.style.color = 'var(--muted)';
-    s.textContent = d.claude ? '? Claude fallback' : '? No LLM';
+    s.textContent = d.claude ? '⚠ Claude fallback' : '✗ No LLM';
   }
 });
 
@@ -3859,7 +3925,7 @@ socket.on('synapse_count', data => {
 });
 
 socket.on('thought', d => {
-  document.getElementById('thought-bar').textContent = d.text || '';
+  const _tbar = document.getElementById('thought-bar'); if (_tbar) _tbar.textContent = d.text || '';
   // Inner monologue = default_mode + prefrontal + metacognition activate
   scheduleSpikeWave('default_mode', 0.55);
   scheduleSpikeWave('prefrontal', 0.35);
@@ -5320,17 +5386,18 @@ window.saveLMStudioUrl = function() {
 } // end _bindSocketEvents()
 
 // ── Global UI helpers (called from HTML onclick attributes) ──
+function _gv(id, def) { const e = document.getElementById(id); if (!e) return def; return (e.type==='checkbox') ? e.checked : (e.value || def); }
 function startAxon() {
   socket.emit('start_engine', {
-    api_key:      document.getElementById('cfg-api').value,
-    lm_url:       document.getElementById('cfg-lmurl').value || 'http://localhost:1234',
-    lm_model:     document.getElementById('cfg-lmmodel').value || null,
-    prefer_local: document.getElementById('cfg-local').checked,
-    voice:        document.getElementById('cfg-voice').checked,
-    camera:       document.getElementById('cfg-cam').checked,
-    mic:          document.getElementById('cfg-mic').checked,
-    mic_index:    parseInt(document.getElementById('cfg-micidx').value),
-    camera_index: parseInt(document.getElementById('cfg-camidx').value) || -1,
+    api_key:      _gv('cfg-api', ''),
+    lm_url:       _gv('cfg-lmurl', 'http://localhost:1234'),
+    lm_model:     _gv('cfg-lmmodel', null) || null,
+    prefer_local: _gv('cfg-local', true),
+    voice:        _gv('cfg-voice', true),
+    camera:       _gv('cfg-cam', true),
+    mic:          _gv('cfg-mic', true),
+    mic_index:    parseInt(_gv('cfg-micidx', '-1')) || -1,
+    camera_index: parseInt(_gv('cfg-camidx', '-1')) || -1,
   });
   sysLog('Activating AXON...');
 }
@@ -6282,5 +6349,98 @@ document.addEventListener("DOMContentLoaded", () => {
     setTimeout(() => { if (typeof drawBrainRadar === 'function') drawBrainRadar({}); }, 800);
   });
 </script>
+
+
+<div id="axon-onboarding" style="
+  display:none;
+  position:fixed; inset:0; z-index:9999;
+  background:rgba(3,7,18,0.97);
+  flex-direction:column; align-items:center; justify-content:center;
+  font-family:'Inter','Segoe UI',sans-serif;
+">
+  <div style="max-width:480px; width:90%; text-align:center;">
+    <!-- Progress dots -->
+    <div style="display:flex;justify-content:center;gap:8px;margin-bottom:32px;" id="ob-dots">
+      <div class="ob-dot" data-step="1"></div>
+      <div class="ob-dot" data-step="2"></div>
+      <div class="ob-dot" data-step="3"></div>
+      <div class="ob-dot" data-step="4"></div>
+      <div class="ob-dot" data-step="5"></div>
+    </div>
+
+    <!-- Step 1: Name -->
+    <div id="ob-step-1" class="ob-step">
+      <div style="font-size:3rem;margin-bottom:16px;">🧠</div>
+      <h2 style="color:#e2e8f0;font-size:1.6rem;margin:0 0 8px;">Name your AI</h2>
+      <p style="color:#64748b;margin:0 0 24px;font-size:0.95rem;">Give it a name it will recognize as itself.</p>
+      <input id="ob-name-input" type="text" placeholder="e.g. AXON, Nova, Kira…"
+        style="width:100%;padding:12px 16px;background:#0f172a;border:1px solid #334155;
+               border-radius:10px;color:#e2e8f0;font-size:1.1rem;outline:none;box-sizing:border-box;"
+        maxlength="32">
+      <button onclick="obStep1Next()" style="margin-top:16px;width:100%;padding:12px;
+        background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;
+        border-radius:10px;font-size:1rem;cursor:pointer;">Continue →</button>
+    </div>
+
+    <!-- Step 2: Personality preset -->
+    <div id="ob-step-2" class="ob-step" style="display:none;">
+      <div style="font-size:3rem;margin-bottom:16px;">🎭</div>
+      <h2 style="color:#e2e8f0;font-size:1.6rem;margin:0 0 8px;">Choose a personality</h2>
+      <p style="color:#64748b;margin:0 0 20px;font-size:0.95rem;">You can evolve this over time.</p>
+      <div id="ob-presets" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;text-align:left;"></div>
+      <button id="ob-step2-btn" onclick="obStep2Next()" style="margin-top:20px;width:100%;padding:12px;
+        background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;
+        border-radius:10px;font-size:1rem;cursor:pointer;">Continue →</button>
+    </div>
+
+    <!-- Step 3: Feed it something -->
+    <div id="ob-step-3" class="ob-step" style="display:none;">
+      <div style="font-size:3rem;margin-bottom:16px;">📡</div>
+      <h2 style="color:#e2e8f0;font-size:1.6rem;margin:0 0 8px;">Feed it something</h2>
+      <p style="color:#64748b;margin:0 0 16px;font-size:0.95rem;">Pick a topic to watch it form its first opinion — or paste your own text.</p>
+      <div id="ob-samples" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
+      <textarea id="ob-custom-text" rows="3" placeholder="Or paste your own text here…"
+        style="width:100%;padding:10px;background:#0f172a;border:1px solid #334155;
+               border-radius:8px;color:#e2e8f0;font-size:0.9rem;resize:vertical;box-sizing:border-box;"></textarea>
+      <button onclick="obStep3Next()" style="margin-top:12px;width:100%;padding:12px;
+        background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;
+        border-radius:10px;font-size:1rem;cursor:pointer;">Process it →</button>
+    </div>
+
+    <!-- Step 4: Processing animation -->
+    <div id="ob-step-4" class="ob-step" style="display:none;">
+      <div style="font-size:3rem;margin-bottom:16px;">⚡</div>
+      <h2 style="color:#e2e8f0;font-size:1.6rem;margin:0 0 8px;">Learning…</h2>
+      <div id="ob-processing-log" style="
+        text-align:left;background:#0f172a;border:1px solid #1e293b;
+        border-radius:10px;padding:16px;font-size:0.82rem;color:#94a3b8;
+        font-family:monospace;max-height:160px;overflow-y:auto;margin-bottom:16px;
+      ">Ingesting…</div>
+      <div id="ob-first-opinion" style="display:none;padding:16px;background:#1e293b;
+        border-radius:10px;border-left:3px solid #8b5cf6;color:#e2e8f0;
+        font-style:italic;font-size:0.95rem;margin-bottom:16px;"></div>
+      <button id="ob-step4-next" onclick="obStep4Next()" style="display:none;width:100%;padding:12px;
+        background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;
+        border-radius:10px;font-size:1rem;cursor:pointer;">See your AI →</button>
+    </div>
+
+    <!-- Step 5: Done -->
+    <div id="ob-step-5" class="ob-step" style="display:none;">
+      <div style="font-size:3.5rem;margin-bottom:16px;">🎉</div>
+      <h2 id="ob-done-name" style="color:#e2e8f0;font-size:1.8rem;margin:0 0 8px;">Ready.</h2>
+      <p style="color:#64748b;margin:0 0 24px;font-size:0.95rem;">Your AI has formed its first take. Talk to it.</p>
+      <button onclick="obFinish()" style="width:100%;padding:14px;
+        background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;
+        border-radius:10px;font-size:1.1rem;cursor:pointer;">Enter →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Surprise event toast container -->
+<div id="surprise-toasts" style="
+  position:fixed; bottom:24px; right:24px; z-index:9998;
+  display:flex; flex-direction:column-reverse; gap:8px;
+  pointer-events:none; max-width:340px;
+"></div>
 </body>
 </html>
