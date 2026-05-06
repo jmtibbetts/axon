@@ -1013,12 +1013,13 @@ function addConflictPair(r1, r2, intensity) {
 }
 
 // Per-neuron neighbor list (cross-region via AXON_ROUTES + within-region)
-function initNeurons() {
-  // RELIABLE sizing: getBoundingClientRect > offsetWidth > fallback
-  const parent = nCanvas.parentElement;
-  const rect = parent ? parent.getBoundingClientRect() : {width:0,height:0};
-  const W = Math.round(rect.width)  || parent.offsetWidth  || nCanvas.offsetWidth  || 800;
-  const H = Math.round(rect.height) || parent.offsetHeight || nCanvas.offsetHeight || 500;
+function initNeurons(forceW, forceH) {
+  // MOST RELIABLE: read the canvas element's own rendered rect
+  // (works even when parent is position:relative with no explicit height)
+  const r = nCanvas.getBoundingClientRect();
+  const W = forceW || Math.round(r.width)  || 800;
+  const H = forceH || Math.round(r.height) || 500;
+  if (W < 10 || H < 10) return;   // not laid out yet — caller will retry
   nCanvas.width  = W;
   nCanvas.height = H;
   neuronNodes = [];
@@ -1119,17 +1120,13 @@ function scheduleSpikeWave(regionName, intensity) {
 function drawNeural() {
   try {
 
-  // Self-heal: getBoundingClientRect gives REAL rendered pixels, not CSS dimensions
-  {
-    const par = nCanvas.parentElement;
-    const r   = par ? par.getBoundingClientRect() : {width:0,height:0};
-    const pw  = Math.round(r.width)  || par.offsetWidth  || nCanvas.offsetWidth  || 0;
-    const ph  = Math.round(r.height) || par.offsetHeight || nCanvas.offsetHeight || 0;
-    if (pw < 10 || ph < 10) { requestAnimationFrame(drawNeural); return; }
-    if (Math.abs(nCanvas.width - pw) > 2 || Math.abs(nCanvas.height - ph) > 2) {
-      nCanvas.width = pw; nCanvas.height = ph;
-      if (neuronNodes.length === 0) { initNeurons(); buildLegend(); }
-    }
+  // Self-heal: if buffer is 0×0, read canvas CSS rect directly
+  if (nCanvas.width < 10 || nCanvas.height < 10) {
+    const r = nCanvas.getBoundingClientRect();
+    if (r.width < 10 || r.height < 10) { requestAnimationFrame(drawNeural); return; }
+    nCanvas.width  = Math.round(r.width);
+    nCanvas.height = Math.round(r.height);
+    if (neuronNodes.length === 0) { initNeurons(nCanvas.width, nCanvas.height); buildLegend(); }
   }
   axonFrame++;
   const W = nCanvas.width, H = nCanvas.height;
@@ -3429,55 +3426,42 @@ window.addEventListener('load', () => {
   buildPersonalitySliders();
   let _neuralStarted = false;
 
-  function _getCanvasSize() {
-    // Walk up: parentElement (panel-body) → grandparent (panel div) → getBCR
-    const parent = nCanvas.parentElement;              // panel-body (position:relative)
-    const panel  = parent ? parent.parentElement : null; // .panel (flex column, has real height)
-    // Try the panel first — it has explicit flex height from the grid
-    const r2 = panel  ? panel.getBoundingClientRect()  : null;
-    const r1 = parent ? parent.getBoundingClientRect() : null;
-    const pw = (r2 && r2.width  > 10 ? Math.round(r2.width)  : 0) ||
-               (r1 && r1.width  > 10 ? Math.round(r1.width)  : 0) ||
-               (parent ? parent.offsetWidth  : 0) || 0;
-    const ph = (r2 && r2.height > 10 ? Math.round(r2.height) : 0) ||
-               (r1 && r1.height > 10 ? Math.round(r1.height) : 0) ||
-               (parent ? parent.offsetHeight : 0) || 0;
-    return {pw, ph};
-  }
-
-  function _startNeuralCanvas() {
+  function _boot(w, h) {
     if (_neuralStarted) return;
-    const {pw, ph} = _getCanvasSize();
-    if (pw < 10 || ph < 10) return;
+    if (!w || !h || w < 10 || h < 10) return;
     _neuralStarted = true;
-    nCanvas.width  = pw;
-    nCanvas.height = ph;
-    initNeurons();
+    nCanvas.width  = Math.round(w);
+    nCanvas.height = Math.round(h);
+    initNeurons(Math.round(w), Math.round(h));
     buildLegend();
     drawNeural();
   }
 
-  // Observe BOTH the panel-body AND the .panel wrapper
+  // PRIMARY: ResizeObserver on the canvas itself.
+  // position:absolute;inset:0 means its contentRect == parent's inner box.
   if (window.ResizeObserver) {
-    const ro = new ResizeObserver(() => {
-      const {pw, ph} = _getCanvasSize();
-      if (pw < 10 || ph < 10) return;
-      _startNeuralCanvas();
-      // Live resize
-      if (_neuralStarted && (Math.abs(nCanvas.width - pw) > 4 || Math.abs(nCanvas.height - ph) > 4)) {
-        nCanvas.width = pw; nCanvas.height = ph;
-        initNeurons();
+    const ro = new ResizeObserver(entries => {
+      for (const e of entries) {
+        const {width, height} = e.contentRect;
+        if (!_neuralStarted) {
+          _boot(width, height);
+        } else if (Math.abs(nCanvas.width - width) > 4 || Math.abs(nCanvas.height - height) > 4) {
+          nCanvas.width  = Math.round(width);
+          nCanvas.height = Math.round(height);
+          initNeurons(Math.round(width), Math.round(height));
+        }
       }
     });
-    const parent = nCanvas.parentElement;
-    const panel  = parent ? parent.parentElement : null;
-    if (parent) ro.observe(parent);
-    if (panel)  ro.observe(panel);
+    ro.observe(nCanvas);
   }
 
-  // Fallback retries
-  requestAnimationFrame(() => { _startNeuralCanvas(); });
-  [80, 200, 450, 900, 1800, 3500].forEach(t => setTimeout(_startNeuralCanvas, t));
+  // FALLBACK: timed retries using getBoundingClientRect on the canvas
+  function _tryFallback() {
+    if (_neuralStarted) return;
+    const r = nCanvas.getBoundingClientRect();
+    if (r.width > 10 && r.height > 10) _boot(r.width, r.height);
+  }
+  [0, 100, 250, 500, 1000, 2000, 4000].forEach(t => setTimeout(_tryFallback, t));
 
   // Draw brain radar with idle baseline immediately
   [100, 500, 1500].forEach(t => setTimeout(() => { drawBrainRadar({}); }, t));
