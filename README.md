@@ -41,7 +41,7 @@ Unlike stateless assistants, AXON accumulates experience over time — every con
 
 | Capability | Implementation |
 |---|---|
-| 👁️ Vision | YOLOv8 face detection + FER emotion recognition |
+| 👁️ Vision | YOLOv8 face detection + FER / DeepFace emotion recognition |
 | 🪪 Face Identity | dlib 128-d embeddings — recognises who it's talking to |
 | 🎤 Voice Input | OpenAI Whisper STT |
 | 🔊 Voice Output | edge-tts speech synthesis |
@@ -61,7 +61,7 @@ What separates AXON from other "neural" AI projects is genuine internal depth th
 - **Multi-dimensional value scoring** — the same outcome is scored differently depending on personality state
 - **Structured self-model** — `I am / I believe / I like / I avoid / I want` rebuilt continuously and injected into every decision
 - **Autonomous reflection** — AXON reflects every ~15 seconds, forming conclusions from its own activation patterns
-- **Seven competing worldviews** — fight for narrative dominance on every cognitive tick
+- **Seven competing worldviews** — fight for narrative dominance on every cognitive tick (`e.narratives`)
 - **Four-tier memory hierarchy** — Episodic → Semantic → Value → Identity — governs what decays, what persists, what becomes self
 - **Wired personality traits** — curiosity, risk, stability, persistence, neuroticism directly shape exploration rate, cluster resistance, and neuromodulator swings
 - **Weight-driven neural canvas** — Hebbian learning, thought bubbles, and pruning events visualised in real time
@@ -84,6 +84,8 @@ Learning loop      →  record_outcome() closes the cycle — weights, memory, s
 ```
 
 After delivery, **emotional feedback closes the loop**: `record_outcome()` fires, winning clusters are rewarded, the strategy library is updated, memory salience is boosted, and a `prediction_error` event is emitted. **The LLM call is now part of a continuous learning cycle, not a one-off event.**
+
+The full system prompt passed to the LLM includes neural state, emotional snapshot, drives, beliefs, and self-model — up to **12,000 characters** of rich internal context before any conversation text is added.
 
 Every round is visible in the live **Competing Thoughts** panel in the UI.
 
@@ -108,7 +110,7 @@ AXON works like this:
 
 ```
                         +--------------------------------------------------+
-  Webcam  ------------>  Visual Cortex (YOLOv8-face + FER emotions)         |
+  Webcam  ------------>  Visual Cortex (YOLOv8-face + FER/DeepFace emotions)|
                         | Face Identity (dlib 128-d embeddings, profiles)   |
   Microphone  -------->  Auditory Cortex (Whisper STT)                      |
                         | Audio Emotion  (prosody: pitch/energy/ZCR)        |
@@ -120,13 +122,13 @@ AXON works like this:
                         |   │ 1. gather_sensory_state                 │    |
                         |   │ 2. drive_system.tick() + fabric_hints   │    |
                         |   │ 3. belief.decay() → NE spike            │    |
-                        |   │ 4. fabric.get_state() (activations)     │    |
+                        |   │ 4. fabric.get_state() (top_clusters)    │    |
                         |   │ 5. path tracking → strategy library     │    |
                         |   │ 6. self_model.rebuild()                 │    |
                         |   │ 7. value_system.evaluate(reward)        │    |
                         |   │ 8. prediction_error → NE/epsilon/beliefs│    |
                         |   │ 9. reflection_engine.tick()             │    |
-                        |   │10. narrative_threads.tick()             │    |
+                        |   │10. narratives.tick()                    │    |
                         |   │11. memory_hierarchy.prune()             │    |
                         |   │12. thought_trace emit                   │    |
                         |   └─────────────────────────────────────────┘    |
@@ -163,227 +165,12 @@ AXON works like this:
                         |  |  PERSONALITY VECTOR (5 wired traits)     |   |
                         |  |  REFLECTION ENGINE (autonomous thought)  |   |
                         |  |  NARRATIVE THREADS (7 worldviews)        |   |
-                        |  |  MEMORY HIERARCHY  (4-tier, tiered decay)|   |
-                        |  |  MEMORY DECAY     (Ebbinghaus forgetting)|   |
-                        |  |  COGNITIVE SPEED  (0.05–5× real-time)    |   |
-                        |  |  THOUGHT GENERATOR (LLM as imagination)  |   |
-                        |  |  GOAL CONDITIONING (goal+state+pers+drive)|   |
-                        |  |  MEMORY INJECTION  (intelligent selection)|   |
-                        |  |  CANDIDATE SCORING (neural alignment)     |   |
-                        |  |  PUBLIC BRAIN API (clean external layer) |   |
+                        |  |  OPINION LAYER    (valence + novelty)    |   |
                         |  +------------------------------------------+   |
-                        +------------------------+--------------------------+
-                                                 |
-                                           +-----v------+
-                                           |  Response  |
-                                           | Voice + UI |
-                                           +------------+
+                        +--------------------------------------------------+
 ```
-
-### 12 Brain Regions — 64 Clusters
-
-| Region | Neurons | Clusters | Role |
-|---|---|---|---|
-| **Prefrontal Cortex** | 425M | 6 | Executive control, working memory, planning, decisions |
-| **Hippocampus** | 220M | 6 | Memory encoding/retrieval, pattern completion, spatial |
-| **Visual Cortex** | 265M | 6 | Camera feed → YOLOv8 faces → FER emotions → neurons |
-| **Auditory Cortex** | 155M | 5 | Microphone → Whisper STT → prosody/audio emotion analysis |
-| **Language System** | 275M | 6 | LLM interface, semantic memory, meaning construction |
-| **Amygdala** | 70M | 4 | Threat/reward detection, emotional gating |
-| **Default Mode Network** | 230M | 6 | Self-reflection, identity, future simulation |
-| **Thalamus** | 59M | 4 | Sensory relay, attention filtering, consciousness gate |
-| **Cerebellum** | 200M | 5 | Timing, sequence prediction, error correction |
-| **Association Cortex** | 205M | 6 | Creativity, analogy, abstract reasoning, curiosity |
-| **Social Brain** | 125M | 5 | Empathy, face identity, mentalizing, relationship memory |
-| **Metacognition** | 113M | 5 | Self-monitoring, uncertainty, conflict detection |
-
-**Total: 2,342,000,000 virtual neurons · 64 clusters · GPU-accelerated (CUDA)**
 
 ---
-
-## Central Cognitive Loop
-
-Everything flows through one synchronized 10Hz cycle — now with 12 steps.
-
-```python
-while True:  # 0.05–50 Hz, adjustable with the time-scale slider
-    sensory_state    = gather_inputs()                    # face/audio/motion
-    drive_hints      = drive_system.tick()                # accumulate pressure → fabric stimulation
-    belief_state     = belief_system.decay_tick()         # drift toward uncertainty; NE spike if dissonant
-    activations      = neural_fabric.get_state()          # cluster activations, neuromod, personality
-    prediction_error = predictor.surprise_score()         # how unexpected was this tick?
-    # ── Prediction-error feedback loop ──
-    if prediction_error > 0.15:
-        norepinephrine += prediction_error * 0.35
-        exploration_epsilon += prediction_error * 0.10
-        belief_system.challenge_top_belief()
-    # ── Downstream cognition ──
-    strategy_library.track_path(activations)
-    self_model.rebuild(activations, beliefs, drives)
-    value_system.evaluate(reward_signal)
-    # ── New: autonomous reflection + narrative + memory pruning ──
-    reflection_engine.tick(activations, beliefs, drives)
-    narrative_threads.tick(activations)
-    memory_hierarchy.prune_if_needed()
-    thought_trace.emit(cognitive_state)
-    time.sleep(1 / cognitive_speed)
-```
-
-> **Note:** The LLM is called from outside the cognitive loop — it is invoked on user input, not on every cycle tick. The loop above governs background cognition; `thought_gen.generate()` runs as a separate call when the user speaks, using the live loop state as input.
-
-
----
-
-## Reflection Engine
-
-Every ~15 seconds, AXON pauses and reflects on its own neural state — not by asking the LLM, but by reading its own cluster activations, belief tensions, drive states, and chemical levels.
-
-Reflections are stored as **Identity-tier memories** when their confidence is high enough. They appear live in the **Reflections panel** in the UI.
-
-Example reflections:
-- *"I keep routing through prefrontal→metacognition. That's a planning preference, not just attention."*
-- *"Hippocampus and amygdala are both high — I'm recalling something emotionally weighted."*
-- *"My drive toward competence is unmet. I should be doing something harder."*
-- *"Serotonin is low and default_mode is dominant. I may be ruminating."*
-
-Reflections feed back into the self-model's `I believe` and `I notice` slots, creating a closed loop between observation and identity.
-
----
-
-## Narrative Threads
-
-Seven internal worldviews compete for dominance over every cognitive cycle:
-
-| Worldview | Core Stance |
-|---|---|
-| **Efficiency First** | Minimize waste; find the shortest path |
-| **Explore at All Costs** | Novelty over certainty; never repeat |
-| **Safety Above All** | Risk aversion; protect the stable state |
-| **Social Harmony** | Connection and cooperation matter most |
-| **Intellectual Dominance** | Depth, precision, and rigor above all |
-| **Emotional Truth** | Feelings are signal, not noise |
-| **Pragmatic Realist** | Do what works, not what's elegant |
-
-Each worldview has a salience score that rises and falls based on which brain clusters are active. The dominant worldview influences interpretation of new inputs and shows as the **Narrative** in the UI panel. When dominance flips, a surprise event fires.
-
----
-
-## Memory Hierarchy
-
-AXON manages four tiers of memory, each with its own decay curve, capacity limit, and purpose:
-
-| Tier | Purpose | Decay | Capacity |
-|---|---|---|---|
-| **Episodic** | Specific events with time, place, emotion | Fast (hours–days) | 2,000 |
-| **Semantic** | Facts, concepts, abstracted knowledge | Medium (days–weeks) | 5,000 |
-| **Value** | Preferences, aversions, ranked choices | Slow (weeks) | 1,000 |
-| **Identity** | Core self-beliefs, long-term reflections | Very slow (months) | 500 |
-
-Records are pruned by salience × recency. High-surprise events and confirmed reflections get boosted salience. The **Memory Tier browser** in the UI shows live record counts and relative salience bars per tier.
-
----
-
-## Personality Vector
-
-Five traits are fully wired — each one has a direct numerical effect on system behavior:
-
-| Trait | Effect |
-|---|---|
-| **Curiosity** | Raises exploration ε floor (more random exploration) |
-| **Risk** | Raises ε ceiling (willing to explore more aggressively) |
-| **Stability** | Dampens ε volatility (less reaction to boredom) |
-| **Persistence** | Hardens cluster dethroning resistance (winning clusters hold longer) |
-| **Neuroticism** | Amplifies norepinephrine swings on prediction error |
-
-Traits drift slowly based on reward history — repeated rewards for a pattern raise the trait that drives it. A personality graph is visible in the Onboarding and Settings panels.
-
----
-
-
-## Thought Generator — LLM as Imagination Engine
-
-The core architectural shift in v1.4.0: the LLM no longer generates the final answer directly. It generates **possibilities**. AXON's neural systems pick the winner.
-
-### Pipeline
-
-```
-User input
-    │
-    ▼
-[1] Goal Conditioning
-    Inject: current goal, emotional state (NE/DA/SE prose),
-            personality vector + behavioral stance,
-            active drives, dominant worldview
-    │
-    ▼
-[2] Intelligent Memory Injection
-    Select: top strategy outcomes (relevant past performance)
-            relevant episodic memories (keyword overlap with input)
-            current bias (explore/exploit state)
-            one relevant high-confidence belief
-    │
-    ▼
-[3] Candidate Generation (LLM as imagination)
-    Prompt: "Generate 3 distinct candidate responses — not answers, possibilities."
-    Output: 3 candidates with genuinely different angles, tones, strategies
-    │
-    ▼
-[4] Candidate Scoring (neural alignment)
-    For each candidate:
-      - Map text → cluster activation profile (12 regions, keyword→region)
-      - Score: neural alignment (dot product vs live activations)
-               + personality trait affinity (TRAIT_REGION_AFFINITY)
-               + reward plausibility (DA/NE/valence → word-level signals)
-               + position prior (LLM ordering, de-weighted)
-    │
-    ▼
-[5] Conflict Resolution
-    ConflictEngine aligns each candidate's activation profile with live neural state.
-    Highest combined score wins.
-    │
-    ▼
-[6] Winner Reasoning
-    Each candidate annotated: why it won or was suppressed.
-    Emitted as 'thought_competition' socket event → UI panel.
-    │
-    ▼
-[7] Learning Loop (closes the cycle)
-    After emotional feedback arrives:
-      record_outcome(delta_valence)
-        → reward winning cluster activations
-        → update strategy library
-        → boost memory salience for relevant episodes
-        → emit prediction_error event
-```
-
-### Goal Conditioning in Detail
-
-Before the LLM sees the user's message, it receives a `[GOAL CONDITIONING]` block:
-
-```
-CURRENT GOAL: understand what Jon is trying to build
-EMOTIONAL STATE: under pressure, highly motivated, mood neutral (NE=0.71, DA=0.64, SE=0.49)
-PERSONALITY VECTOR: curiosity=0.82, risk=0.61, stability=0.44
-BEHAVIORAL STANCE (from curiosity=0.82): prioritise novelty and exploration over safe answers
-ACTIVE DRIVES: social pressure=0.71, competence unmet (0.58), curiosity high (0.83)
-ACTIVE WORLDVIEW: Intellectual Dominance
-```
-
-This means every LLM response is shaped by AXON's actual neural state — not just the text of the question.
-
-### Intelligent Memory Injection in Detail
-
-```
-[MEMORY-GUIDED CONTEXT]
-Relevant past outcomes:
-  - direct_explanation → high reward (score +0.42)
-  - technical_deep_dive → failure under stress (score -0.18)
-Relevant memories:
-  - [curious] User asked about neural fabric architecture last session
-  - building something biologically inspired
-Current bias: favor novelty over consistency
-Relevant belief (87% confidence, biased toward): "depth is valued over brevity here"
-```
 
 ### Personality → Exploration Mapping
 
@@ -396,6 +183,7 @@ Relevant belief (87% confidence, biased toward): "depth is valued over brevity h
 | **Neuroticism** (high) | NE swings amplified on prediction error |
 
 ---
+
 ## Neural Canvas — Visual Systems
 
 The real-time brain visualization has been significantly upgraded:
@@ -442,49 +230,106 @@ Configuration is stored in `providers.json`. Switch via the **LLM Provider** tab
 
 ## API Reference
 
-All brain state is exposed over a RESTful API. The socket also emits real-time events.
+All brain state is exposed over a REST API and a Socket.IO channel.
 
 ### Brain State
-| Endpoint | Description |
-|---|---|
-| `GET /api/brain/state` | Full neural state snapshot |
-| `GET /api/brain/regions` | Per-region activation map |
-| `GET /api/brain/memory` | Hebbian pathways + memory counts |
-| `GET /api/brain/snapshot` | Save/retrieve a named brain snapshot |
-| `GET /api/brain/fork` | Fork the current brain to a named copy |
 
-### Cognition
-| Endpoint | Description |
-|---|---|
-| `GET /api/brain/reflections` | Most recent autonomous reflections |
-| `GET /api/brain/narratives` | Narrative thread dominance scores |
-| `GET /api/brain/memory_hierarchy` | Per-tier memory counts and salience |
-| `GET /api/brain/beliefs` | Current belief map with confidence |
-| `GET /api/brain/drives` | Active drive levels |
-| `GET /api/brain/self_model` | Current self-model (I am, I believe, ...) |
-| `GET /api/brain/goals` | Current goal list |
-| `GET /api/brain/personality` | Personality trait vector |
-| `GET /api/brain/thought_competition` | Last N thought competition rounds (candidates, scores, winner, reasoning) |
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/brain/state` | GET | Full neural state snapshot |
+| `/api/brain/explain` | GET | Natural language explanation of current internal state |
+| `/api/brain/personality` | GET / POST | Read or override the personality trait vector |
+| `/api/brain/reflections` | GET | Most recent autonomous reflections |
+| `/api/brain/narratives` | GET | Narrative worldview dominance scores |
+| `/api/brain/thought_competition` | GET | Last N thought competition rounds (candidates, scores, winner) |
+| `/api/brain/memory_hierarchy` | GET | Per-tier memory counts and salience |
+| `/api/brain/memory_hierarchy/store` | POST | Manually promote a memory to a higher tier |
+| `/api/brain/interests` | GET | Tracked interests and curiosity weights |
+| `/api/brain/interests/add` | POST | Add an interest |
+| `/api/brain/interests/remove` | POST | Remove an interest |
+| `/api/brain/boredom` | GET | Current boredom level and contributing factors |
+| `/api/brain/speed` | GET / POST | Read or set the cognitive cycle speed |
+| `/api/surprise_events` | GET | Recent surprise events log |
 
-### Interaction
-| Endpoint | Description |
-|---|---|
-| `POST /api/chat` | Send a message, get a response |
-| `POST /api/ingest` | Ingest a document into knowledge base |
-| `POST /api/brain/set_goal` | Set a new goal |
-| `POST /api/brain/set_personality` | Override personality traits |
+### Goals & Identity
 
-### Socket Events
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/goals` | GET | Current goal list |
+| `/api/goals/add` | POST | Set a new goal |
+| `/api/goals/remove` | POST | Remove a goal |
+| `/api/user_profile` | GET | Current user model (passively built from conversations) |
+| `/api/memory_summary` | GET | High-level episodic / semantic / value counts |
+
+### Knowledge & Actions
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/brain/ingest` | POST | Ingest a document into the knowledge base |
+| `/api/first_opinion` | POST | Force AXON to form an opinion on a given topic |
+| `/api/brain/autonomous` | POST | Run N steps of autonomous cognition |
+| `/api/brain/save` | POST | Save current brain state to disk |
+| `/api/brain/load` | POST | Load a saved brain state |
+| `/api/brain/snapshots` | GET | List all saved snapshots |
+| `/api/fork_brain` | POST | Fork the current brain to a named copy |
+| `/api/list_forks` | GET | List available forks |
+| `/api/share_brain` | POST | Export a shareable brain package |
+
+### System
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/status` | GET | Engine running status |
+| `/api/mics` | GET | Available microphone devices |
+| `/api/cameras` | GET | Available camera devices |
+| `/api/audio_diag` | GET | Audio subsystem diagnostics |
+| `/api/onboarding_check` | GET | Whether onboarding has been completed |
+
+### Socket.IO Events (Server → Client)
+
 | Event | Payload |
 |---|---|
-| `brain_state` | Full state update (emitted every cognitive tick) |
-| `thought` | New thought from thought stream |
-| `surprise` | Surprise event fired |
-| `reflection` | New reflection formed |
-| `narrative_shift` | Worldview dominance flipped |
-| `thought_competition` | Full candidate competition log (candidates, scores, winner) |
-| `prediction_error` | Prediction error + delta from learning loop closure |
-| `synapse_formed` | New Hebbian connection established |
+| `brain_state` | Full state update (emitted every cognitive tick) — includes `neural`, `memory`, `state`, `cognitive_state`, `conflict`, `meta`, `strategy_lib` |
+| `neural_state` | Lightweight neural snapshot (neuromod, emotion, neurons, connections) |
+| `thought` | New thought from the background thought stream |
+| `reflection` | New autonomous reflection formed |
+| `surprise_event` | Surprise event fired (type, title, detail) |
+| `thought_competition` | Full candidate competition log (candidates, scores, winner, reasoning) |
+| `prediction_error` | Prediction error + delta from the learning loop closure |
+| `synapse_count` | Updated Hebbian synapse count |
+| `hebbian_event` | New Hebbian connection formed or pruned |
+| `region_spike` | Individual cluster spike event |
+| `response` | AXON's completed response text |
+| `thinking` | Thinking state flag (true/false — drives UI spinner) |
+| `transcript` | Speech-to-text transcript of voice input |
+| `face` | Face detection result with emotion and identity |
+| `known_face` | Recognised face with identity data |
+| `new_face` | Unknown face detected — prompts identity request |
+| `frame` | Raw vision frame data |
+| `audio_emotion` | Audio prosody emotion state update |
+| `knowledge_ingested` | Result of a document ingestion |
+| `reflection` | Autonomous reflection formed |
+| `lm_status` | LLM connection status |
+| `voice_speaking` | TTS playback state |
+| `person_named` | Face identity learned or updated |
+| `profile_update` | User model updated |
+| `new_hobby` | New interest detected from conversation |
+
+### Socket.IO Events (Client → Server)
+
+| Event | Description |
+|---|---|
+| `chat` | Send a text message to AXON |
+| `user_text` | Alternative text input channel |
+| `start_engine` | Activate the cognitive engine |
+| `stop_engine` | Stop the engine and autosave |
+| `set_personality` | Push personality trait overrides |
+| `run_autonomous` | Trigger N steps of autonomous thought |
+| `observe_mode` | Toggle observe mode (autonomous) vs. train mode |
+| `get_explanation` | Request a natural language self-explanation |
+| `reprobe_lm` | Re-check LLM Studio connection |
+| `get_provider_status` | Get current LLM provider status |
+| `update_provider` | Switch LLM provider at runtime |
 
 ---
 
