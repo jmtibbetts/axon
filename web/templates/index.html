@@ -1802,12 +1802,11 @@ function addConflictPair(r1, r2, intensity) {
 
 // Per-neuron neighbor list (cross-region via AXON_ROUTES + within-region)
 function initNeurons(forceW, forceH) {
-  // MOST RELIABLE: read the canvas element's own rendered rect
-  // (works even when parent is position:relative with no explicit height)
+  // Use forced dimensions first, then BoundingClientRect, then hardcoded fallback
   const r = nCanvas.getBoundingClientRect();
-  const W = forceW || Math.round(r.width)  || 800;
-  const H = forceH || Math.round(r.height) || 500;
-  if (W < 10 || H < 10) return;   // not laid out yet — caller will retry
+  const W = (forceW && forceW > 10) ? forceW : (Math.round(r.width) > 10 ? Math.round(r.width) : 800);
+  const H = (forceH && forceH > 10) ? forceH : (Math.round(r.height) > 10 ? Math.round(r.height) : 500);
+  // Always set canvas pixel buffer — never bail
   nCanvas.width  = W;
   nCanvas.height = H;
   neuronNodes = [];
@@ -1870,6 +1869,7 @@ function initNeurons(forceW, forceH) {
     }
   });
 
+  console.log('[AXON] initNeurons done:', neuronNodes.length, 'neurons, canvas:', nCanvas.width, 'x', nCanvas.height);
   buildLegend();
 }
 
@@ -1910,9 +1910,11 @@ function drawNeural() {
 
   // Guard: canvas must have real dimensions before drawing
   if (nCanvas.width < 20 || nCanvas.height < 20 || neuronNodes.length === 0) {
+    if (axonFrame % 60 === 0) console.warn('[AXON] drawNeural stalled — canvas:', nCanvas.width, 'x', nCanvas.height, 'neurons:', neuronNodes.length);
     requestAnimationFrame(drawNeural);
     return;
   }
+  if (axonFrame === 1) console.log('[AXON] drawNeural first paint — canvas:', nCanvas.width, 'x', nCanvas.height, 'neurons:', neuronNodes.length);
   axonFrame++;
   const W = nCanvas.width, H = nCanvas.height;
 
