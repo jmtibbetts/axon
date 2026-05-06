@@ -1723,7 +1723,7 @@ class NeuralFabric:
         new_act = torch.clamp(act * decay + delta + noise, min=0.001, max=1.0)
         # Resting potential: prevent all regions from collapsing to floor at idle
         # Biological cortex maintains ~5-8% baseline firing; mirror that here.
-        resting = torch.full_like(new_act, 0.04 + 0.03 * ser)   # serotonin raises resting tone
+        resting = torch.full_like(new_act, 0.008 + 0.012 * ser)   # serotonin raises resting tone; kept very low so idle = dark
         new_act = torch.max(new_act, resting)
 
         # ── 9. Surprise-driven learning rate ─────────────────────────────────
@@ -1810,18 +1810,20 @@ class NeuralFabric:
 
     # Minimum resting activation per region — a human brain is NEVER quiet
     _BASELINE = {
-        "prefrontal":    0.12,   # planning, working memory
-        "default_mode":  0.18,   # mind-wandering — strongest at rest
-        "thalamus":      0.14,   # relay
-        "hippocampus":   0.10,   # memory consolidation
-        "amygdala":      0.08,   # vigilance
-        "visual":        0.06,   # eyes open
-        "auditory":      0.06,   # listening
-        "language":      0.09,   # inner voice
-        "association":   0.10,   # cross-modal binding
-        "social":        0.07,   # social awareness
-        "cerebellum":    0.09,   # timing
-        "metacognition": 0.12,   # self-monitoring
+        # Kept deliberately low — idle brain should look DARK on the canvas.
+        # Real activity from stimulation should be the only thing that lights up.
+        "prefrontal":    0.03,   # planning, working memory
+        "default_mode":  0.05,   # mind-wandering — slightly higher, it's always ticking
+        "thalamus":      0.04,   # relay — always a little active
+        "hippocampus":   0.025,  # memory consolidation
+        "amygdala":      0.020,  # vigilance
+        "visual":        0.015,  # eyes open
+        "auditory":      0.015,  # listening
+        "language":      0.025,  # inner voice
+        "association":   0.025,  # cross-modal binding
+        "social":        0.018,  # social awareness
+        "cerebellum":    0.022,  # timing
+        "metacognition": 0.030,  # self-monitoring
     }
 
     def _ambient_fire(self):
@@ -1844,10 +1846,10 @@ class NeuralFabric:
                 jitter = torch.rand(len(idxs), device=DEVICE) * 0.04
                 self.activation[t] = torch.clamp(cur + deficit * 0.55 + jitter * 0.02, 0.0, 1.0)
 
-        # ── Spontaneous burst: random cluster fires strongly (inner monologue)
-        if random.random() < 0.15:
+        # ── Spontaneous burst: random cluster fires (inner monologue)
+        if random.random() < 0.12:
             lucky = random.randint(0, len(self._cluster_names)-1)
-            burst = random.uniform(0.04, 0.12)
+            burst = random.uniform(0.02, 0.07)
             with self._lock:
                 self.activation[lucky] = torch.clamp(self.activation[lucky] + burst, 0.0, 1.0)
 
