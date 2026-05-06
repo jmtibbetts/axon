@@ -1419,7 +1419,42 @@ function fmt(n) {
 </script>
 
 <script>
-var socket = io(); // global — used across multiple script blocks
+// Wait for the server to be ready before connecting the socket.
+// This prevents the "must refresh" bug where the page loads faster than Flask starts.
+var socket = null;
+
+function _initSocket() {
+  if (socket) return; // already initialised
+  socket = io({
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 500,
+    reconnectionDelayMax: 2000,
+    timeout: 5000
+  });
+  _bindSocketEvents();
+}
+
+function _waitForServer(attempt) {
+  attempt = attempt || 0;
+  fetch('/api/ready', {cache: 'no-store'})
+    .then(r => { if (r.ok) { _initSocket(); } else { throw new Error(); } })
+    .catch(() => {
+      // Server not ready yet — retry every 400ms for up to 30s then connect anyway
+      if (attempt < 75) {
+        setTimeout(() => _waitForServer(attempt + 1), 400);
+      } else {
+        _initSocket(); // give up waiting, let socket.io handle retries
+      }
+    });
+}
+
+_waitForServer();
+
+// All socket.on() and socket.emit() calls are wrapped inside this function
+// so they are registered after socket is created.
+function _bindSocketEvents() {
+// ← socket event bindings follow (auto-closed at end of script)
 
 // ═══════════════════════════════════════════════════════════════
 // DIAGNOSTIC MODE  — defined here so socket is in scope
@@ -3554,19 +3589,27 @@ function reprobe()   { socket.emit('reprobe_lm'); sysLog('Re-probing LM Studio..
 // -- Socket events ---------------------------------------------
 socket.on('connect', () => {
   sysLog('Socket connected.');
-  // On first connect, check onboarding state before starting engine
-  if (!window._axonStarted) {
+  // Start engine on first connect, or on reconnect if engine never launched
+  if (!window._axonStarted || !window._axonEngineOnline) {
     window._axonStarted = true;
     fetch("/api/onboarding_check").then(r => r.json()).then(d => {
       if (d.completed) {
         // Onboarding done — start engine normally
-        setTimeout(() => { sysLog('Auto-starting AXON...'); startAxon(); }, 800);
+        setTimeout(() => { sysLog('Auto-starting AXON...'); startAxon(); }, 500);
       }
       // else: obInit() will show the overlay; engine starts after obFinish()
     }).catch(() => {
       // If API not ready yet, fall back to normal auto-start
-      setTimeout(() => { sysLog('Auto-starting AXON...'); startAxon(); }, 800);
+      setTimeout(() => { sysLog('Auto-starting AXON...'); startAxon(); }, 500);
     });
+  }
+});
+
+socket.on('disconnect', () => {
+  sysLog('Socket disconnected — reconnecting...');
+  // Allow startup sequence to re-run if we reconnect before engine came online
+  if (!window._axonEngineOnline) {
+    window._axonStarted = false;
   }
 });
 
@@ -3586,6 +3629,7 @@ socket.on('log', d => {
   if (d.msg.includes('online') || d.msg.includes('ACTIVATE')) {
     document.getElementById('pill-engine').className = 'status-pill on';
     document.getElementById('pill-engine').textContent = 'ONLINE';
+    window._axonEngineOnline = true; // engine confirmed running
   }
   if (d.msg.includes('Optic'))    setPill('pill-cam', true);
   if (d.msg.includes('Auditory')) setPill('pill-mic', true);
@@ -5434,6 +5478,8 @@ function saveLMStudioUrl() {
 }
 
 // LLM tab hook is now built into the main switchTab above.
+
+} // end _bindSocketEvents()
 
 </script>
 

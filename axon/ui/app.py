@@ -27,6 +27,11 @@ _engine: AxonEngine = None
 def index():
     return render_template("index.html")
 
+@app.route("/api/ready")
+def ready():
+    """Lightweight liveness probe — returns 200 as soon as the server is up."""
+    return jsonify({"ready": True})
+
 @app.route("/api/status")
 def status():
     return jsonify(_engine.get_status() if _engine else {"running": False})
