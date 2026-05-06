@@ -1553,7 +1553,10 @@ socket.on('diagnostic_result', function(d) {
 
 // -- Neural canvas ---------------------------------------------
 const nCanvas = document.getElementById('neural-canvas');
-const nCtx    = nCanvas.getContext('2d');
+if (!nCanvas) { console.error('[AXON] FATAL: neural-canvas element not found in DOM'); }
+const nCtx    = nCanvas ? nCanvas.getContext('2d') : null;
+if (!nCtx)    { console.error('[AXON] FATAL: could not get 2d context from canvas'); }
+console.log('[AXON] canvas element:', nCanvas, 'ctx:', nCtx ? 'OK' : 'NULL');
 let neuronNodes  = [];
 let neuralState  = null;
 let axonFrame    = 0;
@@ -4243,7 +4246,12 @@ window.addEventListener('load', () => {
 
   // Step 1: Boot immediately with the canvas's own pixel size (800x500 default)
   // This guarantees neurons exist and the loop starts — even if layout isn't done.
-  _syncCanvasToParent(nCanvas.width || 800, nCanvas.height || 500);
+  console.log('[AXON] boot: nCanvas=', nCanvas, 'nCtx=', nCtx);
+  if (nCanvas && nCtx) {
+    _syncCanvasToParent(nCanvas.width || 800, nCanvas.height || 500);
+  } else {
+    console.error('[AXON] BOOT FAILED: canvas or context is null at DOMContentLoaded');
+  }
 
   // Step 2: ResizeObserver snaps to real parent dimensions once layout settles
   const _canvasParent = document.getElementById('neural-panel-body');
