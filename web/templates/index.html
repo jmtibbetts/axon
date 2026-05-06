@@ -2852,7 +2852,10 @@ function regionForCluster(name) {
   if (name.includes('creativity')||name.includes('conceptual')||name.includes('analogy')||name.includes('abstract')||name.includes('insight')||name.includes('curiosity')) return 'association';
   if (name.includes('social')||name.includes('empathy')||name.includes('face')||name.includes('social_pain')||name.includes('mentaliz')) return 'social';
   if (name.includes('metacog')||name.includes('self_aware')||name.includes('conflict')||name.includes('error_det')||name.includes('uncertainty')) return 'metacognition';
-  return 'prefrontal';  // default
+  if (name.includes('goal')||name.includes('planning')||name.includes('future_plan')||name.includes('action_sel')||name.includes('value_weight')) return 'planning_cortex';
+  if (name.includes('working_mem')||name.includes('context_bind')||name.includes('executive')||name.includes('decision')) return 'working_memory_cortex';
+  if (name.includes('inhibit')||name.includes('impulse')||name.includes('suppress')) return 'inhibitory_cortex';
+  return 'planning_cortex';  // default (maps to PFC family)
 }
 
 // -- Vision canvas ---------------------------------------------
@@ -3266,18 +3269,21 @@ function updateNeuralPanel(state) {
 
   // Regions with descriptions
   const REGION_INFO = {
-    prefrontal:   { color:'#00d4ff', desc:'Decision-making, planning, working memory. The "CEO" — coordinates all other regions.' },
-    hippocampus:  { color:'#a855f7', desc:'Encodes new memories, spatial navigation, pattern completion. Active when learning something new.' },
-    amygdala:     { color:'#ff6b35', desc:'Emotional processing, threat detection, reward signals. Fires on emotionally significant events.' },
-    visual:       { color:'#ffcc00', desc:'Processes everything seen — color, motion, objects, faces, depth perception.' },
-    auditory:     { color:'#00ff88', desc:'Speech perception, sound processing, phoneme detection. Primary gateway for voice input.' },
-    language:     { color:'#c084fc', desc:'Language comprehension, semantics, syntax, meaning construction. Active during every conversation.' },
-    default_mode: { color:'#4ade80', desc:'Self-reflection, mind-wandering, future simulation. Most active during rest and introspection.' },
-    thalamus:     { color:'#f9a8d4', desc:'The sensory relay hub — filters and routes signals to the right cortical regions. Consciousness gatekeeper.' },
-    cerebellum:   { color:'#7ec8e3', desc:'Timing, prediction, motor coordination, error correction. Keeps cognitive rhythms smooth.' },
-    association:  { color:'#fb923c', desc:'Creativity, analogy-formation, conceptual blending. Where novel ideas emerge.' },
-    social:       { color:'#ff006e', desc:'Empathy, face recognition, mentalizing (understanding others\' minds), social pain.' },
-    metacognition:{ color:'#ff4060', desc:'Thinking about thinking. Self-awareness, confidence monitoring, uncertainty detection.' },
+    prefrontal:           { color:'#00d4ff', desc:'Decision-making, planning, working memory. The "CEO" — coordinates all other regions.' },
+    planning_cortex:      { color:'#00d4ff', desc:'Goal maintenance, future planning, action selection. Dorsolateral PFC — deliberate thinking.' },
+    working_memory_cortex:{ color:'#38bdf8', desc:'Active holding of information — what AXON is currently thinking about. Ventrolateral PFC.' },
+    inhibitory_cortex:    { color:'#7dd3fc', desc:'Impulse suppression, response inhibition, conflict arbitration. Keeps behavior controlled.' },
+    hippocampus:          { color:'#a855f7', desc:'Encodes new memories, spatial navigation, pattern completion. Active when learning something new.' },
+    amygdala:             { color:'#ff6b35', desc:'Emotional processing, threat detection, reward signals. Fires on emotionally significant events.' },
+    visual:               { color:'#ffcc00', desc:'Processes everything seen — color, motion, objects, faces, depth perception.' },
+    auditory:             { color:'#00ff88', desc:'Speech perception, sound processing, phoneme detection. Primary gateway for voice input.' },
+    language:             { color:'#c084fc', desc:'Language comprehension, semantics, syntax, meaning construction. Active during every conversation.' },
+    default_mode:         { color:'#4ade80', desc:'Self-reflection, mind-wandering, future simulation. Most active during rest and introspection.' },
+    thalamus:             { color:'#f9a8d4', desc:'The sensory relay hub — filters and routes signals to the right cortical regions. Consciousness gatekeeper.' },
+    cerebellum:           { color:'#7ec8e3', desc:'Timing, prediction, motor coordination, error correction. Keeps cognitive rhythms smooth.' },
+    association:          { color:'#fb923c', desc:'Creativity, analogy-formation, conceptual blending. Where novel ideas emerge.' },
+    social:               { color:'#ff006e', desc:'Empathy, face recognition, mentalizing (understanding others\' minds), social pain.' },
+    metacognition:        { color:'#ff4060', desc:'Thinking about thinking. Self-awareness, confidence monitoring, uncertainty detection.' },
   };
   const regContainer = document.getElementById('region-bars');
   for (const [r,v] of Object.entries(state.regions||{})) {

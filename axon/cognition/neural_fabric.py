@@ -1350,6 +1350,15 @@ class NeuralFabric:
         # Already in self.fatigue GPU tensor — but add per-cluster use counter
         self._cluster_use_count = torch.zeros(N, dtype=torch.float32)
 
+        # ── Temporal context window ───────────────────────────────────────────
+        # Rolling buffer of last TEMPORAL_WIN tick activations (all CPU).
+        # Gives the fabric ~2 seconds of short-term activation memory so each
+        # tick is NOT stateless — the brain "remembers" what it was just doing.
+        self.TEMPORAL_WIN     = 20          # ~2 s at ~10 Hz tick rate
+        self._temporal_buf    = torch.zeros((self.TEMPORAL_WIN, N), dtype=torch.float32)
+        self._temporal_ptr    = 0           # circular write pointer
+        self._temporal_filled = 0           # how many slots have real data
+
         # ── Surprise-driven memory encoding boost ─────────────────────────────
         self._last_surprise   = 0.0
         self._reward_history  : deque = deque(maxlen=30)   # for meta-controller
