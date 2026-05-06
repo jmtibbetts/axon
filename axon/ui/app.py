@@ -1080,11 +1080,20 @@ if __name__ == "__main__":
     print("\n  AXON — Emerging Intelligence")
     print("  Main UI:      http://localhost:7777")
     print("  Neural Monitor: http://localhost:7777/monitor\n")
-    # Auto-open main UI only (monitor is accessible via the dashboard tab)
+    # Open browser AFTER server is ready — spawn thread here but delay enough
+    # for socketio.run() to bind the port (avoids opening before server is up)
     import threading as _th
     def _open_browser():
-        import time as _t, webbrowser as _wb
-        _t.sleep(1.5)
+        import time as _t, webbrowser as _wb, socket as _sock
+        # Wait until the port is actually accepting connections (max 15s)
+        for _ in range(30):
+            try:
+                _s = _sock.create_connection(("127.0.0.1", 7777), timeout=0.5)
+                _s.close()
+                break
+            except OSError:
+                _t.sleep(0.5)
+        _t.sleep(0.3)  # brief extra settle
         _wb.open_new_tab("http://localhost:7777")
     _th.Thread(target=_open_browser, daemon=True).start()
     print("  Axon Non-Commercial License | Copyright (c) 2026 Jon Tibbetts")
