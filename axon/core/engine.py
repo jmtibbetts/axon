@@ -123,7 +123,8 @@ class AxonEngine:
         self.self_model = SelfModel()
 
         # Last reward from fabric — consumed each cycle tick
-        self._last_reward: float = 0.0
+        self._last_reward: float  = 0.0
+        self._cycle_reward: float = 0.0   # set by CognitiveCycle each tick
 
         print("  [Engine] Initializing language core...")
         self.language = LanguageCore(
@@ -1203,9 +1204,9 @@ class AxonEngine:
         """Recursively convert numpy/torch types to native Python for JSON safety."""
         import numpy as np
         if isinstance(obj, dict):
-            return {k: Engine._json_sanitize(v) for k, v in obj.items()}
+            return {k: AxonEngine._json_sanitize(v) for k, v in obj.items()}
         if isinstance(obj, (list, tuple)):
-            return [Engine._json_sanitize(v) for v in obj]
+            return [AxonEngine._json_sanitize(v) for v in obj]
         if isinstance(obj, np.integer):
             return int(obj)
         if isinstance(obj, (np.floating, np.float32, np.float64)):
@@ -1440,7 +1441,6 @@ class AxonEngine:
         """
         fabric      = self.fabric
         state       = fabric.get_state_snapshot()
-        total_n     = sum(c.size for c in fabric.clusters.items().__class__(fabric.clusters.items()))
         total_n     = sum(c.size for c in fabric.clusters.values())
         neuro       = state.get("neuromod", {})
         emo         = state.get("emotion",  {})
@@ -1659,6 +1659,10 @@ class AxonEngine:
                 "personality": pers,
                 "neuromod":    neuro,
             },
+            "cognitive_state": fabric_state.get("cognitive_state", {}),
+            "conflict":        fabric_state.get("conflict", {}),
+            "meta":            fabric_state.get("meta", {}),
+            "strategy_lib":    fabric_state.get("strategy_lib", {}),
             "capabilities": capabilities,
             "platform": {
                 "python":   platform.python_version(),

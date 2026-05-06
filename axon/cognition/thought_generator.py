@@ -126,8 +126,8 @@ class ThoughtGenerator:
         # Emotional + chemical state in plain language
         try:
             snap = self.fabric.get_state_snapshot()
-            nm   = snap.get("neuromodulators", {})
-            emo  = snap.get("emotions", {})
+            nm   = snap.get("neuromod", {})
+            emo  = snap.get("emotion", {})
             ne   = float(nm.get("norepinephrine", 0.4))
             da   = float(nm.get("dopamine", 0.5))
             se   = float(nm.get("serotonin", 0.5))
@@ -175,8 +175,8 @@ class ThoughtGenerator:
 
         # Dominant narrative worldview
         try:
-            if hasattr(e, "narrative_threads"):
-                leader = e.narrative_threads.dominant_worldview()
+            if hasattr(e, "narratives"):
+                leader = e.narratives.dominant_worldview()
                 if leader:
                     parts.append(f"ACTIVE WORLDVIEW: {leader}")
         except Exception:
@@ -200,8 +200,8 @@ class ThoughtGenerator:
 
         # A. Relevant past outcomes (strategy library)
         try:
-            if e and hasattr(e, "strategy_lib"):
-                top = e.strategy_lib.top_strategies(3)
+            if e and hasattr(e.fabric, "strategy_lib"):
+                top = e.fabric.strategy_lib.top_strategies(3)
                 if top:
                     lines.append("Relevant past outcomes:")
                     for s in top:
@@ -242,7 +242,7 @@ class ThoughtGenerator:
         try:
             snap  = self.fabric.get_state_snapshot()
             eps   = snap.get("explore_eps", 0.18)
-            nmoda = snap.get("neuromodulators", {})
+            nmoda = snap.get("neuromod", {})
             da    = float(nmoda.get("dopamine", 0.5))
             if eps > 0.28:
                 lines.append("Current bias: favor novelty over consistency")
@@ -331,10 +331,10 @@ class ThoughtGenerator:
         """
         text_low  = candidate.text.lower()
         regions   = state_snap.get("regions", {})
-        nm        = state_snap.get("neuromodulators", {})
+        nm        = state_snap.get("neuromod", {})
         da        = float(nm.get("dopamine",      0.5))
         ne        = float(nm.get("norepinephrine", 0.4))
-        emo       = state_snap.get("emotions", {})
+        emo       = state_snap.get("emotion", {})
         valence   = float(emo.get("valence", 0.0))
 
         # ── a. Keyword → activation profile ──────────────────────────────────
@@ -475,11 +475,11 @@ class ThoughtGenerator:
                     self.engine.fabric.inject_penalty(min(0.25, abs(valence_delta) * 0.5), source=source)
 
                 # Update strategy library with what just happened
-                if hasattr(self.engine, "strategy_lib"):
+                if hasattr(self.engine.fabric, "strategy_lib"):
                     snap = self._last_state_snapshot
                     label = f"{source}_outcome"
                     try:
-                        self.engine.strategy_lib.record(
+                        self.engine.fabric.strategy_lib.record(
                             activation_snapshot=snap.get("regions", {}),
                             outcome_score=valence_delta,
                             label=label,

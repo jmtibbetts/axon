@@ -821,7 +821,7 @@ class LanguageCore:
             pass
 
         # 5. Call LLM — clamp system prompt size to avoid 400s on long context
-        MAX_SYS_CHARS = 2000
+        MAX_SYS_CHARS = 12000
         if len(sys_prompt) > MAX_SYS_CHARS:
             sys_prompt = sys_prompt[:MAX_SYS_CHARS] + "\n[...context trimmed]"
 

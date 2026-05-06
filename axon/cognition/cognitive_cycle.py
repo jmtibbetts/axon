@@ -233,7 +233,8 @@ class CognitiveCycle:
         # ── 4. Neural fabric state snapshot ───────────────────────────────
         try:
             fabric_state = e.fabric.get_state()
-            activations  = fabric_state.get("clusters", {})
+            top_cls      = fabric_state.get("top_clusters", [])
+            activations  = {c["name"]: c["activation"] for c in top_cls}
             personality  = fabric_state.get("personality", {})
             neuromod     = fabric_state.get("neuromod", {})
             emotion      = fabric_state.get("emotion", {})
