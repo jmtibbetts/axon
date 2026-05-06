@@ -22,6 +22,8 @@ app      = Flask(__name__, template_folder="../../web/templates")
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 _engine: AxonEngine = None
+_engine_lock     = threading.Lock()  # prevents double-init race
+_engine_starting = False               # True while start_engine is in progress
 
 def _apply_deferred_onboarding(brain):
     """After engine starts, apply any onboarding choices that were saved pre-engine."""
@@ -193,13 +195,15 @@ def on_update_provider(data):
 
 @socketio.on("start_engine")
 def on_start(config):
-    global _engine, _brain
-    if _engine and _engine.running:
-        emit("log", {"msg": "Already running."})
-        # Still push onboarding state so page refreshes get the correct overlay state
-        if _brain:
-            emit("onboarding_state", _sanitize(_brain.get_onboarding_state()))
-        return
+    global _engine, _brain, _engine_starting
+    with _engine_lock:
+        if (_engine and _engine.running) or _engine_starting:
+            emit("log", {"msg": "Already running."})
+            # Still push onboarding state so page refreshes get the correct overlay state
+            if _brain:
+                emit("onboarding_state", _sanitize(_brain.get_onboarding_state()))
+            return
+        _engine_starting = True
     try:
         api_key      = config.get("api_key")    or os.getenv("ANTHROPIC_API_KEY", "")
         lm_url       = config.get("lm_url",       "http://localhost:1234")
@@ -239,6 +243,8 @@ def on_start(config):
         _brain  = None
         emit("log", {"msg": f"❌ Engine startup failed: {_start_exc}"})
         emit("log", {"msg": "Check the terminal for the full traceback."})
+    finally:
+        _engine_starting = False
 
 @socketio.on("stop_engine")
 def on_stop():
@@ -1090,4 +1096,9 @@ if __name__ == "__main__":
         socketio.run(app, host="0.0.0.0", port=7777, debug=False,
                      allow_unsafe_werkzeug=True)
     except KeyboardInterrupt:
+        _shutdown()
+    except Exception as _server_exc:
+        import traceback
+        print(f"\n  [AXON] Server crashed: {_server_exc}")
+        traceback.print_exc()
         _shutdown()

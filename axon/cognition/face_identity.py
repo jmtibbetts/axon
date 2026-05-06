@@ -99,7 +99,10 @@ class FaceIdentitySystem:
             pid, name, emb_blob, first_seen, last_seen, visits, profile_json = row
             emb = np.frombuffer(emb_blob, dtype=np.float64) if emb_blob else np.array([], dtype=np.float64)
             if emb.shape[0] != 128:
-                print(f"  [FaceID] Skipping person {pid!r} ({name!r}) — bad embedding shape {emb.shape}, will re-learn on next sighting.")
+                # __owner__ is intentionally stored without an embedding (text-only profile).
+                # Other mismatches get a debug note. Skip the noisy startup warning.
+                if pid != "__owner__":
+                    print(f"  [FaceID] Skipping person {pid!r} ({name!r}) — bad embedding shape {emb.shape}, will re-learn on next sighting.")
                 # Still load the profile so the name is known, just don't add to embeddings
                 self._people[pid] = {
                     "person_id":   pid,
