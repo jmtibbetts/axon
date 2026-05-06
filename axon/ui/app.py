@@ -865,6 +865,59 @@ def api_brain_memory_hierarchy_store():
     )
     return jsonify({"ok": True, "id": row_id, "tier": tier})
 
+
+@app.route("/api/brain/interests", methods=["GET"])
+def api_brain_interests():
+    """Return all interests, boredom state, and search history."""
+    if not _engine:
+        return jsonify({"ok": False, "error": "Engine not running"})
+    result = {"ok": True}
+    if hasattr(_engine, "interests") and _engine.interests:
+        result["interests"] = _engine.interests.all_interests()
+    if hasattr(_engine, "boredom") and _engine.boredom:
+        result["boredom"] = _engine.boredom.to_dict()
+    if hasattr(_engine, "explorer") and _engine.explorer:
+        result["search_history"] = _engine.explorer.search_history()
+    return jsonify(result)
+
+@app.route("/api/brain/interests/add", methods=["POST"])
+def api_brain_interests_add():
+    """Manually seed an interest."""
+    if not _engine or not hasattr(_engine, "interests"):
+        return jsonify({"ok": False, "error": "Engine not running"})
+    data = request.json or {}
+    name = data.get("name", "").strip()
+    if not name:
+        return jsonify({"ok": False, "error": "name required"})
+    interest = _engine.interests.add_or_strengthen(
+        name,
+        reward=float(data.get("strength", 0.3)),
+        novelty=0.5,
+        source="manual",
+    )
+    if interest:
+        _engine._emit("new_interest", {"name": name, "source": "manual", "strength": interest.strength})
+    return jsonify({"ok": True, "name": name})
+
+@app.route("/api/brain/interests/remove", methods=["POST"])
+def api_brain_interests_remove():
+    """Force-remove an interest."""
+    if not _engine or not hasattr(_engine, "interests"):
+        return jsonify({"ok": False, "error": "Engine not running"})
+    data = request.json or {}
+    name = (data.get("name", "")).strip().lower()
+    with _engine.interests._lock:
+        if name in _engine.interests._items:
+            del _engine.interests._items[name]
+            _engine.interests._delete(name)
+    return jsonify({"ok": True, "removed": name})
+
+@app.route("/api/brain/boredom", methods=["GET"])
+def api_brain_boredom():
+    if not _engine or not hasattr(_engine, "boredom"):
+        return jsonify({"ok": False, "error": "Engine not running"})
+    return jsonify({"ok": True, **_engine.boredom.to_dict()})
+
 if __name__ == "__main__":
     import signal, sys
 

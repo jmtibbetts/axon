@@ -643,6 +643,26 @@ class LanguageCore:
                 hobby_list = identity.get("hobbies", {}).get("hobbies", [])
                 if hobby_list:
                     sys_prompt += f"\nYou voluntarily return to: {', '.join(hobby_list[:3])} during idle time — these are your hobbies."
+                # Genuine interests from InterestLibrary
+                try:
+                    if hasattr(engine, "interests") and engine.interests:
+                        interest_ctx = engine.interests.interest_context_string(6)
+                        if interest_ctx:
+                            sys_prompt += f"\n{interest_ctx}."
+                        # Boredom state awareness
+                        if hasattr(engine, "boredom") and engine.boredom:
+                            bphase = engine.boredom.phase
+                            if bphase in ("seeking", "hungry"):
+                                sys_prompt += (
+                                    "\n[INTERNAL STATE] You are currently experiencing intellectual hunger — "
+                                    "you have been idle and are driven to explore ideas and learn something new."
+                                )
+                            elif bphase == "curious":
+                                sys_prompt += (
+                                    "\n[INTERNAL STATE] You feel mildly restless — drawn toward exploring your interests."
+                                )
+                except Exception:
+                    pass
             except Exception:
                 pass
 

@@ -31,6 +31,7 @@ from axon.cognition.reflection_engine  import ReflectionEngine
 from axon.cognition.narrative_threads  import NarrativeThreads
 from axon.cognition.memory_hierarchy   import MemoryHierarchy
 from axon.cognition.thought_generator  import ThoughtGenerator
+from axon.cognition.boredom_engine      import BoredomEngine, InterestLibrary, AutonomousExplorer
 
 
 class AxonEngine:
@@ -67,6 +68,11 @@ class AxonEngine:
         print("  [Engine] Initializing preference tracker + hobby engine...")
         self.preferences = PreferenceTracker(db_path)
         self.hobbies     = HobbyEngine(db_path)
+
+        print("  [Engine] Initializing boredom + autonomous interest system...")
+        self.boredom    = BoredomEngine()
+        self.interests  = InterestLibrary(db_path)
+        self.explorer   = AutonomousExplorer(self.interests, self.boredom)
 
         # Inject into fabric so reward loop can use them
         self.fabric._belief_system      = self.beliefs
@@ -578,6 +584,13 @@ class AxonEngine:
             result["value_summary"] = self.value_system.summarize()
         if hasattr(self, "cycle") and self.cycle:
             result["cycle_metrics"] = self.cycle.get_metrics()
+        # Boredom + interests
+        if hasattr(self, "boredom") and self.boredom:
+            result["boredom"] = self.boredom.to_dict()
+        if hasattr(self, "interests") and self.interests:
+            result["interests"] = self.interests.all_interests()
+        if hasattr(self, "explorer") and self.explorer:
+            result["search_history"] = self.explorer.search_history()
         return result
 
     def _on_transcript(self, text: str):
@@ -587,6 +600,15 @@ class AxonEngine:
         # Mark as externally driven — resets idle timer for hobby detection
         if hasattr(self, 'hobbies'):
             self.hobbies.mark_external_input()
+        # Boredom relief on real input
+        if hasattr(self, 'boredom'):
+            self.boredom.register_input(1.0)
+        # Extract potential interests from what the user says
+        if hasattr(self, 'explorer') and hasattr(self, 'interests'):
+            try:
+                self.explorer._extract_new_interests(self, text, source="conversation")
+            except Exception:
+                pass
         self._emit("log",        {"msg": f"🎤 Heard: {text}"})
         self.fabric.stimulate_for_input("speech",   0.75)
         self.fabric.stimulate_for_input("question", 0.60)

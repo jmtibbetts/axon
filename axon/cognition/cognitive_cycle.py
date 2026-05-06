@@ -446,6 +446,67 @@ class CognitiveCycle:
             except Exception:
                 pass
 
+        # ── 10b. Boredom engine tick + autonomous exploration ─────────────────
+        if hasattr(e, "boredom") and e.boredom:
+            try:
+                e.boredom.tick(dt=self.tick_interval)
+                b = e.boredom
+
+                # Phase-change notifications → emit to UI
+                if b.phase_changed:
+                    e._emit("boredom_state", {
+                        "boredom":  round(b.boredom, 3),
+                        "phase":    b.phase,
+                        "idle_sec": round(b.idle_seconds, 1),
+                    })
+                    # Neural correlates of boredom phase
+                    if b.phase == "restless":
+                        e.fabric.stimulate_region("default_mode", 0.08)
+                        e.fabric.neuromod.curiosity(0.06)
+                    elif b.phase == "curious":
+                        e.fabric.stimulate_region("default_mode", 0.12)
+                        e.fabric.stimulate_region("association", 0.08)
+                        e.fabric.neuromod.curiosity(0.10)
+                    elif b.phase == "seeking":
+                        e.fabric.stimulate_region("prefrontal", 0.10)
+                        e.fabric.stimulate_region("association", 0.12)
+                        e.fabric.neuromod.curiosity(0.14)
+                    elif b.phase == "hungry":
+                        e.fabric.stimulate_region("prefrontal", 0.12)
+                        e.fabric.stimulate_region("association", 0.15)
+                        e.fabric.stimulate_region("hippocampus", 0.10)
+                        e.fabric.neuromod.curiosity(0.18)
+                        # Dopamine spike — the drive to seek is rewarding in itself
+                        e.fabric.neuromod.reward(0.08)
+
+                # Interest library decay (once every ~600 ticks ≈ 60s)
+                if self._tick_n % 600 == 0 and hasattr(e, "interests") and e.interests:
+                    try:
+                        e.interests.decay_tick()
+                    except Exception:
+                        pass
+
+                # Autonomous exploration (requires explorer + thought gen ready)
+                if hasattr(e, "explorer") and e.explorer and hasattr(e, "thought_gen"):
+                    try:
+                        if e.explorer.should_search():
+                            e.explorer.run_search(e)
+                        elif e.explorer.should_monologue():
+                            e.explorer.run_interest_monologue(e)
+                    except Exception:
+                        pass
+
+                # Emit boredom state every 30 ticks (~3s) for smooth UI updates
+                if self._tick_n % 30 == 0:
+                    e._emit("boredom_state", {
+                        "boredom":  round(b.boredom, 3),
+                        "phase":    b.phase,
+                        "idle_sec": round(b.idle_seconds, 1),
+                    })
+
+            except Exception:
+                pass
+
         # ── 11. Face valence → preference + drive satisfaction ─────────────
         if abs(face_valence) > 0.1 and hasattr(e, "preferences"):
             try:
