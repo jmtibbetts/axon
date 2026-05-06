@@ -1629,12 +1629,32 @@ function addSynapseEvent(srcRegion, dstRegion, strength, type) {
   const d1 = REGION_DEFS[srcRegion], d2 = REGION_DEFS[dstRegion];
   if (!d1 || !d2 || srcRegion === dstRegion) return;
   const W = nCanvas.width, H = nCanvas.height;
-  // Pick random neurons near each centroid as endpoints
+  // Pick neurons near the EDGE of each cluster (facing each other)
   const srcNeurons = neuronNodes.filter(n => n.region === srcRegion);
   const dstNeurons = neuronNodes.filter(n => n.region === dstRegion);
   if (!srcNeurons.length || !dstNeurons.length) return;
-  const sn = srcNeurons[Math.floor(Math.random() * srcNeurons.length)];
-  const dn = dstNeurons[Math.floor(Math.random() * dstNeurons.length)];
+  // Edge-biased pick for src
+  const c2x = d2.x*W, c2y = d2.y*H, c1x = d1.x*W, c1y = d1.y*H;
+  const snCands = srcNeurons.length > 8 ? srcNeurons.filter((_,i)=>i%2===0) : srcNeurons;
+  const sn = snCands.reduce((a,b) => {
+    const adx=a.x-c1x, ady=a.y-c1y, bdx=b.x-c1x, bdy=b.y-c1y;
+    const dd=Math.hypot(c2x-c1x,c2y-c1y)||1;
+    const ux=(c2x-c1x)/dd, uy=(c2y-c1y)/dd;
+    const al=Math.hypot(adx,ady)||1, bl=Math.hypot(bdx,bdy)||1;
+    const aScore = (adx/al)*ux+(ady/al)*uy + Math.random()*0.3;
+    const bScore = (bdx/bl)*ux+(bdy/bl)*uy + Math.random()*0.3;
+    return aScore > bScore ? a : b;
+  });
+  const dnCands = dstNeurons.length > 8 ? dstNeurons.filter((_,i)=>i%2===0) : dstNeurons;
+  const dn = dnCands.reduce((a,b) => {
+    const adx=a.x-c2x, ady=a.y-c2y, bdx=b.x-c2x, bdy=b.y-c2y;
+    const dd=Math.hypot(c1x-c2x,c1y-c2y)||1;
+    const ux=(c1x-c2x)/dd, uy=(c1y-c2y)/dd;
+    const al=Math.hypot(adx,ady)||1, bl=Math.hypot(bdx,bdy)||1;
+    const aScore = (adx/al)*ux+(ady/al)*uy + Math.random()*0.3;
+    const bScore = (bdx/bl)*ux+(bdy/bl)*uy + Math.random()*0.3;
+    return aScore > bScore ? a : b;
+  });
   const color = type === 'new' ? '#ffffff' : d1.color;
   synapseEvents.push({
     x0: sn.x, y0: sn.y,
@@ -1755,9 +1775,39 @@ function addPulse(r1, r2, strength) {
   const d1 = REGION_DEFS[r1], d2 = REGION_DEFS[r2];
   if (!d1 || !d2) return;
   const W = nCanvas.width, H = nCanvas.height;
+  // Find an edge neuron to start/end the pulse (more realistic fiber routing)
+  const srcNodes = neuronNodes.filter(n => n.region === r1);
+  const dstNodes = neuronNodes.filter(n => n.region === r2);
+  const c2x = d2.x * W, c2y = d2.y * H;
+  const c1x = d1.x * W, c1y = d1.y * H;
+  // Pick src neuron facing dst
+  let sx = d1.x*W, sy = d1.y*H;
+  let ex = d2.x*W, ey = d2.y*H;
+  if (srcNodes.length > 3) {
+    const cands = srcNodes.filter((_,i) => i%3===0);
+    const best = cands.reduce((a,b) => {
+      const ax=(a.x-d1.x*W)/W, ay=(a.y-d1.y*H)/H;
+      const bx=(b.x-d1.x*W)/W, by=(b.y-d1.y*H)/H;
+      const dx=(c2x-d1.x*W)/W, dy=(c2y-d1.y*H)/H;
+      const la=Math.hypot(ax,ay)||1, lb=Math.hypot(bx,by)||1;
+      return (ax/la*dx+ay/la*dy) > (bx/lb*dx+by/lb*dy) ? a : b;
+    });
+    sx = best.x; sy = best.y;
+  }
+  if (dstNodes.length > 3) {
+    const cands = dstNodes.filter((_,i) => i%3===0);
+    const best = cands.reduce((a,b) => {
+      const ax=(a.x-d2.x*W)/W, ay=(a.y-d2.y*H)/H;
+      const bx=(b.x-d2.x*W)/W, by=(b.y-d2.y*H)/H;
+      const dx=(c1x-d2.x*W)/W, dy=(c1y-d2.y*H)/H;
+      const la=Math.hypot(ax,ay)||1, lb=Math.hypot(bx,by)||1;
+      return (ax/la*dx+ay/la*dy) > (bx/lb*dx+by/lb*dy) ? a : b;
+    });
+    ex = best.x; ey = best.y;
+  }
   pulses.push({
-    x0: d1.x*W, y0: d1.y*H,
-    x1: d2.x*W, y1: d2.y*H,
+    x0: sx, y0: sy,
+    x1: ex, y1: ey,
     t:  0,
     color: d1.color,
     strength: Math.min(1, strength),
@@ -1918,33 +1968,35 @@ function drawNeural() {
   axonFrame++;
   const W = nCanvas.width, H = nCanvas.height;
 
-  // Trail fade — slower = longer trails
-  nCtx.fillStyle = 'rgba(2,2,6,0.28)';
+  // Trail fade — faster = tighter, more reactive visual
+  // At 60fps: 0.35 means ~5-6 frames persistence (sharp and clean)
+  nCtx.fillStyle = 'rgba(2,2,6,0.40)';
   nCtx.fillRect(0, 0, W, H);
 
   const regionMap = (neuralState && neuralState.regions) ? neuralState.regions : {};
 
   // ── Region contrast stretch ─────────────────────────────────────────────────
-  // Goal: quiet regions (< 0.15) stay very dim (< 0.08 on canvas)
-  //       active regions (> 0.35) surge bright (> 0.7 on canvas)
-  // Approach: subtract a resting floor then apply a power boost
-  // Contrast stretch: retain idle glow (don't strip to zero), but still
-  // amplify active regions strongly. Biological brains are NEVER silent.
-  const RESTING_FLOOR = 0.04;   // only strip true noise (< 4%)
+  // GOAL: idle regions are nearly DARK. Active regions are BRIGHT.
+  // The backend sends values like 0.05–0.35 for idle, 0.50–1.0 for active.
+  // We aggressively strip the idle floor so only genuine activity shows.
   const sharpenedRegion = {};
+  const IDLE_FLOOR   = 0.07;   // anything below this → near zero on canvas
+  const ACTIVE_START = 0.25;   // above this → starts getting bright
   for (const [k, v] of Object.entries(regionMap)) {
-    // Use regional baselines so each area has its own resting glow
-    const REGION_BASELINES = {
-      prefrontal:0.12, default_mode:0.18, thalamus:0.14,
-      hippocampus:0.10, amygdala:0.08, visual:0.06,
-      auditory:0.06, language:0.09, association:0.10,
-      social:0.07, cerebellum:0.09, metacognition:0.12
-    };
-    const floor = REGION_BASELINES[k] || RESTING_FLOOR;
-    const above = Math.max(0, v - RESTING_FLOOR);
-    const scaled = above / (1.0 - RESTING_FLOOR);
-    // Softer power curve: 1.2 instead of 1.6 so idle values stay visible
-    sharpenedRegion[k] = Math.max(floor * 0.55, Math.pow(scaled, 1.2));
+    let out;
+    if (v <= IDLE_FLOOR) {
+      // Nearly silent — render as 0 to 0.02 (barely visible faint dot core)
+      out = (v / IDLE_FLOOR) * 0.02;
+    } else if (v <= ACTIVE_START) {
+      // Transition zone: dim to moderate
+      const t = (v - IDLE_FLOOR) / (ACTIVE_START - IDLE_FLOOR);
+      out = 0.02 + Math.pow(t, 2.0) * 0.20;
+    } else {
+      // Genuinely active: bright, visible
+      const t = (v - ACTIVE_START) / (1.0 - ACTIVE_START);
+      out = 0.22 + Math.pow(t, 0.8) * 0.78;
+    }
+    sharpenedRegion[k] = Math.max(0, Math.min(1.0, out));
   }
 
   // ── Receive new state and schedule spike waves ──────────────────────
@@ -2014,22 +2066,27 @@ function drawNeural() {
         scheduleSpikeWave(c.region || regionForCluster(c.name), Math.max(0.08, sharpAct));
       }
     });
-    // Spontaneous idle spike wave on a random region every update cycle
-    // (simulates the brain's spontaneous resting state activity)
-    if (axonFrame % 16 === 0) {
-      const rKeys = Object.keys(REGION_DEFS);
-      const randReg = rKeys[Math.floor(Math.random() * rKeys.length)];
-      const idleAct = sharpenedRegion[randReg] || 0.06;
-      scheduleSpikeWave(randReg, 0.04 + idleAct * 0.3);
+    // Spontaneous idle spike — only on ACTIVE regions, proportional to their activity
+    // No more random all-region constant noise
+    if (axonFrame % 20 === 0) {
+      // Find genuinely active regions only
+      const activeRegs = Object.entries(sharpenedRegion)
+        .filter(([,v]) => v > 0.20)
+        .sort((a,b) => b[1]-a[1]);
+      if (activeRegs.length) {
+        // Fire on top 1-2 active regions to reinforce real activity
+        const pick = activeRegs[Math.floor(Math.random() * Math.min(2, activeRegs.length))];
+        scheduleSpikeWave(pick[0], pick[1] * 0.6);
+      }
     }
 
-    // Fire pulses along active axon routes
+    // Fire pulses along active axon routes — only when both regions are genuinely firing
     AXON_ROUTES.forEach(([src, dst, w]) => {
       const sa = sharpenedRegion[src] || 0;
       const da = sharpenedRegion[dst] || 0;
+      if (sa < 0.12 || da < 0.08) return;  // both must be meaningfully active
       const coact = sa * da;
-      // Lower coact threshold — show pulses even at resting activation levels
-      if (coact > 0.02 && Math.random() < coact * w * 0.8) {
+      if (coact > 0.015 && Math.random() < coact * w * 1.0) {
         addPulse(src, dst, Math.sqrt(coact) * w);
       }
     });
@@ -2053,78 +2110,94 @@ function drawNeural() {
     }
   }
 
-  // ── Spontaneous synapse formation — biological idle plasticity ──────
-  // Every ~2s at idle, form a visible glowing connection between two regions
-  if (axonFrame % 110 === 0 && Math.random() < 0.75) {
-    const route = AXON_ROUTES[Math.floor(Math.random() * AXON_ROUTES.length)];
-    const sa = sharpenedRegion[route[0]] || 0.08;
-    const da = sharpenedRegion[route[1]] || 0.08;
-    const strength = 0.15 + Math.max(sa, da) * 0.5;
-    addSynapseEvent(route[0], route[1], strength, Math.random() < 0.3 ? 'new' : 'strengthen');
-  }
-  // During active processing: much more frequent spontaneous connections
+  // ── Synapse formation — ONLY trigger when regions are genuinely active ──
+  // No more fake idle connections. Connections form when real activity happens.
   {
     const topActVal = Math.max(0, ...Object.values(sharpenedRegion));
-    if (topActVal > 0.35 && axonFrame % 30 === 0 && Math.random() < 0.9) {
+    if (topActVal > 0.30 && axonFrame % 40 === 0 && Math.random() < 0.85) {
+      // Pick a route where BOTH endpoints are active
       const activeRoutes = AXON_ROUTES.filter(([s,d]) =>
-        (sharpenedRegion[s]||0) > 0.18 || (sharpenedRegion[d]||0) > 0.18);
-      const r = activeRoutes.length
-        ? activeRoutes[Math.floor(Math.random() * activeRoutes.length)]
-        : AXON_ROUTES[Math.floor(Math.random() * AXON_ROUTES.length)];
-      addSynapseEvent(r[0], r[1], 0.3 + topActVal * 0.6, 'strengthen');
+        (sharpenedRegion[s]||0) > 0.20 && (sharpenedRegion[d]||0) > 0.15);
+      if (activeRoutes.length) {
+        const r = activeRoutes[Math.floor(Math.random() * activeRoutes.length)];
+        addSynapseEvent(r[0], r[1], 0.4 + topActVal * 0.5, 'strengthen');
+      }
+    }
+    // New pathway formation — rarer, only when activity is high
+    if (topActVal > 0.55 && axonFrame % 90 === 0 && Math.random() < 0.6) {
+      const hotRoutes = AXON_ROUTES.filter(([s,d]) =>
+        (sharpenedRegion[s]||0) > 0.40 && (sharpenedRegion[d]||0) > 0.30);
+      if (hotRoutes.length) {
+        const r = hotRoutes[Math.floor(Math.random() * hotRoutes.length)];
+        addSynapseEvent(r[0], r[1], 0.6 + topActVal * 0.4, 'new');
+      }
     }
   }
 
-  // ── Autonomous biological pulses — fire frequently across the whole brain ──
-  // Every 12 frames fire a random route pulse (idle brain is NEVER static)
-  if (axonFrame % 12 === 0) {
-    const r = AXON_ROUTES[Math.floor(Math.random() * AXON_ROUTES.length)];
-    if (r) {
-      const sa = sharpenedRegion[r[0]] || 0.06;
-      const da = sharpenedRegion[r[1]] || 0.06;
-      addPulse(r[0], r[1], 0.06 + Math.max(sa, da) * 0.5 + Math.random() * 0.08);
-    }
+  // ── Axon pulses — only when activity warrants it ──────────────────
+  // Pulses represent actual signal propagation, not decorative noise.
+  if (axonFrame % 8 === 0) {
+    AXON_ROUTES.forEach(([src, dst, w]) => {
+      const sa = sharpenedRegion[src] || 0;
+      const da = sharpenedRegion[dst] || 0;
+      const coact = sa * da;
+      // Only fire pulse if BOTH endpoints are active enough
+      if (sa > 0.15 && coact > 0.04 && Math.random() < coact * w * 1.2) {
+        addPulse(src, dst, Math.sqrt(coact) * w);
+      }
+    });
   }
-  // Every 25 frames fire a thalamus broadcast (thalamus is always relaying)
-  if (axonFrame % 25 === 0) {
+  // Thalamus always has some baseline relay activity — the sensory hub never sleeps
+  if (axonFrame % 35 === 0) {
+    const thalAct = sharpenedRegion['thalamus'] || 0.08;
     const tRoutes = AXON_ROUTES.filter(([s]) => s === 'thalamus');
     const tr = tRoutes[Math.floor(Math.random() * tRoutes.length)];
-    if (tr) addPulse(tr[0], tr[1], 0.12 + Math.random() * 0.10);
+    if (tr && thalAct > 0.05) addPulse(tr[0], tr[1], 0.08 + thalAct * 0.4);
   }
 
-  // ── Update neuron activations + emit trails ─────────────────────────
-  const TRAIL_SAMPLE_RATE = 12;   // emit a trail dot every N frames
+  // ── Update neuron activations ──────────────────────────────────────
+  // DESIGN GOAL: neurons are DARK at rest, only light up when their region
+  // is genuinely active. Contrast between active/inactive must be stark.
+  const TRAIL_SAMPLE_RATE = 8;
   neuronNodes.forEach(n => {
     const regionAct = sharpenedRegion[n.region] || 0;
-    // Apply fatigue dimming
     const fatigue = fatigueMap[n.region] || 0;
-    const fatigueScale = 1.0 - fatigue * 0.4;
+    const fatigueScale = 1.0 - fatigue * 0.45;
 
-    // Biological resting: even "inactive" neurons maintain a baseline flicker
-    // Use the regional baseline from sharpenedRegion OR a small constant floor
-    const restingFloor = 0.04 + Math.sin(n.phase * 0.7) * 0.015;
-    if (regionAct < 0.01) {
-      n.activation = Math.max(restingFloor, n.activation * 0.96);
-      n.phase += n.speed;
-      // Even at idle, neurons fire tiny spontaneous spikes
-      if (Math.random() < 0.002) n.activation = Math.min(0.25, n.activation + 0.08);
-      return;
+    n.phase += n.speed;
+
+    // Each neuron has its own sensitivity multiplier (set once)
+    if (!n.personalMult) n.personalMult = 0.5 + Math.random() * 1.0;
+
+    if (regionAct < 0.05) {
+      // Region is quiet — neuron decays hard toward zero
+      // Only a tiny fraction spontaneously fire (biological noise)
+      n.activation *= 0.88;
+      if (Math.random() < 0.0008) {
+        // Rare spontaneous spike — dims quickly
+        n.activation = Math.min(0.18, n.activation + 0.12);
+      }
+    } else {
+      // Region is active — drive neuron toward target activation
+      // personalMult creates natural spread: some neurons in the region
+      // fire hard, others lag — realistic heterogeneity
+      const target = Math.min(1.0, regionAct * n.personalMult * fatigueScale);
+      // Fast rise, slow decay (like real membrane potential)
+      const lerpRate = target > n.activation ? 0.12 : 0.05;
+      n.activation += (target - n.activation) * lerpRate;
+      // Biological noise jitter — only when region is firing
+      const jitter = (Math.sin(n.phase) * 0.5 + 0.5) * regionAct * 0.04;
+      n.activation = Math.max(0.0, Math.min(1.0, n.activation + jitter));
     }
-    if (!n.personalMult) n.personalMult = 0.4 + Math.random() * 1.2;
-    const target = Math.min(1.0, regionAct * n.personalMult * fatigueScale);
-    n.activation += (target - n.activation) * 0.06;
-    n.phase      += n.speed;
-    const flicker = (Math.sin(n.phase) * 0.5 + 0.5) * regionAct;
-    n.activation  = Math.max(0.0, Math.min(1.0, n.activation + flicker * 0.025 - 0.008));
 
-    // ── Activation trails (comet tails) ─────────────────────────────
-    if (n.activation > 0.55 && axonFrame % TRAIL_SAMPLE_RATE === 0) {
+    // Activation trails (comet tails) — only for genuinely firing neurons
+    if (n.activation > 0.60 && axonFrame % TRAIL_SAMPLE_RATE === 0) {
       activationTrails.push({
         x:      n.x,
         y:      n.y,
         color:  n.color,
         life:   1.0,
-        radius: n.baseR * 0.8 + n.activation * 1.2,
+        radius: n.baseR * 0.7 + n.activation * 1.5,
       });
     }
   });
@@ -2142,7 +2215,7 @@ function drawNeural() {
   for (const sp of spikeQueue) {
     if (sp.at <= axonFrame) {
       const n = neuronNodes[sp.idx];
-      if (n) n.activation = Math.min(1.0, n.activation + 0.18 + Math.random()*0.08);
+      if (n) n.activation = Math.min(1.0, n.activation + 0.28 + Math.random()*0.12);
     } else {
       remaining.push(sp);
     }
@@ -2150,22 +2223,24 @@ function drawNeural() {
   spikeQueue.length = 0;
   spikeQueue.push(...remaining);
 
-  // ── Propagate spikes to neighbors (within-region dendrites) ─────────
+  // ── Propagate spikes to neighbors ────────────────────────────────────
   const nextActivation = neuronNodes.map(n => n.activation);
   neuronNodes.forEach((n, i) => {
-    if (n.activation < 0.60) return;
-    const signal = n.activation * 0.04;
+    if (n.activation < 0.55) return;
+    // Within-region: spread to nearby neurons to create coherent firing clusters
+    const signal = n.activation * 0.06;
     n.neighbors.forEach(j => {
-      nextActivation[j] = Math.min(1.0, nextActivation[j] + signal * (0.3 + Math.random()*0.2));
+      nextActivation[j] = Math.min(1.0, nextActivation[j] + signal * (0.35 + Math.random()*0.25));
     });
-    // Cross-region axon propagation — fire at a much lower threshold
-    // so connections are always being made/broken even at idle
-    if (n.activation > 0.35) n.xNeighbors.forEach(j => {
-      if (Math.random() < n.activation * 0.6) {   // probabilistic, not deterministic
-        const delay = 2 + Math.floor(Math.random() * 6);
-        spikeQueue.push({ idx: j, at: axonFrame + delay });
-      }
-    });
+    // Cross-region: only strongly firing neurons propagate across regions
+    if (n.activation > 0.65) {
+      n.xNeighbors.forEach(j => {
+        if (Math.random() < n.activation * 0.45) {
+          const delay = 3 + Math.floor(Math.random() * 10);
+          spikeQueue.push({ idx: j, at: axonFrame + delay });
+        }
+      });
+    }
   });
   neuronNodes.forEach((n, i) => { n.activation = nextActivation[i]; });
 
@@ -2256,15 +2331,17 @@ function drawNeural() {
   }
 
   // ── Draw within-region synaptic connections ─────────────────────────
-  // Even resting neurons (0.05+) should show faint local dendrites
-  nCtx.lineWidth = 0.25;
+  // Only draw dendrites when BOTH neurons are genuinely active.
+  // This creates sparse, meaningful connection flashes vs always-on noise.
+  nCtx.lineWidth = 0.4;
   neuronNodes.forEach(n => {
-    if (n.activation < 0.06) return;   // was 0.35 — show at resting potential
+    if (n.activation < 0.30) return;  // must be meaningfully active
     n.neighbors.forEach(j => {
       const m   = neuronNodes[j];
+      if (m.activation < 0.20) return;  // neighbor must also be active
       const sig = n.activation * m.activation;
-      if (sig < 0.003) return;         // was 0.04
-      const alpha = Math.min(90, Math.round(sig * 200));
+      if (sig < 0.08) return;
+      const alpha = Math.min(120, Math.round(sig * 180));
       nCtx.beginPath();
       nCtx.moveTo(n.x, n.y);
       nCtx.lineTo(m.x, m.y);
@@ -2273,54 +2350,134 @@ function drawNeural() {
     });
   });
 
-  // ── Draw cross-region axon lines — always visible, intensity varies ──
-  // Always draw ALL routes at minimum opacity so the brain looks connected.
-  // Active routes (high coactivation) become bright and thick.
-  if (axonFrame % 3 === 0) {
+  // ── Draw cross-region axon connections — neuron-edge-to-neuron-edge ──
+  // Connections draw from the actual boundary of each cluster cloud, not center,
+  // so they're visible BETWEEN clouds. Multiple fibers per route.
+  // Runs every frame for living, dynamic feel.
+  {
+    // Helper: pick a neuron near the EDGE of a region (toward a target point)
+    function edgeNeuronToward(region, tx, ty) {
+      const nodes = neuronNodes.filter(n => n.region === region);
+      if (!nodes.length) return null;
+      // Pick the neuron closest to the line from centroid toward target
+      const d = REGION_DEFS[region];
+      const cx = d.x * W, cy = d.y * H;
+      // Direction toward target
+      const dx = tx - cx, dy = ty - cy;
+      const len = Math.hypot(dx, dy) || 1;
+      const ux = dx / len, uy = dy / len;
+      // Score: dot product with direction + some randomness
+      let best = null, bestScore = -Infinity;
+      const sample = nodes.length > 60 ? nodes.filter((_,i)=>i%3===0) : nodes;
+      sample.forEach(n => {
+        const nx = n.x - cx, ny = n.y - cy;
+        const nl = Math.hypot(nx, ny) || 1;
+        const dot = (nx/nl)*ux + (ny/nl)*uy;
+        const score = dot * 0.7 + (Math.hypot(nx,ny) / (d.spread * W + 1)) * 0.3
+                     + (Math.random() - 0.5) * 0.2;
+        if (score > bestScore) { bestScore = score; best = n; }
+      });
+      return best;
+    }
+
     AXON_ROUTES.forEach(([src, dst, w]) => {
       const d1 = REGION_DEFS[src], d2 = REGION_DEFS[dst];
       if (!d1||!d2) return;
       const sa = sharpenedRegion[src] || 0;
       const da = sharpenedRegion[dst] || 0;
       const combined = Math.max(sa, da);
-      const minVisible = 0.05 * w;   // always at least this bright (was 0 if coact<0.04)
-      if (combined < 0.001 && minVisible < 0.01) return;
+      const hebbKey  = src + ">" + dst;
+      const hebbW    = (window._hebbianWeights && window._hebbianWeights[hebbKey]) || 0;
+      const totalW   = w * (1.0 + hebbW * 3.0);
 
-      // ── Weight-driven thickness + glow ─────────────────────────────
-      // _hebbianWeights[src+">"+dst] is updated by brain_state events
-      const hebbKey = src + ">" + dst;
-      const hebbW   = (window._hebbianWeights && window._hebbianWeights[hebbKey]) || 0;
-      const totalW  = w * (1.0 + hebbW * 2.5);   // base route weight + Hebbian boost
-      const lineW   = Math.max(0.5, Math.min(4.5, totalW * Math.max(combined, minVisible) * 3.5));
-      // Minimum alpha so all routes always show as a dim web
-      const alphaNum= Math.max(8, Math.round(Math.max(combined, minVisible) * totalW * 28));
-      const alpha   = Math.min(255, alphaNum).toString(16).padStart(2,'0');
+      // Only draw cross-region fibers when BOTH regions are meaningfully active
+      // OR when Hebbian weight is strong (established pathway)
+      const minActivity = Math.max(combined, hebbW * 0.5);
+      if (minActivity < 0.04 && hebbW < 0.2) return;  // skip truly idle routes
 
-      const mx = (d1.x*W + d2.x*W)/2;
-      const my = (d1.y*H + d2.y*H)/2 - 25;
+      // Alpha: very dim at low activity, bright when both regions fire together
+      const activeAlpha = Math.round(Math.pow(minActivity, 0.7) * totalW * 160);
+      const baseAlpha   = Math.max(hebbW > 0.3 ? 8 : 3, activeAlpha);
+      const alpha       = Math.min(200, baseAlpha).toString(16).padStart(2,'0');
+      const lineW       = Math.max(0.3, Math.min(4.0, totalW * Math.max(combined, 0.04) * 5));
 
+      // Centroid positions (for curve control point)
+      const c1x = d1.x * W, c1y = d1.y * H;
+      const c2x = d2.x * W, c2y = d2.y * H;
+
+      // Pick edge neurons (recompute every ~15 frames to animate which fiber shows)
+      const frameSlot = Math.floor(axonFrame / 15);
+      if (!window._axonFibers) window._axonFibers = {};
+      const fKey = src + ">" + dst + "_" + (frameSlot % 4);
+      if (!window._axonFibers[fKey]) {
+        const n1 = edgeNeuronToward(src, c2x, c2y);
+        const n2 = edgeNeuronToward(dst, c1x, c1y);
+        if (n1 && n2) window._axonFibers[fKey] = {x0:n1.x,y0:n1.y,x1:n2.x,y1:n2.y};
+      }
+      const fiber = window._axonFibers[fKey];
+      if (!fiber) return;
+
+      // Control point arcs BETWEEN the two clouds
+      const mx = (fiber.x0 + fiber.x1) / 2;
+      // Perpendicular offset so the arc bows outward between clouds
+      const ddx = fiber.x1 - fiber.x0, ddy = fiber.y1 - fiber.y0;
+      const dist = Math.hypot(ddx, ddy);
+      const perpX = -ddy / dist, perpY = ddx / dist;
+      const bow = Math.min(60, dist * 0.18);
+      const mcy = (fiber.y0 + fiber.y1) / 2 + perpY * bow;
+      const mcx = mx + perpX * bow;
+
+      // Primary fiber
       nCtx.beginPath();
-      nCtx.moveTo(d1.x*W, d1.y*H);
-      nCtx.quadraticCurveTo(mx, my, d2.x*W, d2.y*H);
+      nCtx.moveTo(fiber.x0, fiber.y0);
+      nCtx.quadraticCurveTo(mcx, mcy, fiber.x1, fiber.y1);
       nCtx.lineWidth   = lineW;
       nCtx.strokeStyle = d1.color + alpha;
       nCtx.stroke();
 
-      // Glow for strong Hebbian connections
-      if (hebbW > 0.4 && combined > 0.3) {
+      // Glow layer for active / Hebbian routes
+      if (combined > 0.25 || hebbW > 0.3) {
         nCtx.save();
-        nCtx.beginPath();
-        nCtx.moveTo(d1.x*W, d1.y*H);
-        nCtx.quadraticCurveTo(mx, my, d2.x*W, d2.y*H);
-        nCtx.lineWidth   = lineW * 2.2;
-        nCtx.strokeStyle = d1.color + "22";
-        nCtx.shadowBlur  = 8 + hebbW * 12;
+        nCtx.shadowBlur  = 6 + hebbW * 16 + combined * 10;
         nCtx.shadowColor = d1.color;
+        nCtx.beginPath();
+        nCtx.moveTo(fiber.x0, fiber.y0);
+        nCtx.quadraticCurveTo(mcx, mcy, fiber.x1, fiber.y1);
+        nCtx.lineWidth   = lineW * 1.8;
+        const glowA = Math.min(80, Math.round((combined * 0.6 + hebbW * 0.5) * 80)).toString(16).padStart(2,'0');
+        nCtx.strokeStyle = d1.color + glowA;
         nCtx.stroke();
         nCtx.restore();
       }
+
+      // Draw additional fibers for strong routes
+      if (combined > 0.4 || hebbW > 0.5) {
+        const fiberCount = Math.min(4, 1 + Math.floor(combined * 4 + hebbW * 3));
+        for (let f = 1; f < fiberCount; f++) {
+          const fKey2 = src + ">" + dst + "_extra_" + f;
+          if (!window._axonFibers[fKey2] || axonFrame % 45 === 0) {
+            const n1 = edgeNeuronToward(src, c2x, c2y);
+            const n2 = edgeNeuronToward(dst, c1x, c1y);
+            if (n1 && n2) window._axonFibers[fKey2] = {x0:n1.x,y0:n1.y,x1:n2.x,y1:n2.y};
+          }
+          const fi = window._axonFibers[fKey2];
+          if (!fi) continue;
+          const mx2 = (fi.x0 + fi.x1) / 2;
+          const dd2x = fi.x1 - fi.x0, dd2y = fi.y1 - fi.y0;
+          const dist2 = Math.hypot(dd2x, dd2y) || 1;
+          const bow2 = Math.min(50, dist2 * 0.15) * (f % 2 === 0 ? -1 : 1);
+          const mc2x = mx2 + (-dd2y/dist2) * bow2;
+          const mc2y = (fi.y0 + fi.y1)/2 + (dd2x/dist2) * bow2;
+          const a2 = Math.max(5, Math.round(combined * 50)).toString(16).padStart(2,'0');
+          nCtx.beginPath();
+          nCtx.moveTo(fi.x0, fi.y0);
+          nCtx.quadraticCurveTo(mc2x, mc2y, fi.x1, fi.y1);
+          nCtx.lineWidth   = Math.max(0.3, lineW * 0.6);
+          nCtx.strokeStyle = d1.color + a2;
+          nCtx.stroke();
+        }
+      }
     });
-    // Reset lineWidth
     nCtx.lineWidth = 0.5;
   }
 
@@ -2447,78 +2604,69 @@ function drawNeural() {
   }
 
   // ── Draw neurons ────────────────────────────────────────────────────────────
-  const RESTING_GLOW = 0.08;   // neurons never fully dark — resting glow
+  // NO resting glow floor. Neurons are drawn based purely on their activation.
+  // Idle = nearly invisible dark dot. Active = bright, glowing, large.
   neuronNodes.forEach(n => {
+    const act       = n.activation;
     const regionAct = sharpenedRegion[n.region] || 0;
-    const isWinner  = winnerRegions.has(n.region);
-    const isLoser   = loserRegions.has(n.region) && regionAct > 0.05;
+    const isWinner  = winnerRegions.has(n.region) && regionAct > 0.15;
     const fatigue   = fatigueMap[n.region] || 0;
     const dominance = winnerSmooth[n.region] || 0;
 
-    // Winners: enlarged, faster pulse; losers: dimmed
-    const sizeMult  = isWinner ? (1.0 + dominance * 0.7) : (isLoser ? 0.6 : 1.0);
-    const alphaMult = isWinner ? 1.0 : (isLoser ? 0.45 : 0.8);
-    // Fatigue: dim the neuron proportional to overuse
-    const fatigueDim = 1.0 - fatigue * 0.5;
+    // Skip truly dark neurons — no point drawing them
+    if (act < 0.015) return;
 
-    let vis = Math.max(RESTING_GLOW, n.activation) * alphaMult * fatigueDim;
-    if (vis < 0.005) return;
-    const r     = (n.baseR * 0.6 + vis * 2.2) * sizeMult;
-    const alpha = Math.round(Math.pow(vis, 0.7) * 200).toString(16).padStart(2,'0');
+    const fatigueDim = 1.0 - fatigue * 0.45;
+    const sizeMult   = isWinner ? (1.0 + dominance * 0.6) : 1.0;
 
-    // Confidence field: confident decisions → tight saturated core
-    //                   uncertain → slightly desaturated + scattered
-    const confBoost = isWinner ? confidenceLevel * 0.3 : 0;
+    // Radius: small at rest, much larger when firing
+    const r = (n.baseR * 0.5 + act * 2.8) * sizeMult;
 
-    // Core
+    // Alpha: highly nonlinear — idle neurons are very faint, active ones pop
+    // alpha = 0 at act=0, ~30 at act=0.2, ~140 at act=0.6, ~220 at act=1.0
+    const alphaMult = isWinner ? 1.0 : 0.85;
+    const alphaVal  = Math.round(Math.pow(act, 0.65) * 230 * alphaMult * fatigueDim);
+    const alpha     = Math.min(230, alphaVal).toString(16).padStart(2,'0');
+
+    // Core dot
     nCtx.beginPath();
     nCtx.arc(n.x, n.y, r, 0, Math.PI*2);
     nCtx.fillStyle = n.color + alpha;
     nCtx.fill();
 
-    // Glow halo — winners get a larger, brighter halo
-    if (vis > 0.30) {
-      const haloMult  = isWinner ? (1.8 + dominance * 1.5) : 1.4;
-      const glowR     = r * (haloMult + vis * 2.0);
-      const glowInt   = isWinner ? vis * 0.80 + confBoost : vis * 0.45;
-      const glowAlpha = Math.round(glowInt * 90).toString(16).padStart(2,'0');
-      const grd = nCtx.createRadialGradient(n.x,n.y,r,n.x,n.y,glowR);
-      grd.addColorStop(0, n.color + glowAlpha);
+    // Glow halo — only when meaningfully firing (not at resting)
+    if (act > 0.35) {
+      const glowR   = r * (isWinner ? (2.2 + dominance * 1.2) : 1.8) + act * 3.0;
+      const glowAlp = Math.round(act * (isWinner ? 0.55 : 0.30) * fatigueDim * 100).toString(16).padStart(2,'0');
+      const grd = nCtx.createRadialGradient(n.x, n.y, r, n.x, n.y, glowR);
+      grd.addColorStop(0, n.color + glowAlp);
       grd.addColorStop(1, n.color + '00');
       nCtx.beginPath();
-      nCtx.arc(n.x,n.y,glowR,0,Math.PI*2);
+      nCtx.arc(n.x, n.y, glowR, 0, Math.PI*2);
       nCtx.fillStyle = grd;
       nCtx.fill();
     }
 
-    // Spike ring burst — winners pulse faster
-    if (n.activation > 0.75) {
-      const pulsePeriod = isWinner ? 12 : 18;
-      const ring = r + (axonFrame % pulsePeriod) * (isWinner ? 0.35 : 0.22);
+    // Spike ring — only for high-activation neurons (genuine firing)
+    if (act > 0.78) {
+      const pulsePeriod = isWinner ? 10 : 16;
+      const ringExp = (axonFrame % pulsePeriod) / pulsePeriod;
+      const ring    = r + ringExp * (isWinner ? 6 : 4);
+      const ringA   = Math.round((1 - ringExp) * (isWinner ? 55 : 30)).toString(16).padStart(2,'0');
       nCtx.beginPath();
-      nCtx.arc(n.x,n.y,ring,0,Math.PI*2);
-      nCtx.strokeStyle = n.color + (isWinner ? '33' : '18');
-      nCtx.lineWidth   = isWinner ? 0.9 : 0.6;
+      nCtx.arc(n.x, n.y, ring, 0, Math.PI*2);
+      nCtx.strokeStyle = n.color + ringA;
+      nCtx.lineWidth   = isWinner ? 1.0 : 0.6;
       nCtx.stroke();
     }
 
-    // Fatigue shimmer: tiny fragmentation dots around the neuron
-    if (fatigue > 0.5 && n.activation > 0.3 && axonFrame % 4 === 0) {
-      const fAngle = (axonFrame * 0.08 + n.phase) % (Math.PI*2);
-      const fr = r * 2 + fatigue * 4;
-      nCtx.beginPath();
-      nCtx.arc(n.x + Math.cos(fAngle)*fr, n.y + Math.sin(fAngle)*fr, 0.8, 0, Math.PI*2);
-      nCtx.fillStyle = n.color + '44';
-      nCtx.fill();
-    }
-
-    // Exploration flare: random brief bright flash on unexplored neurons
-    if (exploreMode && isLoser && Math.random() < 0.0015) {
-      const fg = nCtx.createRadialGradient(n.x,n.y,0,n.x,n.y,r*4);
-      fg.addColorStop(0, '#ffffff55');
+    // Exploration flare — only when in explore mode and region is actually dormant
+    if (exploreMode && regionAct < 0.08 && act > 0.10 && Math.random() < 0.002) {
+      const fg = nCtx.createRadialGradient(n.x, n.y, 0, n.x, n.y, r * 5);
+      fg.addColorStop(0, '#ffffff44');
       fg.addColorStop(1, n.color + '00');
       nCtx.beginPath();
-      nCtx.arc(n.x, n.y, r*4, 0, Math.PI*2);
+      nCtx.arc(n.x, n.y, r * 5, 0, Math.PI*2);
       nCtx.fillStyle = fg;
       nCtx.fill();
     }
@@ -3138,20 +3286,30 @@ function updateNeuralPanel(state) {
     curiosity_drive:'Generates motivation to explore unknowns.',
     identity_core:'Stable self-representation — who AXON understands itself to be.',
   };
-  let clusters = '';
-  (state.top_clusters||[]).slice(0,14).forEach(c => {
+  const clusterContainer = document.getElementById('cluster-bars');
+  const topClusters = (state.top_clusters||[]).slice(0,14);
+  topClusters.forEach(c => {
     const pct  = Math.round((c.activation||0)*100);
     const heat = pct > 80 ? 'hot' : pct > 50 ? 'warm' : '';
     const desc = CLUSTER_DESC[c.name] || '';
     const lbl  = c.name.replace(/_/g,' ');
-    clusters += `<div class="bar-row cluster-bar ${heat}" style="position:relative;">
-      <div class="bar-label" style="cursor:${desc?'help':'default'};">${lbl}</div>
-      <div class="bar-track"><div class="bar-fill" style="width:${pct}%;"></div></div>
-      <div class="bar-val">${pct}%</div>
-      ${desc ? `<div class="region-desc"><strong style="color:#e2e8f0;">${lbl}</strong><br>${desc}</div>` : ''}
-    </div>`;
+    let row = clusterContainer.querySelector(`[data-cluster="${c.name}"]`);
+    if (!row) {
+      row = document.createElement('div');
+      row.className = 'bar-row cluster-bar';
+      row.dataset.cluster = c.name;
+      row.style.position = 'relative';
+      row.innerHTML = `
+        <div class="bar-label" style="cursor:${desc?'help':'default'};">${lbl}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:0%;"></div></div>
+        <div class="bar-val">0%</div>
+        ${desc ? `<div class="region-desc"><strong style="color:#e2e8f0;">${lbl}</strong><br>${desc}</div>` : ''}`;
+      clusterContainer.appendChild(row);
+    }
+    row.className = `bar-row cluster-bar ${heat}`;
+    row.querySelector('.bar-fill').style.width = pct + '%';
+    row.querySelector('.bar-val').textContent  = pct + '%';
   });
-  document.getElementById('cluster-bars').innerHTML = clusters;
 
   // Regions with descriptions
   const REGION_INFO = {
@@ -3168,21 +3326,33 @@ function updateNeuralPanel(state) {
     social:       { color:'#ff006e', desc:'Empathy, face recognition, mentalizing (understanding others\' minds), social pain.' },
     metacognition:{ color:'#ff4060', desc:'Thinking about thinking. Self-awareness, confidence monitoring, uncertainty detection.' },
   };
-  let regions = '';
+  const regContainer = document.getElementById('region-bars');
   for (const [r,v] of Object.entries(state.regions||{})) {
     const info  = REGION_INFO[r] || { color:'#64748b', desc:'' };
     const pct   = Math.round((v||0)*100);
     const heat  = pct > 80 ? 'max' : pct > 55 ? 'hot' : pct > 30 ? 'mid' : '';
     const label = r.replace(/_/g,' ');
     pushSpark('reg_' + r, v||0);
-    regions += `<div class="bar-row region-bar ${heat}" style="position:relative;" data-reg="${r}">
-      <div class="bar-label">${label}</div>
-      <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${info.color}"></div></div>
-      <div class="bar-val">${pct}%</div>
-      ${info.desc ? `<div class="region-desc"><strong style="color:#e2e8f0;">${label}</strong><br>${info.desc}</div>` : ''}
-    </div>`;
+    let row = regContainer.querySelector(`[data-reg="${r}"]`);
+    if (!row) {
+      row = document.createElement('div');
+      row.className = 'bar-row region-bar';
+      row.dataset.reg = r;
+      row.style.position = 'relative';
+      row.innerHTML = `
+        <div class="bar-label" title="${info.desc}">${label}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:0%;background:${info.color}"></div></div>
+        <div class="bar-val">0%</div>
+        <canvas class="spark bar-spark" width="52" height="18" style="flex-shrink:0;"></canvas>
+        ${info.desc ? `<div class="region-desc"><strong style="color:#e2e8f0;">${label}</strong><br>${info.desc}</div>` : ''}`;
+      regContainer.appendChild(row);
+    }
+    row.className = `bar-row region-bar ${heat}`;
+    row.querySelector('.bar-fill').style.width = pct + '%';
+    row.querySelector('.bar-val').textContent  = pct + '%';
+    const spark = row.querySelector('canvas.spark');
+    if (spark) drawSparkline(spark, _sparkHistory['reg_' + r], info.color);
   }
-  document.getElementById('region-bars').innerHTML = regions;
   // Draw brain radar from region data
   drawBrainRadar(state.regions||{});
 
