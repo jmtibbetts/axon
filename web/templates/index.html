@@ -1,6 +1,25 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script>
+// ── Global error reporter — catches EVERY uncaught JS error ──
+window.onerror = function(msg, src, line, col, err) {
+  var box = document.getElementById('_axon_err_box');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = '_axon_err_box';
+    box.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#ff0000;color:#fff;font:bold 13px monospace;padding:6px 10px;max-height:120px;overflow-y:auto;';
+    document.body ? document.body.prepend(box) : document.addEventListener('DOMContentLoaded', () => document.body.prepend(box));
+  }
+  box.innerHTML += '<div>[JS ERR line ' + line + '] ' + msg + '</div>';
+  return false;
+};
+window.addEventListener('unhandledrejection', function(e) {
+  var box = document.getElementById('_axon_err_box');
+  if (!box) return;
+  box.innerHTML += '<div>[PROMISE] ' + (e.reason && e.reason.message ? e.reason.message : String(e.reason)) + '</div>';
+});
+</script>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>AXON -- Emerging Intelligence</title>
