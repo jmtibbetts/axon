@@ -1960,7 +1960,7 @@ class NeuralFabric:
                                 else self.activation[src].mean().item())
                 if src_act > 0.18:
                     # Find the 3 nearest neighbours by Hebbian weight
-                    weights = self.hebbian_weights[src]  # shape [N]
+                    weights = self.weight_mat[src].float()  # shape [N] — row of connectivity matrix
                     top_k = torch.topk(weights, k=min(3, len(self._cluster_names)-1)).indices
                     excite = src_act * 0.20  # 20% of source leaks to neighbours
                     self.activation[top_k] = torch.clamp(
