@@ -33,7 +33,7 @@ def _apply_deferred_onboarding(brain):
     if not ob_path.exists():
         return
     try:
-        state = _json.loads(ob_path.read_text())
+        state = (_json.loads(ob_path.read_text()) if ob_path.read_text().strip() else {})
     except Exception:
         return
     if not state.get("completed"):
@@ -679,7 +679,7 @@ def api_onboarding_check():
     ob_path = _Path("data/onboarding.json")
     if ob_path.exists():
         try:
-            state = _json.loads(ob_path.read_text())
+            state = (_json.loads(ob_path.read_text()) if ob_path.read_text().strip() else {})
             return jsonify({"completed": bool(state.get("completed", False))})
         except Exception:
             pass
@@ -696,7 +696,7 @@ def api_onboarding_state():
         state = {}
         if ob_path.exists():
             try:
-                state = _json.loads(ob_path.read_text())
+                state = (_json.loads(ob_path.read_text()) if ob_path.read_text().strip() else {})
             except Exception:
                 pass
         return jsonify({
@@ -720,7 +720,7 @@ def api_onboarding_name():
     import json as _json; from pathlib import Path as _Path
     ob_path = _Path("data/onboarding.json")
     ob_path.parent.mkdir(exist_ok=True)
-    state = _json.loads(ob_path.read_text()) if ob_path.exists() else {}
+    state = (_json.loads(ob_path.read_text()) if ob_path.read_text().strip() else {}) if ob_path.exists() else {}
     state["ai_name"] = name; state.setdefault("step", 1)
     ob_path.write_text(_json.dumps(state))
     return jsonify({"ok": True, "ai_name": name})
@@ -736,7 +736,7 @@ def api_onboarding_preset():
     from axon.cognition.onboarding import PRESETS
     ob_path = _Path("data/onboarding.json")
     ob_path.parent.mkdir(exist_ok=True)
-    state = _json.loads(ob_path.read_text()) if ob_path.exists() else {}
+    state = (_json.loads(ob_path.read_text()) if ob_path.read_text().strip() else {}) if ob_path.exists() else {}
     state["preset"] = preset; state["step"] = 2
     ob_path.write_text(_json.dumps(state))
     preset_data = PRESETS.get(preset, {})
@@ -751,7 +751,7 @@ def api_onboarding_ingest_sample():
     import json as _json; from pathlib import Path as _Path
     ob_path = _Path("data/onboarding.json")
     ob_path.parent.mkdir(exist_ok=True)
-    state = _json.loads(ob_path.read_text()) if ob_path.exists() else {}
+    state = (_json.loads(ob_path.read_text()) if ob_path.read_text().strip() else {}) if ob_path.exists() else {}
     state["sample_id"] = data.get("sample_id",""); state["step"] = 3
     ob_path.write_text(_json.dumps(state))
     return jsonify({"ok": True, "deferred": True})
@@ -765,7 +765,7 @@ def api_onboarding_ingest_text():
     import json as _json; from pathlib import Path as _Path
     ob_path = _Path("data/onboarding.json")
     ob_path.parent.mkdir(exist_ok=True)
-    state = _json.loads(ob_path.read_text()) if ob_path.exists() else {}
+    state = (_json.loads(ob_path.read_text()) if ob_path.read_text().strip() else {}) if ob_path.exists() else {}
     state["custom_text"] = data.get("text","")[:4000]; state["step"] = 3
     ob_path.write_text(_json.dumps(state))
     return jsonify({"ok": True, "deferred": True})
@@ -778,7 +778,7 @@ def api_onboarding_complete():
     import json as _json; from pathlib import Path as _Path
     ob_path = _Path("data/onboarding.json")
     ob_path.parent.mkdir(exist_ok=True)
-    state = _json.loads(ob_path.read_text()) if ob_path.exists() else {}
+    state = (_json.loads(ob_path.read_text()) if ob_path.read_text().strip() else {}) if ob_path.exists() else {}
     state["completed"] = True; state["step"] = 5
     ob_path.write_text(_json.dumps(state))
     return jsonify({"ok": True})
