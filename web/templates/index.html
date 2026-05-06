@@ -1839,11 +1839,15 @@ function addConflictPair(r1, r2, intensity) {
 // Per-neuron neighbor list (cross-region via AXON_ROUTES + within-region)
 function initNeurons(forceW, forceH) {
   // MOST RELIABLE: read the canvas element's own rendered rect
-  // (works even when parent is position:relative with no explicit height)
+  const p = document.getElementById('neural-panel-body');
   const r = nCanvas.getBoundingClientRect();
-  const W = forceW || Math.round(r.width)  || 800;
-  const H = forceH || Math.round(r.height) || 500;
-  if (W < 10 || H < 10) return;   // not laid out yet — caller will retry
+  const pr = p ? p.getBoundingClientRect() : r;
+  const W = forceW || Math.round(pr.width  || r.width)  || 800;
+  const H = forceH || Math.round(pr.height || r.height) || 500;
+  if (W < 20 || H < 20) {
+    console.warn('[AXON] initNeurons skipped — bad dims:', W, H);
+    return;   // NOT wiping neuronNodes — caller will retry
+  }
   nCanvas.width  = W;
   nCanvas.height = H;
   neuronNodes = [];
@@ -4255,7 +4259,10 @@ window.addEventListener('resize', () => {
   // Debounce resize
   clearTimeout(window._resizeTimer);
   window._resizeTimer = setTimeout(() => {
-    initNeurons();
+    const _p = document.getElementById('neural-panel-body');
+    if (_p && _p.offsetWidth > 20 && _p.offsetHeight > 20) {
+      initNeurons(_p.offsetWidth, _p.offsetHeight);
+    }
     const vc = document.getElementById('vision-canvas');
     if (vc.offsetWidth > 0) {
       vc.width  = vc.offsetWidth;
