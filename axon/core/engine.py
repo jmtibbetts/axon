@@ -162,6 +162,8 @@ class AxonEngine:
             device_index = None,
         )
         self._last_audio_emo: dict = {}
+        self._last_logged_emotion: str = ""
+        self._last_emotion_log_t: float = 0.0
 
 
         print("  [Engine] Initializing sensory systems...")
@@ -176,7 +178,6 @@ class AxonEngine:
         self._emotion_history: list      = []
         self._last_face_data: dict       = {}
         self._pending_name_for_pid:      str  = None   # person_id awaiting naming
-        self._last_audio_emo:            dict = {}
 
     # ── Start / Stop ──────────────────────────────────────────
 
@@ -397,8 +398,14 @@ class AxonEngine:
         if mapping.get("stress", 0) > 0:
             self.fabric.neuromod.stress(mapping["stress"] * scale)
 
-        # Log significant emotion changes
-        if emotion != "neutral" and emo_conf > 0.45:
+        # Log significant emotion changes — throttled: only on change, max once per 3s
+        import time as _t
+        _now = _t.time()
+        _changed = emotion != self._last_logged_emotion
+        _stale   = (_now - self._last_emotion_log_t) > 3.0
+        if emotion != "neutral" and emo_conf > 0.45 and (_changed or _stale):
+            self._last_logged_emotion = emotion
+            self._last_emotion_log_t  = _now
             self._emit("log", {"msg": f"😶 Emotion: {face_data.get('emoji','')} {emotion} ({int(emo_conf*100)}%) trend:{trend}"})
 
     # ── Face identity callbacks ───────────────────────────────────────────────
@@ -1161,11 +1168,14 @@ class AxonEngine:
         state["last_reward"]  = getattr(self, "_last_reward", 0.0)
         state["last_surprise"] = getattr(self.fabric, "_last_surprise", 0.0)
         self._emit("neural_state", state)
-        # Push synapse count to header counter every tick
-        self._emit("synapse_count", {
-            "connections": state.get("total_connections", 0),
-            "neurons":     state.get("total_neurons", 0),
-        })
+        # Push synapse count to header (already throttled to 1Hz via fabric callback)
+        import time as _t2
+        if not hasattr(self, '_last_synapse_emit') or (_t2.time() - self._last_synapse_emit) >= 5.0:
+            self._last_synapse_emit = _t2.time()
+            self._emit("synapse_count", {
+                "connections": state.get("total_connections", 0),
+                "neurons":     state.get("total_neurons", 0),
+            })
         # Bubble thoughts to UI
         thoughts = state.get("thoughts", [])
         if thoughts:

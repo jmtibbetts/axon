@@ -2143,6 +2143,7 @@ class NeuralFabric:
                 if self._tick % 2 == 0:
                     self._ambient_fire()
 
+                if self._tick % 10 == 0:  # 1Hz — don't flood the WebSocket
                     if self._callbacks:
                         state = self._make_snapshot(spike_dict)
                         for cb in self._callbacks:
