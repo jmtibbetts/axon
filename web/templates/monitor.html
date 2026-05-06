@@ -3678,14 +3678,19 @@ scanMics();
 window.switchTab = function(name) {
   document.querySelectorAll('.info-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
   document.querySelectorAll('.tab-pane').forEach(p => {
-    p.style.display = p.id === 'tab-' + name ? 'block' : 'none';
+    const isActive = p.id === 'tab-' + name;
+    p.style.display = isActive ? 'block' : 'none';
+    if (isActive) p.classList.add('active'); else p.classList.remove('active');
   });
-  if (name === 'memory')   refreshMemoryPanel();
-  if (name === 'identity') requestIdentityState();
-  if (name === 'llm')      { if (typeof loadProviderStatus === 'function') loadProviderStatus(); }
-  // Redraw brain radar — canvas renders as 0x0 when hidden, must repaint on reveal
+  if (name === 'memory')      { if (typeof refreshMemoryPanel === 'function') refreshMemoryPanel(); }
+  if (name === 'identity')    { if (typeof requestIdentityState === 'function') requestIdentityState(); }
+  if (name === 'llm')         { if (typeof loadProviderStatus === 'function') loadProviderStatus(); }
+  if (name === 'knowme')      { if (typeof renderUserProfile === 'function') renderUserProfile(); }
+  if (name === 'people')      { if (typeof renderPeople === 'function') renderPeople(); }
+  if (name === 'personality') { if (typeof buildPersonalitySliders === 'function') buildPersonalitySliders(); }
+  if (name === 'timeline')    { if (typeof renderTimeline === 'function') renderTimeline(); }
   if (name === 'brain' && window.neuralState) {
-    requestAnimationFrame(() => drawBrainRadar(window.neuralState.regions || {}));
+    requestAnimationFrame(() => { if (typeof drawBrainRadar === 'function') drawBrainRadar(window.neuralState.regions || {}); });
   }
 };
 
