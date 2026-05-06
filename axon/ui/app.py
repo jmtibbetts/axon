@@ -934,6 +934,23 @@ def api_brain_thought_competition():
     return jsonify({"competitions": _sanitize(_engine.thought_gen.recent_competitions(n))})
 
 
+@app.route("/api/brain/memory", methods=["GET"])
+def api_brain_memory():
+    """Return top Hebbian pathways for the neural canvas visualizer."""
+    if not _engine or not hasattr(_engine, "memory"):
+        return jsonify({"pathways": []})
+    try:
+        n = int(request.args.get("n", 30))
+        connections = _engine.memory.top_connections(n=n)
+        pathways = [
+            {"src": c["a"], "dst": c["b"], "weight": c["weight"]}
+            for c in connections
+        ]
+        return jsonify({"pathways": pathways})
+    except Exception as ex:
+        return jsonify({"pathways": [], "error": str(ex)})
+
+
 @app.route("/api/brain/memory_hierarchy", methods=["GET"])
 def api_brain_memory_hierarchy():
     if not _engine or not hasattr(_engine, "mem_hierarchy"):
