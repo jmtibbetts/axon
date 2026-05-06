@@ -1812,6 +1812,7 @@ function initNeurons(forceW, forceH) {
   // Always set canvas pixel buffer — never bail
   nCanvas.width  = W;
   nCanvas.height = H;
+  console.log("[AXON] neuronNodes WIPE — W:", W, "H:", H, new Error().stack.split("\n")[2]);
   neuronNodes = [];
 
   for (const [region, props] of Object.entries(REGION_DEFS)) {
@@ -1913,7 +1914,7 @@ function drawNeural() {
 
   // Guard: canvas must have real dimensions before drawing
   if (nCanvas.width < 20 || nCanvas.height < 20 || neuronNodes.length === 0) {
-    if (axonFrame % 60 === 0) console.warn('[AXON] drawNeural stalled — canvas:', nCanvas.width, 'x', nCanvas.height, 'neurons:', neuronNodes.length);
+    if (axonFrame % 60 === 0) console.warn('[AXON] drawNeural stalled — canvas:', nCanvas.width, 'x', nCanvas.height, 'neurons:', neuronNodes.length, 'frame:', axonFrame);
     requestAnimationFrame(drawNeural);
     return;
   }
