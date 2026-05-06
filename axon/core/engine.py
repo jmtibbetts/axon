@@ -169,7 +169,7 @@ class AxonEngine:
             on_frame=self._on_frame,
             on_face=self._on_face,
         )
-        self.auditory = AuditorySystem(on_speech=lambda text, conf: self._on_transcript(text), on_volume=lambda v: None, device_index=None)
+        self.auditory = AuditorySystem(on_speech=lambda text, conf: self._on_transcript(text), on_volume=lambda v: None, device_index=None, on_audio_chunk=self.audio_emo.push_chunk)
 
         self._last_visual_ctx            = {}
         self._emotion_before_response    = "neutral"

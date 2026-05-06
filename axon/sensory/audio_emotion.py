@@ -124,20 +124,33 @@ class AudioEmotionDetector:
         self._smoothed_arousal = 0.0
         self._smoothed_valence = 0.0
 
-    def start(self):
-        if not _SD_OK:
-            print("  [AudioEmo] Cannot start — sounddevice unavailable")
+    def push_chunk(self, mono_float32: "np.ndarray"):
+        """Called by AuditorySystem with shared mic audio (float32, range -1..1)."""
+        if not self.running:
             return
-        self.running = True
-        self._thread = threading.Thread(target=self._loop, daemon=True)
-        self._thread.start()
-        print("  [AudioEmo] Audio emotion detector started")
+        self._buf = np.concatenate([self._buf, mono_float32])
+        # Cap buffer at 3x window to prevent unbounded growth
+        max_buf = self._win_samples * 3
+        if len(self._buf) > max_buf:
+            self._buf = self._buf[-max_buf:]
+        t_now = time.time()
+        if (t_now - self._t_last) >= HOP_SEC and len(self._buf) >= self._win_samples:
+            self._analyse()
+            self._t_last = t_now
+
+    def start(self):
+        """Start the analysis loop (no longer opens its own InputStream)."""
+        self.running  = True
+        self._t_last  = time.time()
+        print("  [AudioEmo] Audio emotion detector started (shared stream mode)")
 
     def stop(self):
         self.running = False
 
     def _loop(self):
-        """Continuously read mic via sounddevice InputStream and analyse."""
+        """Legacy standalone loop — only used if not in shared-stream mode."""
+        if not _SD_OK:
+            return
         chunk = int(SAMPLE_RATE * 0.1)  # 100ms chunks
 
         def _audio_cb(indata, frames, time_info, status):
@@ -167,7 +180,12 @@ class AudioEmotionDetector:
         except Exception as e:
             print(f"  [AudioEmo] Stream error: {e}")
 
-    def _analyse(self, window: np.ndarray):
+    def _analyse(self, window: np.ndarray = None):
+        if window is None:
+            if len(self._buf) < self._win_samples:
+                return
+            window = self._buf[-self._win_samples:]
+            self._buf = self._buf[-self._win_samples:]  # keep last window only
         try:
             energy = float(np.sqrt(np.mean(window ** 2)))
             is_speaking = energy > SILENCE_THRESH

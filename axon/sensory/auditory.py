@@ -40,17 +40,18 @@ MIN_AVG_LOGPROB = -1.2   # Whisper confidence gate (below = hallucination)
 
 class AuditorySystem:
     def __init__(self, on_speech: Callable, on_volume: Callable,
-                 device_index: int = None):
-        self.on_speech  = on_speech
-        self.on_volume  = on_volume
-        self.device_idx = device_index
-        self.running    = False
-        self._thread    = None
-        self._whisper   = None
-        self._audio_q   = queue.Queue()
-        self.listening  = False
-        self.volume_db  = -60.0
-        self._device    = "cpu"
+                 device_index: int = None, on_audio_chunk: Callable = None):
+        self.on_speech      = on_speech
+        self.on_volume      = on_volume
+        self.device_idx     = device_index
+        self.on_audio_chunk = on_audio_chunk   # optional: receives float32 numpy chunk
+        self.running        = False
+        self._thread        = None
+        self._whisper       = None
+        self._audio_q       = queue.Queue()
+        self.listening      = False
+        self.volume_db      = -60.0
+        self._device        = "cpu"
 
         # Speaking lockout — set True while Axon's voice is playing
         self._speaking_lockout = False
@@ -155,6 +156,13 @@ class AuditorySystem:
 
         def callback(indata, frames, time_info, status):
             self._audio_q.put(indata.copy())
+            # Share raw float32 samples with audio emotion detector (single stream)
+            if self.on_audio_chunk is not None:
+                try:
+                    mono = indata[:, 0].astype(np.float32) / 32768.0
+                    self.on_audio_chunk(mono)
+                except Exception:
+                    pass
 
         try:
             with sd.InputStream(samplerate=SAMPLE_RATE, channels=1,
