@@ -333,8 +333,8 @@ canvas.spark{display:block;}
   <!-- COL 2: Neural Canvas (top) + Chat (bottom) -->
   <div class="panel" style="grid-row:1;grid-column:2;">
     <div class="panel-title">? Neural Activity -- <span id="neuron-count">0</span> neurons | <span id="conn-count" style="color:#00ff88;transition:color 0.3s;">0</span> synaptic connections</div>
-    <div class="panel-body" style="padding:0;background:#020205;position:relative;">
-      <canvas id="neural-canvas"></canvas>
+    <div class="panel-body" style="padding:0;background:#020205;position:relative;overflow:hidden;min-height:300px;">
+      <canvas id="neural-canvas" style="position:absolute;inset:0;width:100%;height:100%;display:block;"></canvas>
       <div id="region-legend" style="
         position:absolute;top:8px;right:8px;
         display:flex;flex-direction:column;gap:3px;
@@ -1197,7 +1197,7 @@ canvas.spark{display:block;}
 <!-- ── DIAGNOSTIC OVERLAY ─────────────────────────────────── -->
 <div id="diag-overlay" style="
   display:none;position:fixed;inset:0;z-index:999;
-  background:rgba(0,0,0,0.92);backdrop-filter:blur(6px);
+  background:rgba(0,0,0,0.94);
   overflow-y:auto;padding:24px 16px;font-family:var(--font);">
   <div style="max-width:680px;margin:0 auto;">
     <!-- Header -->
@@ -1801,8 +1801,9 @@ function addConflictPair(r1, r2, intensity) {
 
 // Per-neuron neighbor list (cross-region via AXON_ROUTES + within-region)
 function initNeurons() {
-  const W = nCanvas.offsetWidth  || 700;
-  const H = nCanvas.offsetHeight || 440;
+  // Use parent container dimensions if canvas reports 0 (layout not settled yet)
+  const W = nCanvas.offsetWidth  || nCanvas.parentElement.offsetWidth  || 700;
+  const H = nCanvas.offsetHeight || nCanvas.parentElement.offsetHeight || 440;
   nCanvas.width  = W;
   nCanvas.height = H;
   neuronNodes = [];
@@ -3000,15 +3001,15 @@ function updateVAPlot(emo) {
 function drawBrainRadar(regions) {
   const canvas = document.getElementById('brain-radar');
   if (!canvas) return;
-  // Auto-size canvas buffer to its CSS display size (avoids blank render when tab was hidden)
-  const displayW = canvas.offsetWidth || 260;
-  const displayH = Math.round(displayW * (200/260));
-  if (canvas.width !== displayW || canvas.height !== displayH) {
-    canvas.width  = displayW;
-    canvas.height = displayH;
+  // Only resize if the canvas is visible (offsetWidth > 0)
+  // If hidden, keep existing buffer size so we can draw into it for when it reappears
+  if (canvas.offsetWidth > 0) {
+    canvas.width  = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight || Math.round(canvas.offsetWidth * (200/260));
   }
   const ctx = canvas.getContext('2d');
-  const W = canvas.width, H = canvas.height;
+  const W = canvas.width  || 260;
+  const H = canvas.height || 200;
   const cx = W/2, cy = H/2 + 6;
   const R = Math.min(W,H) / 2 - 28;
   ctx.clearRect(0,0,W,H);
@@ -4156,16 +4157,41 @@ socket.on('voice_speaking', d => {
 
 // -- Init ------------------------------------------------------
 window.addEventListener('resize', () => {
-  initNeurons();
-  const vc = document.getElementById('vision-canvas');
-  vc.width  = vc.offsetWidth;
-  vc.height = vc.offsetHeight;
+  // Debounce resize
+  clearTimeout(window._resizeTimer);
+  window._resizeTimer = setTimeout(() => {
+    initNeurons();
+    const vc = document.getElementById('vision-canvas');
+    if (vc.offsetWidth > 0) {
+      vc.width  = vc.offsetWidth;
+      vc.height = vc.offsetHeight;
+    }
+    // Redraw radar if brain tab is active
+    if (window.neuralState) drawBrainRadar(window.neuralState.regions || {});
+  }, 150);
 });
 window.addEventListener('load', () => {
-  initNeurons();
-  buildLegend();
-  drawNeural();
   buildPersonalitySliders();
+  // Defer canvas init until after layout paint so offsetWidth/Height are real
+  function _tryInit(attempts) {
+    const w = nCanvas.offsetWidth;
+    const h = nCanvas.offsetHeight;
+    if (w > 0 && h > 0) {
+      initNeurons();
+      buildLegend();
+      drawNeural();
+    } else if (attempts > 0) {
+      requestAnimationFrame(() => _tryInit(attempts - 1));
+    } else {
+      // Fallback: force a size and start anyway
+      nCanvas.width  = nCanvas.parentElement.offsetWidth  || 700;
+      nCanvas.height = nCanvas.parentElement.offsetHeight || 440;
+      initNeurons();
+      buildLegend();
+      drawNeural();
+    }
+  }
+  requestAnimationFrame(() => _tryInit(20));
 });
 
 // ── Personality Sliders ─────────────────────────────────────────────────────
