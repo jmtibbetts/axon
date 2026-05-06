@@ -1925,7 +1925,15 @@ function drawNeural() {
   nCtx.fillStyle = 'rgba(2,2,6,0.38)';  // gentle wipe so ghost clusters stay visible
   nCtx.fillRect(0, 0, W, H);
 
-  const regionMap = (neuralState && neuralState.regions) ? neuralState.regions : {};
+  // When backend isn't connected, use an idle baseline so neurons stay visible
+  const _IDLE_BASELINE = {
+    prefrontal:0.18, hippocampus:0.14, amygdala:0.10, visual:0.12,
+    auditory:0.10, language:0.12, default_mode:0.22, thalamus:0.16,
+    motor:0.08, cerebellum:0.10, brainstem:0.12, basal_ganglia:0.08
+  };
+  const regionMap = (neuralState && neuralState.regions && Object.keys(neuralState.regions).length > 0)
+    ? neuralState.regions
+    : _IDLE_BASELINE;
 
   // ── Region contrast stretch ─────────────────────────────────────────────────
   // GOAL: idle brain = visibly lit at 20-40% (DMN hot, all regions glowing).
@@ -3032,8 +3040,14 @@ function drawBrainRadar(regions) {
   const R = Math.min(W,H) / 2 - 28;
   ctx.clearRect(0,0,W,H);
 
+  // Use idle baseline when no backend data (keeps radar visible offline)
+  const _RADAR_IDLE = {
+    prefrontal:0.18, hippocampus:0.14, amygdala:0.10, visual:0.12,
+    auditory:0.10, language:0.12, default_mode:0.22, thalamus:0.16,
+    motor:0.08, cerebellum:0.10, brainstem:0.12, basal_ganglia:0.08
+  };
+  if (!regions || Object.keys(regions).length === 0) regions = _RADAR_IDLE;
   const keys = Object.keys(regions);
-  if (keys.length === 0) return;
   const n = keys.length;
   const angleStep = (Math.PI * 2) / n;
 
@@ -4202,8 +4216,10 @@ window.addEventListener('load', () => {
   let _neuralStarted = false;
   function _startNeuralCanvas() {
     if (_neuralStarted) return;
-    const pw = nCanvas.parentElement.offsetWidth;
-    const ph = nCanvas.parentElement.offsetHeight;
+    const parent = nCanvas.parentElement;
+    const rect   = parent ? parent.getBoundingClientRect() : {width:0,height:0};
+    const pw = Math.round(rect.width)  || parent.offsetWidth  || 0;
+    const ph = Math.round(rect.height) || parent.offsetHeight || 0;
     if (pw < 10 || ph < 10) return; // not laid out yet
     _neuralStarted = true;
     nCanvas.width  = pw;
@@ -4234,6 +4250,10 @@ window.addEventListener('load', () => {
   requestAnimationFrame(() => { _startNeuralCanvas(); });
   setTimeout(_startNeuralCanvas, 200);
   setTimeout(_startNeuralCanvas, 600);
+
+  // Draw brain radar with idle baseline immediately (don't wait for backend)
+  setTimeout(() => { drawBrainRadar({}); }, 100);
+  setTimeout(() => { drawBrainRadar({}); }, 500);
 });
 
 // ── Personality Sliders ─────────────────────────────────────────────────────

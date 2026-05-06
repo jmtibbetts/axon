@@ -859,7 +859,14 @@ function drawNeural() {
   nCtx.fillStyle = 'rgba(2,2,6,0.38)';  // gentle wipe so ghost clusters stay visible
   nCtx.fillRect(0, 0, W, H);
 
-  const regionMap = (neuralState && neuralState.regions) ? neuralState.regions : {};
+  const _IDLE_BASELINE = {
+    prefrontal:0.18, hippocampus:0.14, amygdala:0.10, visual:0.12,
+    auditory:0.10, language:0.12, default_mode:0.22, thalamus:0.16,
+    motor:0.08, cerebellum:0.10, brainstem:0.12, basal_ganglia:0.08
+  };
+  const regionMap = (neuralState && neuralState.regions && Object.keys(neuralState.regions).length > 0)
+    ? neuralState.regions
+    : _IDLE_BASELINE;
 
   // ── Region contrast stretch ─────────────────────────────────────────────────
   // GOAL: idle brain = visibly lit at 20-40% (DMN hot, all regions glowing).
@@ -1971,8 +1978,13 @@ function drawBrainRadar(regions) {
   const R = Math.min(W,H) / 2 - 28;
   ctx.clearRect(0,0,W,H);
 
+  const _RADAR_IDLE = {
+    prefrontal:0.18, hippocampus:0.14, amygdala:0.10, visual:0.12,
+    auditory:0.10, language:0.12, default_mode:0.22, thalamus:0.16,
+    motor:0.08, cerebellum:0.10, brainstem:0.12, basal_ganglia:0.08
+  };
+  if (!regions || Object.keys(regions).length === 0) regions = _RADAR_IDLE;
   const keys = Object.keys(regions);
-  if (keys.length === 0) return;
   const n = keys.length;
   const angleStep = (Math.PI * 2) / n;
 
@@ -2468,22 +2480,37 @@ function onSpeedSlider(v) {
 }
 
 // ── Canvas boot ───────────────────────────────────────────────────
-window.addEventListener('load', () => {
-  // Size canvas to parent
+let _monitorStarted = false;
+function _bootCanvas() {
   const col = document.getElementById('canvas-col');
-  nCanvas.width  = col.offsetWidth;
-  nCanvas.height = col.offsetHeight;
-  initNeurons();
-  buildLegend();
-  requestAnimationFrame(drawNeural);
+  if (!col) return;
+  const rect = col.getBoundingClientRect();
+  const w = Math.round(rect.width)  || col.offsetWidth  || 0;
+  const h = Math.round(rect.height) || col.offsetHeight || 0;
+  if (w < 10 || h < 10) { setTimeout(_bootCanvas, 150); return; }
+  nCanvas.width  = w;
+  nCanvas.height = h;
+  if (!_monitorStarted) {
+    _monitorStarted = true;
+    initNeurons();
+    buildLegend();
+    requestAnimationFrame(drawNeural);
+    setTimeout(() => { drawBrainRadar({}); }, 200);
+  }
+}
+window.addEventListener('load', () => {
+  setTimeout(_bootCanvas, 50);
+  setTimeout(_bootCanvas, 300);
+  setTimeout(_bootCanvas, 800);
 });
 window.addEventListener('resize', () => {
   const col = document.getElementById('canvas-col');
-  nCanvas.width  = col.offsetWidth;
-  nCanvas.height = col.offsetHeight;
-  neuronNodes = [];
-  initNeurons();
-  buildLegend();
+  if (!col) return;
+  const w = col.offsetWidth || 0;
+  const h = col.offsetHeight || 0;
+  if (w < 10 || h < 10) return;
+  nCanvas.width = w; nCanvas.height = h;
+  neuronNodes = []; initNeurons(); buildLegend();
 });
 
 // ── Stub: playback not needed here ───────────────────────────────
