@@ -281,15 +281,36 @@ class ThoughtGenerator:
         Ask the LLM to produce N candidate responses.
         Returns a list of plain-text candidate strings.
         """
+        # Build a recent-thoughts anti-repetition list (last 5 winners)
+        _recent_texts = []
+        try:
+            with self._lock:
+                for entry in self._competition_history[-5:]:
+                    _recent_texts.append(entry.get("winner_text", "")[:80])
+        except Exception:
+            pass
+        novelty_hint = ""
+        if _recent_texts:
+            novelty_hint = (
+                "\n\nDO NOT repeat or rephrase any of these recent thoughts:\n"
+                + "\n".join(f"- {t}" for t in _recent_texts)
+                + "\nEach candidate must be meaningfully different from these."
+            )
+
         gen_prompt = (
             f"{system_prefix}\n\n"
-            f"[THOUGHT GENERATION MODE]\n"
-            f"Generate exactly {n} distinct candidate responses to the user's input. "
-            f"Each candidate should reflect a genuinely different angle, tone, or strategy. "
-            f"Format: number each candidate on its own line starting with '1.', '2.', etc. "
-            f"Keep each candidate to 1–3 sentences. Do not add commentary or headings — "
-            f"just the numbered candidates.\n\n"
-            f"User input: {user_input}"
+            f"[AUTONOMOUS THOUGHT GENERATION]\n"
+            f"Active neural regions: {user_input}\n"
+            f"Generate exactly {n} distinct internal thoughts or observations. "
+            f"Each candidate must be a different TYPE of thought — "
+            f"for example: one factual observation, one question or curiosity, "
+            f"one memory or association, one plan or intention. "
+            f"Keep each thought to 1-2 sentences. "
+            f"Thoughts should be concrete, grounded, and varied — not abstract navel-gazing. "
+            f"Do NOT write about 'dominance', 'secretly craving', 'neural pathways firing', "
+            f"or other self-absorbed AI clichés. "
+            f"Format: number each on its own line starting with '1.', '2.', '3.'. "
+            f"No headings or commentary.{novelty_hint}"
         )
         messages = [{"role": "user", "content": gen_prompt}]
         raw = ""
@@ -381,7 +402,8 @@ class ThoughtGenerator:
         valence_bonus = valence * (pos_hits - neg_hits) * 0.05
 
         # ── e. Position penalty (LLM ordering is a weak prior, not truth) ────
-        position_score = (n - rank) / max(1, n - 1) * 0.15   # 0..0.15
+        # Small weight — don't let rank dominate; real scoring should decide winner
+        position_score = (n - rank) / max(1, n - 1) * 0.05   # 0..0.05
 
         candidate.reward_score = alignment_score + trait_bonus + reward_bonus + valence_bonus
         candidate.final_score  = candidate.reward_score + position_score
@@ -548,9 +570,9 @@ class ThoughtGenerator:
         if mem_ctx:
             system_prefix += mem_ctx + "\n\n"
         system_prefix += (
-            "You are AXON's imagination engine. Your job is not to answer — "
-            "it is to GENERATE POSSIBILITIES. Produce varied, distinct candidate responses. "
-            "Let your internal state color your language — you are not neutral."
+            "You are AXON's internal thought process. Generate brief, concrete, grounded "
+            "internal thoughts — observations, questions, memories, or intentions. "
+            "Be varied. Be specific. Avoid abstract self-referential AI clichés."
         )
 
         # 5. Generate N candidates

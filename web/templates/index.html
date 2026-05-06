@@ -316,25 +316,15 @@ canvas.spark{display:block;}
       </div>
     </div>
 
-    <!-- Facial Emotion Panel -->
-    <div class="panel" style="flex:0 0 130px;">
-      <div class="panel-title">😶 Face Emotion</div>
-      <div class="panel-body" style="padding:6px;">
-        <div id="emo-main" style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
-          <span id="emo-big-emoji" style="font-size:28px;line-height:1;">😐</span>
-          <div>
-            <div id="emo-big-label" style="font-size:11px;color:#e2e8f0;font-weight:600;text-transform:capitalize;">neutral</div>
-            <div id="emo-big-conf"  style="font-size:9px;color:#94a3b8;">no face</div>
-          </div>
-        </div>
-        <!-- Per-emotion probability bars -->
-        <div id="emo-prob-bars" style="display:flex;flex-direction:column;gap:2px;"></div>
-      </div>
-    </div>
+    <!-- Hidden stubs for face emotion IDs so existing JS doesn't error -->
+    <span id="emo-big-emoji" style="display:none;"></span>
+    <span id="emo-big-label" style="display:none;"></span>
+    <span id="emo-big-conf"  style="display:none;"></span>
+    <div  id="emo-prob-bars" style="display:none;"></div>
 
-    <div class="panel" style="flex:0 0 180px;">
+    <div class="panel" style="flex:1 1 0;min-height:200px;">
       <div class="panel-title">📋 System Log</div>
-      <div class="log-area" id="sys-log" style="height:calc(100% - 22px);font-size:9px;line-height:1.5;"></div>
+      <div class="log-area" id="sys-log" style="height:calc(100% - 22px);font-size:9px;line-height:1.5;overflow-y:auto;"></div>
     </div>
 
   </div>
@@ -1280,143 +1270,9 @@ function fmt(n) {
 }
 </script>
 
-<!-- diagnostic JS moved below socket init -->
-<script>
-  // diagnostic functions defined after socket init
 
+<!-- diagnostic handled by socket.on below -->
 
-  if (d.error) {
-    document.getElementById('diag-neural').innerHTML =
-      '<div class="diag-loading" style="color:#ef4444;text-align:left;white-space:pre-wrap;font-size:8px;padding:16px;">' +
-      '<div style="color:#ef4444;margin-bottom:8px;font-size:10px;">⚠ DIAGNOSTIC ERROR</div>' +
-      String(d.error).replace(/</g,'&lt;') + '</div>';
-    return;
-  }
-
-  document.getElementById('diag-timestamp').textContent =
-    'Snapshot: ' + (d.timestamp || '').replace('T',' ').slice(0,19);
-
-  // ── Neural Architecture ──────────────────────────────────────
-  const n = d.neural || {};
-  const gpuPct = n.gpu_mem_total_gb ? Math.round(n.gpu_mem_used_gb / n.gpu_mem_total_gb * 100) : 0;
-  document.getElementById('diag-neural').innerHTML = `
-    <div class="diag-h">🧠 Neural Architecture</div>
-    ${diagRow('Virtual Neurons',        fmt(n.total_neurons),          'accent')}
-    ${diagRow('Active Connections',     fmt(n.total_connections),      'accent')}
-    ${diagRow('Functional Clusters',    n.num_clusters,                'yellow')}
-    ${diagRow('GPU',                    n.gpu || 'unknown',            'green')}
-    ${diagRow('GPU Memory',             (n.gpu_mem_used_gb||0) + ' GB / ' + (n.gpu_mem_total_gb||0) + ' GB  (' + gpuPct + '%)', gpuPct > 80 ? 'red' : 'green')}
-  `;
-
-  // ── Memory ──────────────────────────────────────────────────
-  const m = d.memory || {};
-  let pathHTML = '';
-  (m.top_pathways || []).forEach(p => {
-    const a = (p.cluster_a || p.a || '?').replace(/_/g,' ');
-    const b = (p.cluster_b || p.b || '?').replace(/_/g,' ');
-    const s = parseFloat(p.strength ?? p.weight ?? 0).toFixed(3);
-    const fires = p.fires ? ` · ${p.fires} fires` : '';
-    pathHTML += `<div class="diag-pathway">
-      <span>${a} ↔ ${b}<span style="color:#374151;font-size:7.5px;">${fires}</span></span>
-      <span class="strength">${s}</span>
-    </div>`;
-  });
-  const oldest = m.oldest_memory
-    ? m.oldest_memory.slice(0,16).replace('T',' ')
-    : 'No memories yet';
-  document.getElementById('diag-memory').innerHTML = `
-    <div class="diag-h">💾 Memory System</div>
-    ${diagRow('Episodic Memories',  fmt(m.episodic_count),   'accent')}
-    ${diagRow('Semantic Facts',     fmt(m.semantic_facts),   'yellow')}
-    ${diagRow('Hebbian Pathways',   fmt(m.hebbian_pathways), 'green')}
-    ${diagRow('Oldest Memory',      oldest)}
-    ${pathHTML ? '<div style="margin-top:8px;font-size:8px;color:#374151;letter-spacing:.05em;margin-bottom:4px;">TOP PATHWAYS</div>' + pathHTML : ''}
-  `;
-
-  // ── Capabilities ─────────────────────────────────────────────
-  const caps = d.capabilities || [];
-  const senses = d.senses || {};
-  let capsHTML = '<div class="diag-h">⚙️ Capabilities</div><div style="padding:4px 0;">';
-  caps.forEach(c => {
-    capsHTML += `<span class="diag-cap active">✓ ${c}</span>`;
-  });
-  capsHTML += '</div>';
-  capsHTML += `
-    <div style="margin-top:10px;">
-    ${diagRow('Camera / Vision', senses.vision ? '✓ ACTIVE — ' + (senses.vision_detector||'') : '✗ Offline', senses.vision ? 'green' : 'red')}
-    ${diagRow('Microphone / STT', senses.auditory ? '✓ ACTIVE' : '✗ Offline', senses.auditory ? 'green' : 'red')}
-    ${diagRow('Voice Output (TTS)', senses.voice_out ? '✓ ACTIVE' : '✗ Offline', senses.voice_out ? 'green' : 'red')}
-    </div>`;
-  document.getElementById('diag-caps').innerHTML = capsHTML;
-
-  // ── Current State ────────────────────────────────────────────
-  const st = d.state || {};
-  const emo = st.emotion || {};
-  const neuro = st.neuromod || {};
-  const pers  = st.personality || {};
-  let neuroHTML = '';
-  Object.entries(neuro).forEach(([k,v]) => {
-    const pct = Math.round((v||0)*100);
-    neuroHTML += `<div class="diag-bar-row">
-      <div class="diag-bar-label">${k}</div>
-      <div class="diag-bar-track"><div class="diag-bar-fill" style="width:${pct}%"></div></div>
-      <div class="diag-bar-val">${pct}%</div>
-    </div>`;
-  });
-  let persHTML = '';
-  Object.entries(pers).forEach(([k,v]) => {
-    const pct = Math.round((v||0)*100);
-    persHTML += `<div class="diag-bar-row">
-      <div class="diag-bar-label">${k.replace(/_/g,' ')}</div>
-      <div class="diag-bar-track"><div class="diag-bar-fill" style="width:${pct}%;background:linear-gradient(90deg,#4c1d95,#a855f7)"></div></div>
-      <div class="diag-bar-val">${pct}%</div>
-    </div>`;
-  });
-  document.getElementById('diag-state').innerHTML = `
-    <div class="diag-h">🌡️ Current Neural State</div>
-    ${diagRow('Emotion',   emo.emotion || 'unknown', 'yellow')}
-    ${diagRow('Valence',   parseFloat(emo.valence||0).toFixed(3))}
-    ${diagRow('Arousal',   parseFloat(emo.arousal||0).toFixed(3))}
-    ${diagRow('Intensity', parseFloat(emo.intensity||0).toFixed(3))}
-    <div style="margin-top:10px;font-size:8px;color:#374151;letter-spacing:.05em;margin-bottom:6px;">NEUROMODULATORS</div>
-    ${neuroHTML}
-    <div style="margin-top:10px;font-size:8px;color:#374151;letter-spacing:.05em;margin-bottom:6px;">PERSONALITY</div>
-    ${persHTML}
-  `;
-
-  // ── Platform ─────────────────────────────────────────────────
-  const plat = d.platform || {};
-  document.getElementById('diag-platform').innerHTML = `
-    <div class="diag-h">🖥️ Platform</div>
-    ${diagRow('Python', plat.python || '?')}
-    ${diagRow('OS',     plat.os     || '?')}
-    ${diagRow('PyTorch', plat.torch || '?')}
-  `;
-
-  // ── Cluster breakdown ─────────────────────────────────────────
-  const clusters = n.clusters || {};
-  const maxSize = Math.max(...Object.values(clusters), 1);
-  let clHTML = '<div class="diag-h">🔬 Cluster Breakdown (' + Object.keys(clusters).length + ' clusters)</div>';
-  Object.entries(clusters)
-    .sort((a,b) => b[1]-a[1])
-    .forEach(([name, size]) => {
-      const pct = Math.round(size / maxSize * 100);
-      clHTML += `<div class="diag-bar-row">
-        <div class="diag-bar-label">${name.replace(/_/g,' ')}</div>
-        <div class="diag-bar-track"><div class="diag-bar-fill" style="width:${pct}%;background:linear-gradient(90deg,#0c4a6e,#0ea5e9)"></div></div>
-        <div class="diag-bar-val">${fmt(size)}</div>
-      </div>`;
-    });
-  document.getElementById('diag-clusters').innerHTML = clHTML;
-
-  } catch(err) {
-    console.error('[AXON] diagnostic render error:', err);
-    document.getElementById('diag-neural').innerHTML =
-      '<div class="diag-loading" style="color:#ef4444;padding:16px;font-size:9px;">Render error: ' + err.message + '</div>';
-  }
-});
-
-</script>
 
 <script>
 // Wait for the server to be ready before connecting the socket.
@@ -2044,36 +1900,38 @@ function drawNeural() {
 
   // Trail fade — faster = tighter, more reactive visual
   // At 60fps: 0.35 means ~5-6 frames persistence (sharp and clean)
-  nCtx.fillStyle = 'rgba(2,2,6,0.55)';  // faster wipe = less smear when dark
+  nCtx.fillStyle = 'rgba(2,2,6,0.38)';  // gentle wipe so ghost clusters stay visible
   nCtx.fillRect(0, 0, W, H);
 
   const regionMap = (neuralState && neuralState.regions) ? neuralState.regions : {};
 
   // ── Region contrast stretch ─────────────────────────────────────────────────
-  // GOAL: idle regions are nearly DARK. Active regions BRIGHT.
-  // Backend now sends: idle ≈ 0.01–0.05, light activity ≈ 0.06–0.15, active ≈ 0.15–0.50+
-  // Sharpening curve: hard floor → dark → snap to vivid only when genuinely stimulated.
+  // GOAL: idle clusters = dim ghost dots (visible but not glowing).
+  //        active clusters = bright and punchy.
+  // Backend idle ≈ 0.01–0.05, moderate ≈ 0.06–0.15, active ≈ 0.15–0.50+
+  // Mapping:
+  //   0.00 → 0.08  (minimum ghost — always draw the cluster shape)
+  //   0.05 → 0.15  (resting: dim colored dot)
+  //   0.15 → 0.35  (light activity: clearly visible)
+  //   0.35 → 1.00  (active: full brightness)
   const sharpenedRegion = {};
-  const IDLE_FLOOR   = 0.04;   // below this → near-black (resting noise)
-  const ACTIVE_START = 0.12;   // above this → starts becoming visible
-  const BRIGHT_START = 0.25;   // above this → fully lit, punchy glow
   for (const [k, v] of Object.entries(regionMap)) {
     let out;
-    if (v <= IDLE_FLOOR) {
-      // Dead quiet — nearly invisible, just a ghost dot so the cluster exists
-      out = (v / IDLE_FLOOR) * 0.015;
-    } else if (v <= ACTIVE_START) {
-      // Dim transition: visible but muted
-      const t = (v - IDLE_FLOOR) / (ACTIVE_START - IDLE_FLOOR);
-      out = 0.015 + Math.pow(t, 2.2) * 0.12;
-    } else if (v <= BRIGHT_START) {
-      // Moderate: clearly lit
-      const t = (v - ACTIVE_START) / (BRIGHT_START - ACTIVE_START);
-      out = 0.135 + Math.pow(t, 1.2) * 0.25;
+    if (v < 0.05) {
+      // Resting baseline — ghost: 0.08 to 0.15
+      out = 0.08 + (v / 0.05) * 0.07;
+    } else if (v < 0.15) {
+      // Light activity: 0.15 to 0.35
+      const t = (v - 0.05) / 0.10;
+      out = 0.15 + Math.pow(t, 1.5) * 0.20;
+    } else if (v < 0.40) {
+      // Moderate: 0.35 to 0.65
+      const t = (v - 0.15) / 0.25;
+      out = 0.35 + Math.pow(t, 1.0) * 0.30;
     } else {
-      // Genuinely active: punchy and bright
-      const t = (v - BRIGHT_START) / (1.0 - BRIGHT_START);
-      out = 0.385 + Math.pow(t, 0.7) * 0.615;
+      // Full activity: 0.65 to 1.0
+      const t = (v - 0.40) / 0.60;
+      out = 0.65 + Math.pow(t, 0.75) * 0.35;
     }
     sharpenedRegion[k] = Math.max(0, Math.min(1.0, out));
   }
@@ -2280,7 +2138,7 @@ function drawNeural() {
     }
 
     // Activation trails (comet tails) — only for genuinely firing neurons
-    if (n.activation > 0.75 && axonFrame % TRAIL_SAMPLE_RATE === 0) {
+    if (n.activation > 0.68 && axonFrame % TRAIL_SAMPLE_RATE === 0) {
       activationTrails.push({
         x:      n.x,
         y:      n.y,
@@ -2711,12 +2569,11 @@ function drawNeural() {
     // Radius: small at rest, much larger when firing
     const r = (n.baseR * 0.5 + act * 2.8) * sizeMult;
 
-    // Alpha: highly nonlinear — idle neurons are invisible, active ones pop
-    // With low baselines (act ≈ 0.01-0.05 idle), we need a steeper curve:
-    // pow(act, 0.45) * 240 → at act=0.02: ~7, at act=0.10: ~45, at act=0.40: ~155, at 1.0: 240
-    const alphaMult = isWinner ? 1.0 : 0.80;
-    const alphaVal  = Math.round(Math.pow(act, 0.45) * 240 * alphaMult * fatigueDim);
-    const alpha     = Math.min(235, alphaVal).toString(16).padStart(2,'0');
+    // Alpha: ghost at rest, vivid when firing
+    // act=0.08 (ghost) → alpha≈52, act=0.20 → ≈96, act=0.50 → ≈155, act=1.0 → 220
+    const alphaMult = isWinner ? 1.0 : 0.82;
+    const alphaVal  = Math.round(Math.pow(act, 0.55) * 220 * alphaMult * fatigueDim);
+    const alpha     = Math.min(220, Math.max(20, alphaVal)).toString(16).padStart(2,'0');
 
     // Core dot
     nCtx.beginPath();
@@ -2724,10 +2581,10 @@ function drawNeural() {
     nCtx.fillStyle = n.color + alpha;
     nCtx.fill();
 
-    // Glow halo — only when meaningfully firing (not at resting noise)
-    if (act > 0.50) {
-      const glowR   = r * (isWinner ? (2.2 + dominance * 1.2) : 1.8) + act * 3.0;
-      const glowAlp = Math.round(act * (isWinner ? 0.55 : 0.28) * fatigueDim * 100).toString(16).padStart(2,'0');
+    // Glow halo — only when meaningfully stimulated (not ghost idle)
+    if (act > 0.38) {
+      const glowR   = r * (isWinner ? (2.2 + dominance * 1.2) : 1.6) + act * 2.5;
+      const glowAlp = Math.round((act - 0.35) * (isWinner ? 0.75 : 0.40) * fatigueDim * 110).toString(16).padStart(2,'0');
       const grd = nCtx.createRadialGradient(n.x, n.y, r, n.x, n.y, glowR);
       grd.addColorStop(0, n.color + glowAlp);
       grd.addColorStop(1, n.color + '00');

@@ -1932,6 +1932,7 @@ class NeuralFabric:
 
                 # Full GPU tick
                 spike = self._gpu_tick(dt)
+                spike_dict = {}  # always defined — populated every 4th tick
 
                 # ── Temporal reward evaluation every 10 ticks ─────────────────
                 if self._tick % 10 == 0:
@@ -2007,7 +2008,7 @@ class NeuralFabric:
 
                     self.emotions.update(spike_dict)
 
-                    if self._tick % 200 == 0:   # every ~10s — was every 1s
+                    if self._tick % 200 == 0 and spike_dict:   # only when we have real spike data
                         active = sorted(spike_dict.keys(),
                                         key=lambda k: spike_dict[k], reverse=True)[:5]
                         self.thoughts.generate(active, self.emotions.current)
