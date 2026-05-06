@@ -3277,33 +3277,25 @@ function updateNeuralPanel(state) {
     gaba:           'Inhibition, calm, noise reduction',
     glutamate:      'Excitation, plasticity, energy',
   };
-  // Build NM bars with live sparklines (update incrementally, not via innerHTML)
+  // Build NM bars — full innerHTML rebuild each tick (avoids stale-node trap)
   window._unp_step = 3;
   const nmContainer = document.getElementById('nm-bars');
-  for (const [k,v] of Object.entries(state.neuromod||{})) {
-    const pct  = Math.round((v||0)*100);
-    const col  = NM_COLORS[k] || '#64748b';
-    const desc = NM_DESC[k] || '';
-    pushSpark('nm_' + k, v||0);
-    let row = nmContainer.querySelector(`[data-nm="${k}"]`);
-    if (!row) {
-      row = document.createElement('div');
-      row.className = 'bar-row';
-      row.dataset.nm = k;
-      row.style.position = 'relative';
+  if (nmContainer) {
+    let nmHtml = '';
+    for (const [k,v] of Object.entries(state.neuromod||{})) {
+      const pct  = Math.round((v||0)*100);
+      const col  = NM_COLORS[k] || '#64748b';
+      const desc = NM_DESC[k] || '';
       const displayName = k.charAt(0).toUpperCase() + k.slice(1);
-      row.innerHTML = `
+      pushSpark('nm_' + k, v||0);
+      nmHtml += `<div class="bar-row" style="position:relative;" data-nm="${k}">
         <div class="bar-label" title="${desc}">${displayName}</div>
-        <div class="bar-track"><div class="bar-fill nm-fill" style="width:0%;background:${col}"></div></div>
-        <div class="bar-val nm-val">0%</div>
-        <canvas class="spark bar-spark" width="52" height="18" style="flex-shrink:0;"></canvas>
-        ${desc ? `<div class="region-desc"><strong style="color:#e2e8f0;">${displayName}</strong><br>${desc}</div>` : ''}`;
-      nmContainer.appendChild(row);
+        <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${col}"></div></div>
+        <div class="bar-val">${pct}%</div>
+        ${desc ? `<div class="region-desc"><strong style="color:#e2e8f0;">${displayName}</strong><br>${desc}</div>` : ''}
+      </div>`;
     }
-    row.querySelector('.nm-fill').style.width = pct + '%';
-    row.querySelector('.nm-val').textContent  = pct + '%';
-    const spark = row.querySelector('canvas.spark');
-    if (spark) drawSparkline(spark, _sparkHistory['nm_' + k], col);
+    nmContainer.innerHTML = nmHtml;
   }
 
   // Traits
@@ -3350,29 +3342,22 @@ function updateNeuralPanel(state) {
   };
   window._unp_step = 5;
   const clusterContainer = document.getElementById('cluster-bars');
-  const topClusters = (state.top_clusters||[]).slice(0,14);
-  topClusters.forEach(c => {
-    const pct  = Math.round((c.activation||0)*100);
-    const heat = pct > 80 ? 'hot' : pct > 50 ? 'warm' : '';
-    const desc = CLUSTER_DESC[c.name] || '';
-    const lbl  = c.name.replace(/_/g,' ');
-    let row = clusterContainer.querySelector(`[data-cluster="${c.name}"]`);
-    if (!row) {
-      row = document.createElement('div');
-      row.className = 'bar-row cluster-bar';
-      row.dataset.cluster = c.name;
-      row.style.position = 'relative';
-      row.innerHTML = `
+  if (clusterContainer) {
+    let clHtml = '';
+    (state.top_clusters||[]).slice(0,14).forEach(c => {
+      const pct  = Math.round((c.activation||0)*100);
+      const heat = pct > 80 ? 'hot' : pct > 50 ? 'warm' : '';
+      const desc = CLUSTER_DESC[c.name] || '';
+      const lbl  = c.name.replace(/_/g,' ');
+      clHtml += `<div class="bar-row cluster-bar ${heat}" data-cluster="${c.name}" style="position:relative;">
         <div class="bar-label" style="cursor:${desc?'help':'default'};">${lbl}</div>
-        <div class="bar-track"><div class="bar-fill" style="width:0%;"></div></div>
-        <div class="bar-val">0%</div>
-        ${desc ? `<div class="region-desc"><strong style="color:#e2e8f0;">${lbl}</strong><br>${desc}</div>` : ''}`;
-      clusterContainer.appendChild(row);
-    }
-    row.className = `bar-row cluster-bar ${heat}`;
-    row.querySelector('.bar-fill').style.width = pct + '%';
-    row.querySelector('.bar-val').textContent  = pct + '%';
-  });
+        <div class="bar-track"><div class="bar-fill" style="width:${pct}%;"></div></div>
+        <div class="bar-val">${pct}%</div>
+        ${desc ? `<div class="region-desc"><strong style="color:#e2e8f0;">${lbl}</strong><br>${desc}</div>` : ''}
+      </div>`;
+    });
+    clusterContainer.innerHTML = clHtml;
+  }
 
   // Regions with descriptions
   const REGION_INFO = {
@@ -3394,31 +3379,22 @@ function updateNeuralPanel(state) {
   };
   window._unp_step = 6;
   const regContainer = document.getElementById('region-bars');
-  for (const [r,v] of Object.entries(state.regions||{})) {
-    const info  = REGION_INFO[r] || { color:'#64748b', desc:'' };
-    const pct   = Math.round((v||0)*100);
-    const heat  = pct > 80 ? 'max' : pct > 55 ? 'hot' : pct > 30 ? 'mid' : '';
-    const label = r.replace(/_/g,' ');
-    pushSpark('reg_' + r, v||0);
-    let row = regContainer.querySelector(`[data-reg="${r}"]`);
-    if (!row) {
-      row = document.createElement('div');
-      row.className = 'bar-row region-bar';
-      row.dataset.reg = r;
-      row.style.position = 'relative';
-      row.innerHTML = `
+  if (regContainer) {
+    let regHtml = '';
+    for (const [r,v] of Object.entries(state.regions||{})) {
+      const info  = REGION_INFO[r] || { color:'#64748b', desc:'' };
+      const pct   = Math.round((v||0)*100);
+      const heat  = pct > 80 ? 'max' : pct > 55 ? 'hot' : pct > 30 ? 'mid' : '';
+      const label = r.replace(/_/g,' ');
+      pushSpark('reg_' + r, v||0);
+      regHtml += `<div class="bar-row region-bar ${heat}" data-reg="${r}" style="position:relative;">
         <div class="bar-label" title="${info.desc}">${label}</div>
-        <div class="bar-track"><div class="bar-fill" style="width:0%;background:${info.color}"></div></div>
-        <div class="bar-val">0%</div>
-        <canvas class="spark bar-spark" width="52" height="18" style="flex-shrink:0;"></canvas>
-        ${info.desc ? `<div class="region-desc"><strong style="color:#e2e8f0;">${label}</strong><br>${info.desc}</div>` : ''}`;
-      regContainer.appendChild(row);
+        <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${info.color}"></div></div>
+        <div class="bar-val">${pct}%</div>
+        ${info.desc ? `<div class="region-desc"><strong style="color:#e2e8f0;">${label}</strong><br>${info.desc}</div>` : ''}
+      </div>`;
     }
-    row.className = `bar-row region-bar ${heat}`;
-    row.querySelector('.bar-fill').style.width = pct + '%';
-    row.querySelector('.bar-val').textContent  = pct + '%';
-    const spark = row.querySelector('canvas.spark');
-    if (spark) drawSparkline(spark, _sparkHistory['reg_' + r], info.color);
+    regContainer.innerHTML = regHtml;
   }
   window._unp_step = 7;
   // Draw brain radar from region data
