@@ -19,6 +19,23 @@ window.addEventListener('unhandledrejection', function(e) {
   if (!box) return;
   box.innerHTML += '<div>[PROMISE] ' + (e.reason && e.reason.message ? e.reason.message : String(e.reason)) + '</div>';
 });
+
+// ── roundRect polyfill (Chrome<99, older WebView) ──────────────────────────
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+    r = Math.min(r||0, w/2, h/2);
+    this.moveTo(x + r, y);
+    this.lineTo(x + w - r, y);
+    this.quadraticCurveTo(x + w, y, x + w, y + r);
+    this.lineTo(x + w, y + h - r);
+    this.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    this.lineTo(x + r, y + h);
+    this.quadraticCurveTo(x, y + h, x, y + h - r);
+    this.lineTo(x, y + r);
+    this.quadraticCurveTo(x, y, x + r, y);
+    this.closePath();
+  };
+}
 </script>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
@@ -3134,6 +3151,7 @@ const NM_COLORS = {
 function updateNeuralPanel(state) {
   if (!state) return;
   try {
+  window._unp_step = 0;  // breadcrumb: shows which step was last reached before crash
 
   // ── Conflict + CognitiveState + Critic panel ──────────────────────────────
   if (state.conflict) {
@@ -3193,6 +3211,7 @@ function updateNeuralPanel(state) {
     if (td) td.textContent = state.temporal_depth;
   }
 
+  window._unp_step = 1;
   // ── Learning bursts: fire visual events from neural state changes ──
   if (state.prediction_surprise !== undefined) {
     const surp = state.prediction_surprise;
@@ -3220,6 +3239,7 @@ function updateNeuralPanel(state) {
     }
   }
 
+  window._unp_step = 2;
   // ── Fatigue map update ────────────────────────────────────────────
   // Use cluster_wear from state (normalized 0-500 → 0-1)
   if (state.cluster_wear !== undefined) {
@@ -3246,6 +3266,7 @@ function updateNeuralPanel(state) {
     glutamate:      'Excitation, plasticity, energy',
   };
   // Build NM bars with live sparklines (update incrementally, not via innerHTML)
+  window._unp_step = 3;
   const nmContainer = document.getElementById('nm-bars');
   for (const [k,v] of Object.entries(state.neuromod||{})) {
     const pct  = Math.round((v||0)*100);
@@ -3274,6 +3295,7 @@ function updateNeuralPanel(state) {
   }
 
   // Traits
+  window._unp_step = 4;
   let traits = '';
   for (const [k,v] of Object.entries(state.personality||{})) {
     traits += makeBar(k.replace('_',' '), v, 'trait-bar');
@@ -3314,6 +3336,7 @@ function updateNeuralPanel(state) {
     curiosity_drive:'Generates motivation to explore unknowns.',
     identity_core:'Stable self-representation — who AXON understands itself to be.',
   };
+  window._unp_step = 5;
   const clusterContainer = document.getElementById('cluster-bars');
   const topClusters = (state.top_clusters||[]).slice(0,14);
   topClusters.forEach(c => {
@@ -3357,6 +3380,7 @@ function updateNeuralPanel(state) {
     social:               { color:'#ff006e', desc:'Empathy, face recognition, mentalizing (understanding others\' minds), social pain.' },
     metacognition:        { color:'#ff4060', desc:'Thinking about thinking. Self-awareness, confidence monitoring, uncertainty detection.' },
   };
+  window._unp_step = 6;
   const regContainer = document.getElementById('region-bars');
   for (const [r,v] of Object.entries(state.regions||{})) {
     const info  = REGION_INFO[r] || { color:'#64748b', desc:'' };
@@ -3384,9 +3408,11 @@ function updateNeuralPanel(state) {
     const spark = row.querySelector('canvas.spark');
     if (spark) drawSparkline(spark, _sparkHistory['reg_' + r], info.color);
   }
+  window._unp_step = 7;
   // Draw brain radar from region data
   drawBrainRadar(state.regions||{});
 
+  window._unp_step = 8;
   // Emotion
   const emo = state.emotion || {};
   const eName = emo.emotion || 'neutral';
@@ -3407,18 +3433,21 @@ function updateNeuralPanel(state) {
   const aVal = parseFloat(emo.arousal||0).toFixed(2);
   const iVal = parseFloat(emo.intensity||0).toFixed(2);
   const _ecoord = document.getElementById('e-coords'); if (_ecoord) _ecoord.textContent = `v:${vVal}  a:${aVal}  i:${iVal}`;
-  document.getElementById('emotion-pill').textContent = eName;
-  document.getElementById('emotion-pill').style.borderColor = eColor;
-  document.getElementById('emotion-pill').style.color = eColor;
+  window._unp_step = 9;
+  const _ep = document.getElementById('emotion-pill');
+  if (_ep) { _ep.textContent = eName; _ep.style.borderColor = eColor; _ep.style.color = eColor; }
   // Update VA scatter plot
   updateVAPlot({ valence: emo.valence||0, arousal: emo.arousal||0, _color: eColor });
 
   // Counts
-  document.getElementById('neuron-count').textContent =
-    (state.total_neurons||0).toLocaleString();
+  window._unp_step = 10;
+  const _nc = document.getElementById('neuron-count');
+  if (_nc) _nc.textContent = (state.total_neurons||0).toLocaleString();
   // conn-count updated via synapse_count event
   } catch(err) {
-    console.warn("[AXON] updateNeuralPanel threw:", err);
+    console.error("[AXON] updateNeuralPanel CRASHED at step", window._unp_step, ":", err.message, err);
+    var box = document.getElementById('_axon_err_box');
+    if (box) box.innerHTML += '<div>updateNeuralPanel step ' + window._unp_step + ': ' + err.message + '</div>';
   }
 }
 
@@ -4152,6 +4181,14 @@ socket.on('active_pathways', d => {
 socket.on('neural_state', d => {
   neuralState = d;
   window.neuralState = d;  // expose for tab-switch redraws
+  // ── DEBUG: visible NS ticker ─────────────────────────────────────────────
+  if (!window._nsTicker) {
+    window._nsTicker = document.createElement('div');
+    window._nsTicker.style.cssText = 'position:fixed;bottom:4px;right:4px;z-index:99999;background:rgba(0,212,255,0.15);color:#00d4ff;font:10px monospace;padding:2px 6px;border-radius:3px;pointer-events:none;';
+    document.body.appendChild(window._nsTicker);
+  }
+  window._nsCount = (window._nsCount||0) + 1;
+  window._nsTicker.textContent = 'NS#' + window._nsCount + ' tick:' + (d.tick||'?');
   try { updateNeuralPanel(d); } catch(e) { console.warn('[AXON] updateNeuralPanel error:', e); }
   // Also update emotion bars (merged from duplicate handler)
   if (d && d.neuromod) {
