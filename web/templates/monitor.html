@@ -3609,7 +3609,7 @@ scanMics();
 // ── Tab switcher ─────────────────────────────────────────────────────────────
 // Use a variable assignment (not a function declaration) so it is never hoisted
 // and cannot be silently overwritten by a later declaration in the same scope.
-const switchTab = function(name) {
+window.switchTab = function(name) {
   document.querySelectorAll('.info-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
   document.querySelectorAll('.tab-pane').forEach(p => {
     p.style.display = p.id === 'tab-' + name ? 'block' : 'none';
@@ -4112,13 +4112,13 @@ function onPersSlider(id, val) {
   if (el) el.textContent = val + '%';
 }
 
-function savePersonality() {
+window.savePersonality = function() {
   socket.emit('set_personality', {traits: _personalityValues});
   const s = document.getElementById('personality-status');
   if (s) { s.textContent = '✓ Applied'; setTimeout(()=>s.textContent='', 2000); }
 }
 
-function resetPersonality() {
+window.resetPersonality = function() {
   _personalityValues = {curiosity:0.65,risk:0.35,empathy:0.6,dominance:0.45,creativity:0.6,stability:0.7};
   buildPersonalitySliders();
   savePersonality();
@@ -4152,13 +4152,13 @@ function renderBig5Bars(traits) {
 }
 
 // Brain save/load/autonomous
-function saveBrain() {
+window.saveBrain = function() {
   socket.emit('save_brain', {slot:'default'});
 }
-function loadBrain() {
+window.loadBrain = function() {
   socket.emit('load_brain', {slot:'default'});
 }
-function runAutonomous() {
+window.runAutonomous = function() {
   socket.emit('run_autonomous', {steps:100});
   sysLog('🤖 Autonomous mode: 100 steps started…');
 }
@@ -4186,7 +4186,7 @@ socket.on('autonomous_run_complete', d => {
 });
 
 // ── Decision Explanation ─────────────────────────────────────────────────────
-function requestExplanation() {
+window.requestExplanation = function() {
   socket.emit('get_explanation', {});
 }
 
@@ -4287,7 +4287,7 @@ function renderTimeline() {
     </div>`).join('');
 }
 
-function filterTimeline(f) {
+window.filterTimeline = function(f) {
   _timelineFilter = f;
   document.querySelectorAll('.tl-filter').forEach(b => {
     b.classList.toggle('active', b.dataset.filter === f);
@@ -4371,7 +4371,7 @@ function updateVoiceCurrentLabel() {
   if (idEl) idEl.textContent = _selectedVoiceId;
 }
 
-function selectVoice(voiceId) {
+window.selectVoice = function(voiceId) {
   _selectedVoiceId = voiceId;
   applyVoiceModulator(true);
 }
@@ -4384,7 +4384,7 @@ function previewVoice(voiceId, label) {
   socket.emit('set_voice', { voice_id: voiceId, rate, pitch, test: true });
 }
 
-function testCurrentVoice() {
+window.testCurrentVoice = function() {
   socket.emit('set_voice', { voice_id: _selectedVoiceId, test: true });
 }
 
@@ -4523,7 +4523,7 @@ function renderPeopleList() {
   }).join('');
 }
 
-function toggleNotes(pid) {
+window.toggleNotes = function(pid) {
   const panel = document.getElementById('notes-panel-' + pid);
   if (!panel) return;
   const open = panel.style.display === 'none';
@@ -4534,7 +4534,7 @@ function toggleNotes(pid) {
   }
 }
 
-function saveNote(pid) {
+window.saveNote = function(pid) {
   const ta  = document.getElementById('notes-input-' + pid);
   const btn = document.getElementById('save-note-btn-' + pid);
   if (!ta) return;
@@ -4544,12 +4544,12 @@ function saveNote(pid) {
   if (btn) { btn.textContent = 'Saved ✓'; setTimeout(() => { btn.textContent = 'Save note'; }, 1800); }
 }
 
-function forgetPerson(pid, name) {
+window.forgetPerson = function(pid, name) {
   if (!confirm('Remove ' + name + " from AXON's memory?\n\nThis cannot be undone.")) return;
   socket.emit('forget_person', { person_id: pid });
 }
 
-function promptNamePerson(personId) {
+window.promptNamePerson = function(personId) {
   const name = prompt("What is this person's name?");
   if (name && name.trim()) {
     socket.emit('name_person', { person_id: personId, name: name.trim() });
@@ -4774,7 +4774,7 @@ function loadInterestsData() {
     .catch(() => {});
 }
 
-function seedInterest() {
+window.seedInterest = function() {
   const inp = document.getElementById('new-interest-input');
   if (!inp) return;
   const name = (inp.value || '').trim();
@@ -4792,7 +4792,7 @@ function seedInterest() {
   });
 }
 
-function removeInterest(name) {
+window.removeInterest = function(name) {
   fetch('/api/brain/interests/remove', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
@@ -4986,7 +4986,7 @@ function onKnowledgeFileSelected(input) {
   if (label) label.textContent = _selectedKnowledgeFile ? _selectedKnowledgeFile.name : '(none)';
 }
 
-function uploadKnowledgeFile() {
+window.uploadKnowledgeFile = function() {
   if (!_selectedKnowledgeFile) {
     appendIngestLog('⚠ No file selected');
     return;
@@ -5023,7 +5023,7 @@ function uploadKnowledgeFile() {
     });
 }
 
-function ingestKnowledgeText() {
+window.ingestKnowledgeText = function() {
   const text   = (document.getElementById('knowledge-text')?.value || '').trim();
   const source = (document.getElementById('knowledge-source')?.value || 'manual').trim();
   const cred   = (document.getElementById('text-credibility')?.value || 6) / 10;
@@ -5247,7 +5247,7 @@ function loadProviderStatus() {
   socket.emit("get_provider_status");
 }
 
-function setActiveProvider(p) {
+window.setActiveProvider = function(p) {
   socket.emit("update_provider", {provider: p, set_active: true});
 }
 
@@ -5255,7 +5255,7 @@ function setPreferLocal(v) {
   socket.emit("update_provider", {provider: "lmstudio", prefer_local: v});
 }
 
-function saveProviderKey(p) {
+window.saveProviderKey = function(p) {
   var el = document.getElementById(p + "-key-in");
   if (!el || !el.value.trim()) return;
   socket.emit("update_provider", {provider: p, key: el.value.trim(), set_active: true});
@@ -5270,7 +5270,7 @@ function saveProviderModel(p) {
   socket.emit("update_provider", {provider: p, model: sel.value});
 }
 
-function saveLMStudioUrl() {
+window.saveLMStudioUrl = function() {
   var el = document.getElementById("lms-url-in");
   if (!el) return;
   socket.emit("update_provider", {provider: "lmstudio", lmstudio_url: el.value.trim()});
