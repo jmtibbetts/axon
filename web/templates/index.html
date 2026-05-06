@@ -1909,7 +1909,7 @@ function drawNeural() {
   try {
 
   // Guard: canvas must have real dimensions before drawing
-  if (nCanvas.width < 20 || nCanvas.height < 20 || neuronNodes.length === 0) {
+  if (nCanvas.width < 20 || nCanvas.height < 20) {
     requestAnimationFrame(drawNeural);
     return;
   }
@@ -4263,16 +4263,17 @@ window.addEventListener('load', () => {
     // Don't wait for offsetHeight which may be 0 during grid layout
     _syncCanvasToParent(800, 500);
 
-    // Then snap to real dimensions once layout is done
+    // Snap to real dimensions once layout settles — just resize, don't wipe the loop
     function _bootPoll() {
       if (!_canvasParent) return;
       const w = _canvasParent.offsetWidth;
       const h = _canvasParent.offsetHeight;
-      if (w > 20 && h > 20) {
+      if (w > 20 && h > 20 && (Math.abs(nCanvas.width - w) > 4 || Math.abs(nCanvas.height - h) > 4)) {
         nCanvas.width  = w;
         nCanvas.height = h;
-        initNeurons(w, h);
+        initNeurons(w, h);  // rebuilds neuronNodes
         buildLegend();
+        // loop is already running — it will pick up the new neurons on next frame
       }
     }
     [100, 300, 700, 1500].forEach(t => setTimeout(_bootPoll, t));
