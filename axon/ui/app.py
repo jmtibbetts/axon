@@ -1080,14 +1080,12 @@ if __name__ == "__main__":
     print("\n  AXON — Emerging Intelligence")
     print("  Main UI:      http://localhost:7777")
     print("  Neural Monitor: http://localhost:7777/monitor\n")
-    # Auto-open both windows in browser
+    # Auto-open main UI only (monitor is accessible via the dashboard tab)
     import threading as _th
     def _open_browser():
         import time as _t, webbrowser as _wb
         _t.sleep(1.5)
-        _wb.open("http://localhost:7777")
-        _t.sleep(0.4)
-        _wb.open("http://localhost:7777/monitor")
+        _wb.open_new_tab("http://localhost:7777")
     _th.Thread(target=_open_browser, daemon=True).start()
     print("  Axon Non-Commercial License | Copyright (c) 2026 Jon Tibbetts")
     print("  Commercial use requires a license: jon@jontibbetts.com\n")
