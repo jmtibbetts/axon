@@ -481,7 +481,7 @@ canvas.spark{display:block;}
       <!-- Brain Radar chart -->
       <div class="neuro-section">
         <div class="neuro-title">Brain Radar</div>
-        <canvas id="brain-radar" width="260" height="200"></canvas>
+        <canvas id="brain-radar" width="260" height="200" style="width:100%;height:auto;max-height:220px;"></canvas>
       </div>
 
       <!-- Region Activity with descriptions -->
@@ -3000,6 +3000,13 @@ function updateVAPlot(emo) {
 function drawBrainRadar(regions) {
   const canvas = document.getElementById('brain-radar');
   if (!canvas) return;
+  // Auto-size canvas buffer to its CSS display size (avoids blank render when tab was hidden)
+  const displayW = canvas.offsetWidth || 260;
+  const displayH = Math.round(displayW * (200/260));
+  if (canvas.width !== displayW || canvas.height !== displayH) {
+    canvas.width  = displayW;
+    canvas.height = displayH;
+  }
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
   const cx = W/2, cy = H/2 + 6;
@@ -3109,7 +3116,7 @@ function updateNeuralPanel(state) {
   if (state.top_routes && state.top_routes.length) {
     const rt = document.getElementById('top-routes');
     if (rt) rt.textContent = state.top_routes
-      .map(r => r[0].replace(/_/g,' ') + '→' + r[1].replace(/_/g,' '))
+      .map(r => (r.src||r[0]||'').replace(/_/g,' ') + '→' + (r.dst||r[1]||'').replace(/_/g,' '))
       .join('  ');
   }
   const ps = document.getElementById('pred-surprise');
@@ -3121,6 +3128,18 @@ function updateNeuralPanel(state) {
   const tr = document.getElementById('temp-reward');
   if (tr && state.temporal_reward)
     tr.textContent = '+' + (state.temporal_reward.total_reward||0).toFixed(2);
+  // Temporal momentum bar
+  if (state.temporal_momentum !== undefined) {
+    const tmb = document.getElementById('temporal-momentum-bar');
+    const tmv = document.getElementById('temporal-momentum-val');
+    const tmPct = Math.round(((state.temporal_momentum + 1) / 2) * 100); // -1..1 → 0..100
+    if (tmb) tmb.style.width = tmPct + '%';
+    if (tmv) tmv.textContent = state.temporal_momentum.toFixed(2);
+  }
+  if (state.temporal_depth !== undefined) {
+    const td = document.getElementById('temporal-depth');
+    if (td) td.textContent = state.temporal_depth;
+  }
 
   // ── Learning bursts: fire visual events from neural state changes ──
   if (state.prediction_surprise !== undefined) {
@@ -3740,6 +3759,10 @@ const switchTab = function(name) {
   if (name === 'memory')   refreshMemoryPanel();
   if (name === 'identity') requestIdentityState();
   if (name === 'llm')      { if (typeof loadProviderStatus === 'function') loadProviderStatus(); }
+  // Redraw brain radar — canvas renders as 0x0 when hidden, must repaint on reveal
+  if (name === 'brain' && window.neuralState) {
+    requestAnimationFrame(() => drawBrainRadar(window.neuralState.regions || {}));
+  }
 };
 
 // ── Activity Feed ─────────────────────────────────────────────────────────────
@@ -4066,6 +4089,7 @@ socket.on('active_pathways', d => {
 
 socket.on('neural_state', d => {
   neuralState = d;
+  window.neuralState = d;  // expose for tab-switch redraws
   updateNeuralPanel(d);
   // Also update emotion bars (merged from duplicate handler)
   if (d && d.neuromod) {

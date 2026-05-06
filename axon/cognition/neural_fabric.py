@@ -2111,6 +2111,10 @@ class NeuralFabric:
                     )
 
                 # CPU readback for emotion/thoughts/callbacks (every 4 ticks)
+                # spike_dict initialized from activation as fallback for non-tick%4 cycles
+                if 'spike_dict' not in dir() or spike_dict is None:
+                    _act_cpu = self.activation.cpu().numpy()
+                    spike_dict = {n: float(_act_cpu[i]) for i, n in enumerate(self._cluster_names)}
                 if self._tick % 4 == 0:
                     spike_cpu = spike.cpu().numpy()
                     spike_dict = {n: float(spike_cpu[i])
