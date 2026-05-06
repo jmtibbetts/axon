@@ -1906,32 +1906,33 @@ function drawNeural() {
   const regionMap = (neuralState && neuralState.regions) ? neuralState.regions : {};
 
   // ── Region contrast stretch ─────────────────────────────────────────────────
-  // GOAL: idle clusters = dim ghost dots (visible but not glowing).
-  //        active clusters = bright and punchy.
-  // Backend idle ≈ 0.01–0.05, moderate ≈ 0.06–0.15, active ≈ 0.15–0.50+
-  // Mapping:
-  //   0.00 → 0.08  (minimum ghost — always draw the cluster shape)
-  //   0.05 → 0.15  (resting: dim colored dot)
-  //   0.15 → 0.35  (light activity: clearly visible)
-  //   0.35 → 1.00  (active: full brightness)
+  // GOAL: idle brain = visibly lit at 20-40% (DMN hot, all regions glowing).
+  //        active clusters = bright and punchy above the baseline.
+  // Backend idle ≈ 0.12–0.35, moderate ≈ 0.35–0.55, active ≈ 0.55–1.0
+  // Mapping preserves the contrast between baseline and stimulated states:
+  //   0.00 → 0.15  (minimum — always visible, no dead clusters)
+  //   0.12 → 0.25  (typical idle floor: clearly glowing)
+  //   0.35 → 0.50  (DMN idle: nicely lit)
+  //   0.55 → 0.80  (active: bright)
+  //   0.80 → 1.00  (peak: full glow)
   const sharpenedRegion = {};
   for (const [k, v] of Object.entries(regionMap)) {
     let out;
-    if (v < 0.05) {
-      // Resting baseline — ghost: 0.08 to 0.15
-      out = 0.08 + (v / 0.05) * 0.07;
-    } else if (v < 0.15) {
-      // Light activity: 0.15 to 0.35
-      const t = (v - 0.05) / 0.10;
-      out = 0.15 + Math.pow(t, 1.5) * 0.20;
-    } else if (v < 0.40) {
-      // Moderate: 0.35 to 0.65
-      const t = (v - 0.15) / 0.25;
-      out = 0.35 + Math.pow(t, 1.0) * 0.30;
+    if (v < 0.12) {
+      // Below floor — always draw something (dead cluster = dead brain)
+      out = 0.15 + (v / 0.12) * 0.10;
+    } else if (v < 0.35) {
+      // Idle resting range: 0.25 → 0.48
+      const t = (v - 0.12) / 0.23;
+      out = 0.25 + Math.pow(t, 0.8) * 0.23;
+    } else if (v < 0.60) {
+      // Active above baseline: 0.48 → 0.75
+      const t = (v - 0.35) / 0.25;
+      out = 0.48 + Math.pow(t, 0.9) * 0.27;
     } else {
-      // Full activity: 0.65 to 1.0
-      const t = (v - 0.40) / 0.60;
-      out = 0.65 + Math.pow(t, 0.75) * 0.35;
+      // High activity: 0.75 → 1.0
+      const t = (v - 0.60) / 0.40;
+      out = 0.75 + Math.pow(t, 0.7) * 0.25;
     }
     sharpenedRegion[k] = Math.max(0, Math.min(1.0, out));
   }
@@ -1944,7 +1945,7 @@ function drawNeural() {
     const allRegionActs = Object.entries(sharpenedRegion);
     allRegionActs.sort((a,b) => b[1]-a[1]);
     // Only regions genuinely above the active threshold count as winners
-    const activeThresh = 0.10; // must be actually stimulated, not just resting
+    const activeThresh = 0.42; // above-baseline stimulation (idle floor is now ~0.12-0.35)
     const genuinelyActive = allRegionActs.filter(([r,v]) => v > activeThresh);
     const topN = genuinelyActive.length
       ? Math.max(1, Math.min(3, Math.ceil(genuinelyActive.length * 0.35)))
@@ -2569,8 +2570,8 @@ function drawNeural() {
     // Radius: small at rest, much larger when firing
     const r = (n.baseR * 0.5 + act * 2.8) * sizeMult;
 
-    // Alpha: ghost at rest, vivid when firing
-    // act=0.08 (ghost) → alpha≈52, act=0.20 → ≈96, act=0.50 → ≈155, act=1.0 → 220
+    // Alpha: dimly lit at rest, vivid when firing
+    // act=0.15 (idle) → alpha≈70, act=0.30 → ≈110, act=0.55 → ≈160, act=1.0 → 220
     const alphaMult = isWinner ? 1.0 : 0.82;
     const alphaVal  = Math.round(Math.pow(act, 0.55) * 220 * alphaMult * fatigueDim);
     const alpha     = Math.min(220, Math.max(20, alphaVal)).toString(16).padStart(2,'0');
@@ -2581,10 +2582,10 @@ function drawNeural() {
     nCtx.fillStyle = n.color + alpha;
     nCtx.fill();
 
-    // Glow halo — only when meaningfully stimulated (not ghost idle)
-    if (act > 0.38) {
+    // Glow halo — idle brain glows softly, active brain blazes
+    if (act > 0.22) {
       const glowR   = r * (isWinner ? (2.2 + dominance * 1.2) : 1.6) + act * 2.5;
-      const glowAlp = Math.round((act - 0.35) * (isWinner ? 0.75 : 0.40) * fatigueDim * 110).toString(16).padStart(2,'0');
+      const glowAlp = Math.round((act - 0.18) * (isWinner ? 0.75 : 0.40) * fatigueDim * 110).toString(16).padStart(2,'0');
       const grd = nCtx.createRadialGradient(n.x, n.y, r, n.x, n.y, glowR);
       grd.addColorStop(0, n.color + glowAlp);
       grd.addColorStop(1, n.color + '00');

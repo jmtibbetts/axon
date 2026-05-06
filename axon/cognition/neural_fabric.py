@@ -1300,10 +1300,10 @@ class NeuralFabric:
         for _ci, _cn in enumerate(self._cluster_names):
             _rmap[self.clusters[_cn].region].append(_ci)
         _BASELINE_INIT = {
-            "prefrontal": 0.14, "default_mode": 0.20, "thalamus": 0.16,
-            "hippocampus": 0.12, "amygdala": 0.10, "visual": 0.08,
-            "auditory": 0.08, "language": 0.11, "association": 0.12,
-            "social": 0.09, "cerebellum": 0.11, "metacognition": 0.14,
+            "prefrontal": 0.22, "default_mode": 0.35, "thalamus": 0.28,
+            "hippocampus": 0.18, "amygdala": 0.14, "visual": 0.12,
+            "auditory": 0.12, "language": 0.20, "association": 0.22,
+            "social": 0.16, "cerebellum": 0.18, "metacognition": 0.28,
         }
         for _reg, _base in _BASELINE_INIT.items():
             for _ci in _rmap.get(_reg, []):
@@ -1721,9 +1721,9 @@ class NeuralFabric:
         # ── 8. Decay ──────────────────────────────────────────────────────────
         decay   = 0.95 - ser * 0.03
         new_act = torch.clamp(act * decay + delta + noise, min=0.001, max=1.0)
-        # Resting potential: prevent all regions from collapsing to floor at idle
-        # Biological cortex maintains ~5-8% baseline firing; mirror that here.
-        resting = torch.full_like(new_act, 0.008 + 0.012 * ser)   # serotonin raises resting tone; kept very low so idle = dark
+        # Resting potential: biological cortex never goes silent.
+        # Serotonin further elevates tone (calm wakefulness = higher baseline).
+        resting = torch.full_like(new_act, 0.12 + 0.08 * ser)   # 12-20% floor, serotonin-modulated
         new_act = torch.max(new_act, resting)
 
         # ── 9. Surprise-driven learning rate ─────────────────────────────────
@@ -1808,59 +1808,92 @@ class NeuralFabric:
 
     # ── Ambient background firing ─────────────────────────────────────────────
 
-    # Minimum resting activation per region — a human brain is NEVER quiet
+    # Minimum resting activation per region.
+    # A living brain is NEVER dark — even deep sleep shows 40-80% baseline metabolic activity.
+    # These floors ensure every region is visibly lit at rest.
     _BASELINE = {
-        # Kept deliberately low — idle brain should look DARK on the canvas.
-        # Real activity from stimulation should be the only thing that lights up.
-        "prefrontal":    0.03,   # planning, working memory
-        "default_mode":  0.05,   # mind-wandering — slightly higher, it's always ticking
-        "thalamus":      0.04,   # relay — always a little active
-        "hippocampus":   0.025,  # memory consolidation
-        "amygdala":      0.020,  # vigilance
-        "visual":        0.015,  # eyes open
-        "auditory":      0.015,  # listening
-        "language":      0.025,  # inner voice
-        "association":   0.025,  # cross-modal binding
-        "social":        0.018,  # social awareness
-        "cerebellum":    0.022,  # timing
-        "metacognition": 0.030,  # self-monitoring
+        "prefrontal":    0.22,   # planning, working memory — always planning something
+        "default_mode":  0.35,   # DMN: mind-wandering, self-reflection — highest at rest
+        "thalamus":      0.28,   # relay hub — gating ALL sensory traffic constantly
+        "hippocampus":   0.18,   # memory replay and consolidation during idle
+        "amygdala":      0.14,   # vigilance — always scanning for threat
+        "visual":        0.12,   # baseline visual processing even eyes open/closed
+        "auditory":      0.12,   # monitoring ambient sound always
+        "language":      0.20,   # inner monologue — humans think in words constantly
+        "association":   0.22,   # cross-modal binding — always integrating context
+        "social":        0.16,   # social awareness, simulating others
+        "cerebellum":    0.18,   # motor timing and prediction — always active
+        "metacognition": 0.28,   # self-monitoring — always watching itself
     }
 
     def _ambient_fire(self):
-        """Inject biological resting baseline + spontaneous bursts every tick."""
-        # ── Per-region floor: push any cluster below its region baseline back up
+        """
+        Inject biological resting baseline + spontaneous idle activity every tick.
+
+        A living brain is NEVER at zero — even at rest, the default mode network
+        (DMN), thalamus, and prefrontal cortex all show sustained metabolic activity.
+        This method ensures those floors are always maintained AND generates the
+        spontaneous fluctuations that make the brain look alive.
+        """
+        # ── Build region → cluster index map (cached implicitly each call) ──
         region_clusters: Dict[str, list] = defaultdict(list)
         for name, cluster in self.clusters.items():
             region_clusters[cluster.region].append(self._name_to_idx[name])
 
         with self._lock:
+            # ── 1. Hard baseline floor — every region stays above its minimum ──
             for region, baseline in self._BASELINE.items():
                 idxs = region_clusters.get(region, [])
                 if not idxs:
                     continue
                 t = torch.tensor(idxs, device=DEVICE)
                 cur = self.activation[t]
-                # Only top-up neurons that have fallen below baseline
+                # Push deficit back up, slightly randomised so clusters desync
                 deficit = torch.clamp(baseline - cur, min=0.0)
-                # Add a little noise so they don't all lock in sync
-                jitter = torch.rand(len(idxs), device=DEVICE) * 0.04
-                self.activation[t] = torch.clamp(cur + deficit * 0.55 + jitter * 0.02, 0.0, 1.0)
+                jitter  = torch.rand(len(idxs), device=DEVICE) * 0.06
+                self.activation[t] = torch.clamp(
+                    cur + deficit * 0.70 + jitter * deficit,
+                    0.0, 1.0
+                )
 
-        # ── Spontaneous burst: random cluster fires (inner monologue)
-        if random.random() < 0.12:
-            lucky = random.randint(0, len(self._cluster_names)-1)
-            burst = random.uniform(0.02, 0.07)
-            with self._lock:
-                self.activation[lucky] = torch.clamp(self.activation[lucky] + burst, 0.0, 1.0)
+            # ── 2. DMN slow-wave oscillation (always hot at idle) ─────────────
+            # Default-mode and metacognition ripple at theta-band rhythm
+            dmn_idxs = region_clusters.get("default_mode", []) +                        region_clusters.get("metacognition", [])
+            if dmn_idxs:
+                t = torch.tensor(dmn_idxs, device=DEVICE)
+                wave = torch.sin(torch.rand(len(dmn_idxs), device=DEVICE) * 3.14) * 0.06
+                self.activation[t] = torch.clamp(self.activation[t] + wave, 0.0, 1.0)
 
-        # ── Cross-talk: pick 2 random clusters and let them nudge each other
-        if random.random() < 0.30:
-            a = random.randint(0, len(self._cluster_names)-1)
-            b = random.randint(0, len(self._cluster_names)-1)
-            with self._lock:
-                shared = (self.activation[a] + self.activation[b]) * 0.5
-                self.activation[a] = torch.clamp(self.activation[a] * 0.8 + shared * 0.2, 0.0, 1.0)
-                self.activation[b] = torch.clamp(self.activation[b] * 0.8 + shared * 0.2, 0.0, 1.0)
+            # ── 3. Spontaneous multi-cluster burst (alpha rhythm ~10 Hz) ──────
+            # Fire 2-4 random clusters per tick to simulate resting-state fluctuations
+            n_bursts = random.randint(2, 4)
+            for _ in range(n_bursts):
+                if random.random() < 0.65:
+                    lucky = random.randint(0, len(self._cluster_names) - 1)
+                    burst = random.uniform(0.04, 0.12)
+                    self.activation[lucky] = torch.clamp(
+                        self.activation[lucky] + burst, 0.0, 1.0
+                    )
+
+            # ── 4. Propagating ripple: active cluster excites its neighbours ──
+            # Simulates cortico-cortical propagation — activity spreads naturally
+            if random.random() < 0.50:
+                src = random.randint(0, len(self._cluster_names) - 1)
+                src_act = float(self.activation[src].item() if self.activation[src].dim() == 0
+                                else self.activation[src].mean().item())
+                if src_act > 0.18:
+                    # Find the 3 nearest neighbours by Hebbian weight
+                    weights = self.hebbian_weights[src]  # shape [N]
+                    top_k = torch.topk(weights, k=min(3, len(self._cluster_names)-1)).indices
+                    excite = src_act * 0.20  # 20% of source leaks to neighbours
+                    self.activation[top_k] = torch.clamp(
+                        self.activation[top_k] + excite, 0.0, 1.0
+                    )
+
+            # ── 5. Slow global decay — without inputs activation naturally falls ─
+            # But never below baseline (step 1 catches the floor on next tick)
+            decay = 0.015 + random.uniform(0.0, 0.010)
+            self.activation = torch.clamp(self.activation - decay, 0.0, 1.0)
 
 
     def update_context_from_memory(self, memory_success: dict):
