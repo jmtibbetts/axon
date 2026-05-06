@@ -1176,10 +1176,22 @@ class AxonEngine:
     def _emit(self, event: str, data: dict):
         if self.socketio:
             try:
-                self.socketio.emit(event, data, broadcast=True)
+                import numpy as _np
+                def _san(o):
+                    if isinstance(o, dict):  return {k: _san(v) for k,v in o.items()}
+                    if isinstance(o, (list, tuple)): return [_san(v) for v in o]
+                    if isinstance(o, _np.integer):   return int(o)
+                    if isinstance(o, (_np.floating, _np.float32, _np.float64)): return float(o)
+                    if isinstance(o, _np.ndarray):   return o.tolist()
+                    try:
+                        import torch as _t
+                        if isinstance(o, _t.Tensor): return o.item() if o.numel()==1 else o.tolist()
+                    except ImportError: pass
+                    return o
+                safe_data = _san(data)
+                self.socketio.emit(event, safe_data, broadcast=True)
             except Exception as e:
                 try:
-                    # Fallback: push via server-side emit with namespace
                     self.socketio.emit(event, data, namespace="/")
                 except Exception:
                     pass

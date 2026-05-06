@@ -1,0 +1,2495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AXON — Neural Monitor</title>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<style>
+:root{
+  --bg:#020206;--panel:#08090f;--border:#1a2035;--accent:#6366f1;
+  --green:#00ff88;--cyan:#00d4ff;--purple:#a855f7;--orange:#ff6b35;
+  --yellow:#ffcc00;--red:#ff4060;--pink:#ff006e;
+  --text:#e2e8f0;--muted:#64748b;--dim:#334155;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{width:100%;height:100%;background:var(--bg);color:var(--text);
+  font-family:'Segoe UI',monospace,sans-serif;font-size:11px;overflow:hidden;}
+
+/* ── TOP BAR ─────────────────────────────────────────────── */
+#topbar{
+  height:36px;background:#0a0c14;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:0 14px;gap:16px;flex-shrink:0;
+}
+#topbar .logo{color:var(--accent);font-size:13px;font-weight:700;letter-spacing:.1em;}
+#topbar .sub{color:var(--muted);font-size:9px;letter-spacing:.06em;}
+#topbar .conn-dot{width:7px;height:7px;border-radius:50%;background:#ef4444;
+  margin-left:auto;transition:background .4s;}
+#topbar .conn-dot.online{background:var(--green);}
+#topbar .conn-label{font-size:9px;color:var(--muted);}
+#topbar .stat-chip{
+  background:#0f172a;border:1px solid var(--border);border-radius:4px;
+  padding:2px 8px;font-size:8.5px;color:var(--muted);font-family:monospace;
+}
+#topbar .stat-chip span{color:var(--accent);}
+
+/* ── MAIN GRID ───────────────────────────────────────────── */
+#root{
+  display:grid;
+  grid-template-columns: 1fr 280px 280px 260px;
+  grid-template-rows: 1fr;
+  height:calc(100vh - 36px);
+  gap:1px;background:var(--border);
+}
+.col{background:var(--panel);overflow:hidden;display:flex;flex-direction:column;}
+
+/* ── CANVAS COL ─────────────────────────────────────────── */
+#canvas-col{position:relative;}
+#neural-canvas{position:absolute;inset:0;width:100%;height:100%;display:block;background:#020206;}
+#region-legend{position:absolute;top:10px;right:10px;display:flex;flex-direction:column;gap:3px;pointer-events:none;}
+#canvas-hud{position:absolute;bottom:10px;left:10px;display:flex;gap:6px;align-items:center;}
+#mode-badge{font-size:8px;font-family:monospace;letter-spacing:.06em;padding:2px 7px;border-radius:3px;
+  border:1px solid #1e3a5f;background:rgba(0,0,0,.7);color:#6366f1;transition:all .4s;}
+
+/* ── SCROLLABLE COL CONTENT ─────────────────────────────── */
+.col-inner{flex:1;overflow-y:auto;padding:10px 8px;display:flex;flex-direction:column;gap:8px;}
+.col-inner::-webkit-scrollbar{width:4px;}
+.col-inner::-webkit-scrollbar-track{background:transparent;}
+.col-inner::-webkit-scrollbar-thumb{background:#1e293b;border-radius:2px;}
+
+/* ── SECTION CARDS ──────────────────────────────────────── */
+.card{background:#0a0c15;border:1px solid var(--border);border-radius:6px;padding:8px 10px;}
+.card-title{font-size:8px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);
+  margin-bottom:8px;display:flex;align-items:center;gap:5px;}
+.card-title .dot{width:5px;height:5px;border-radius:50%;background:var(--accent);}
+
+/* ── COL HEADERS ─────────────────────────────────────────── */
+.col-header{
+  height:28px;background:#0a0c14;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:0 10px;gap:6px;flex-shrink:0;
+  font-size:8.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);
+}
+.col-header .icon{font-size:11px;}
+
+/* ── BAR ROWS ────────────────────────────────────────────── */
+.bar-row{display:flex;align-items:center;gap:5px;margin-bottom:4px;position:relative;cursor:default;}
+.bar-label{width:110px;flex-shrink:0;font-size:8.5px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.bar-track{flex:1;height:5px;background:#0f1729;border-radius:3px;overflow:hidden;}
+.bar-fill{height:100%;border-radius:3px;background:var(--accent);transition:width .35s ease;}
+.bar-val{width:28px;text-align:right;font-size:7.5px;color:var(--muted);font-family:monospace;}
+.bar-spark{flex-shrink:0;}
+
+/* ── EMOTION RING ─────────────────────────────────────────── */
+.e-ring-wrap{display:flex;align-items:center;gap:12px;padding:4px 0;}
+.e-circle{
+  width:72px;height:72px;border-radius:50%;
+  border:2.5px solid var(--purple);
+  display:flex;align-items:center;justify-content:center;
+  font-size:11px;font-weight:700;letter-spacing:.04em;text-align:center;
+  transition:border-color .5s,box-shadow .5s;
+  flex-shrink:0;
+}
+.e-info{display:flex;flex-direction:column;gap:3px;}
+.e-label{font-size:14px;font-weight:700;letter-spacing:.05em;color:var(--purple);}
+.e-coords{font-size:8px;color:var(--muted);font-family:monospace;}
+.e-pill{display:inline-block;padding:1px 8px;border-radius:10px;border:1px solid var(--purple);
+  color:var(--purple);font-size:8px;margin-top:2px;}
+
+/* ── VA PLOT ─────────────────────────────────────────────── */
+#va-plot{display:block;width:100%;border-radius:4px;}
+.va-label{font-size:7px;color:var(--muted);text-align:center;margin-top:2px;}
+
+/* ── REGION BARS HEAT ────────────────────────────────────── */
+.bar-row.region-bar.mid .bar-fill{filter:brightness(1.2);}
+.bar-row.region-bar.hot .bar-fill{filter:brightness(1.5);}
+.bar-row.region-bar.max .bar-fill{filter:brightness(2.0);animation:pulse-bar 0.8s infinite alternate;}
+@keyframes pulse-bar{from{opacity:.8}to{opacity:1;filter:brightness(2.2);}}
+.bar-row.cluster-bar.warm .bar-fill{background:var(--yellow) !important;}
+.bar-row.cluster-bar.hot  .bar-fill{background:var(--red) !important;}
+
+/* ── REGION DESC TOOLTIP ─────────────────────────────────── */
+.region-desc{
+  display:none;position:absolute;left:0;top:100%;z-index:999;
+  background:#0f172a;border:1px solid var(--border);border-radius:5px;
+  padding:6px 8px;font-size:8px;line-height:1.5;color:#cbd5e1;
+  width:200px;pointer-events:none;white-space:normal;
+}
+.bar-row:hover .region-desc{display:block;}
+
+/* ── COGNITIVE METRICS ───────────────────────────────────── */
+.metric-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px;}
+.metric-box{background:#0d1020;border:1px solid var(--border);border-radius:4px;
+  padding:5px 7px;text-align:center;}
+.metric-val{font-size:16px;font-weight:700;color:var(--accent);font-family:monospace;}
+.metric-label{font-size:7px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:1px;}
+
+/* ── THOUGHT STREAM ──────────────────────────────────────── */
+#thought-stream{
+  flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:4px;
+  min-height:80px;max-height:160px;
+}
+#thought-stream::-webkit-scrollbar{width:3px;}
+#thought-stream::-webkit-scrollbar-thumb{background:#1e293b;}
+.thought-item{
+  font-size:8px;color:#94a3b8;padding:3px 6px;
+  border-left:2px solid #1e3a5f;border-radius:2px;
+  background:#0a0c14;line-height:1.4;
+}
+.thought-item.new{border-left-color:var(--accent);color:#c7d2fe;}
+
+/* ── SPEED CONTROL ─────────────────────────────────────────── */
+.speed-row{display:flex;gap:4px;flex-wrap:wrap;margin-top:5px;}
+.speed-btn{
+  padding:2px 7px;background:#0f172a;border:1px solid var(--border);
+  color:var(--muted);border-radius:3px;cursor:pointer;font-size:8px;
+  transition:all .2s;
+}
+.speed-btn:hover{border-color:var(--accent);color:var(--accent);}
+
+/* ── SCROLLBAR GLOBAL ────────────────────────────────────── */
+::-webkit-scrollbar{width:4px;height:4px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:#1e293b;border-radius:2px;}
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div id="topbar">
+  <span class="logo">⬡ AXON</span>
+  <span class="sub">NEURAL MONITOR</span>
+  <div class="stat-chip">Neurons: <span id="hdr-neurons">—</span></div>
+  <div class="stat-chip">Synapses: <span id="hdr-synapses">—</span></div>
+  <div class="stat-chip">Emotion: <span id="hdr-emotion">—</span></div>
+  <div class="stat-chip">Tick: <span id="hdr-tick">—</span></div>
+  <div class="stat-chip">ε: <span id="hdr-eps">—</span></div>
+  <div class="conn-dot" id="conn-dot"></div>
+  <span class="conn-label" id="conn-label">connecting…</span>
+</div>
+
+<!-- MAIN GRID -->
+<div id="root">
+
+  <!-- COL 1: Neural Canvas (full height) -->
+  <div class="col" id="canvas-col">
+    <canvas id="neural-canvas"></canvas>
+    <div id="region-legend"></div>
+    <div id="canvas-hud">
+      <div id="mode-badge">STABLE</div>
+    </div>
+  </div>
+
+  <!-- COL 2: Neuromodulators + Emotion + Thought Stream -->
+  <div class="col">
+    <div class="col-header"><span class="icon">🧪</span> Chemistry &amp; Emotion</div>
+    <div class="col-inner">
+
+      <!-- Emotion -->
+      <div class="card">
+        <div class="card-title"><span class="dot" style="background:var(--purple)"></span>Emotional State</div>
+        <div class="e-ring-wrap">
+          <div class="e-circle" id="e-circle"><span id="e-name">…</span></div>
+          <div class="e-info">
+            <div class="e-label" id="e-label">neutral</div>
+            <div class="e-coords" id="e-coords">v:0  a:0  i:0</div>
+            <div class="e-pill" id="emotion-pill">neutral</div>
+          </div>
+        </div>
+        <canvas id="va-plot" width="240" height="100" style="margin-top:8px;"></canvas>
+        <div class="va-label">← neg | valence | pos →  arousal ↕</div>
+      </div>
+
+      <!-- Neuromodulators -->
+      <div class="card">
+        <div class="card-title"><span class="dot" style="background:var(--cyan)"></span>Neuromodulators</div>
+        <div id="nm-bars"></div>
+      </div>
+
+      <!-- Thought Stream -->
+      <div class="card" style="flex:1;display:flex;flex-direction:column;">
+        <div class="card-title"><span class="dot" style="background:var(--green)"></span>Thought Stream</div>
+        <div id="thought-stream"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- COL 3: Brain Regions + Clusters + Radar -->
+  <div class="col">
+    <div class="col-header"><span class="icon">🧠</span> Neural Activity</div>
+    <div class="col-inner">
+
+      <!-- Brain Radar -->
+      <div class="card">
+        <div class="card-title"><span class="dot" style="background:var(--yellow)"></span>Brain Radar</div>
+        <canvas id="brain-radar" width="240" height="160" style="width:100%;display:block;"></canvas>
+      </div>
+
+      <!-- Brain Regions -->
+      <div class="card">
+        <div class="card-title"><span class="dot" style="background:var(--orange)"></span>Brain Regions</div>
+        <div id="region-bars"></div>
+      </div>
+
+      <!-- Top Clusters -->
+      <div class="card">
+        <div class="card-title"><span class="dot" style="background:var(--purple)"></span>Active Clusters</div>
+        <div id="cluster-bars"></div>
+      </div>
+
+      <!-- Personality Traits -->
+      <div class="card">
+        <div class="card-title"><span class="dot" style="background:var(--pink)"></span>Personality</div>
+        <div id="trait-bars"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- COL 4: Cognitive State + Reward + Conflict -->
+  <div class="col">
+    <div class="col-header"><span class="icon">⚙️</span> Cognitive State</div>
+    <div class="col-inner">
+
+      <!-- Key Metrics -->
+      <div class="card">
+        <div class="card-title"><span class="dot" style="background:var(--accent)"></span>Core Metrics</div>
+        <div class="metric-grid">
+          <div class="metric-box">
+            <div class="metric-val" id="hdr-neurons2">—</div>
+            <div class="metric-label">Neurons</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-val" id="conn-count" style="color:var(--green);">—</div>
+            <div class="metric-label">Synapses</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-val" id="pred-surprise" style="color:var(--yellow);">—</div>
+            <div class="metric-label">Surprise</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-val" id="temp-reward" style="color:var(--green);">—</div>
+            <div class="metric-label">Net Reward</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-val" id="explore-eps" style="color:var(--orange);">—</div>
+            <div class="metric-label">Exploration ε</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-val" id="cog-regret" style="color:var(--red);">—</div>
+            <div class="metric-label">Regret</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cognitive State Bars -->
+      <div class="card">
+        <div class="card-title"><span class="dot" style="background:var(--cyan)"></span>Cognitive State</div>
+        <div class="bar-row">
+          <div class="bar-label">Confidence</div>
+          <div class="bar-track"><div class="bar-fill" id="cog-conf-bar" style="width:0%;background:var(--green);"></div></div>
+          <div class="bar-val" id="cog-conf-val">0%</div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-label">Uncertainty</div>
+          <div class="bar-track"><div class="bar-fill" id="cog-unc-bar" style="width:0%;background:var(--yellow);"></div></div>
+          <div class="bar-val" id="cog-unc-val">0%</div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-label">Urgency</div>
+          <div class="bar-track"><div class="bar-fill" id="cog-urg-bar" style="width:0%;background:var(--red);"></div></div>
+          <div class="bar-val" id="cog-urg-val">0%</div>
+        </div>
+      </div>
+
+      <!-- Temporal Momentum -->
+      <div class="card">
+        <div class="card-title"><span class="dot" style="background:var(--purple)"></span>Temporal Dynamics</div>
+        <div class="bar-row">
+          <div class="bar-label">Momentum</div>
+          <div class="bar-track"><div class="bar-fill" id="temporal-momentum-bar" style="width:50%;background:var(--purple);"></div></div>
+          <div class="bar-val" id="temporal-momentum-val">0.00</div>
+        </div>
+        <div style="font-size:8px;color:var(--muted);margin-top:4px;">Depth: <span id="temporal-depth" style="color:var(--accent);">—</span> steps</div>
+        <div style="font-size:8px;color:var(--muted);margin-top:3px;">Regret: <span id="cog-hesit" style="color:var(--yellow);">—</span> hesitations</div>
+      </div>
+
+      <!-- Dominant Region -->
+      <div class="card">
+        <div class="card-title"><span class="dot" style="background:var(--red)"></span>Conflict Engine</div>
+        <div style="font-size:8px;color:var(--muted);margin-bottom:4px;">Dominant pathway:</div>
+        <div id="conflict-dominant" style="font-size:9px;color:var(--cyan);font-family:monospace;word-break:break-word;">—</div>
+      </div>
+
+      <!-- Top Routes -->
+      <div class="card">
+        <div class="card-title"><span class="dot" style="background:var(--green)"></span>Active Routes</div>
+        <div id="top-routes" style="font-size:8px;color:var(--muted);font-family:monospace;line-height:1.7;word-break:break-all;">—</div>
+      </div>
+
+      <!-- Speed Control -->
+      <div class="card">
+        <div class="card-title"><span class="dot" style="background:var(--accent)"></span>Cognitive Speed — <span id="speed-label" style="color:var(--accent);">Normal</span></div>
+        <input id="speed-slider" type="range" min="1" max="50" step="1" value="10"
+          oninput="onSpeedSlider(this.value)"
+          style="width:100%;accent-color:var(--accent);cursor:pointer;margin:4px 0;">
+        <div class="speed-row">
+          <button class="speed-btn" onclick="setSpeed(0.1)">💤 Dream</button>
+          <button class="speed-btn" onclick="setSpeed(0.5)">🐢 Slow</button>
+          <button class="speed-btn" onclick="setSpeed(1.0)">✅ Normal</button>
+          <button class="speed-btn" onclick="setSpeed(2.0)">⚡ Alert</button>
+          <button class="speed-btn" onclick="setSpeed(5.0)">🚀 Hyper</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<!-- Hidden stubs required by shared JS -->
+<span id="emo-big-emoji" style="display:none"></span>
+<span id="emo-big-label" style="display:none"></span>
+<span id="emo-big-conf"  style="display:none"></span>
+<div  id="emo-prob-bars" style="display:none"></div>
+<div  id="neuron-count"  style="display:none"></div>
+
+<script>
+// ── Socket: connect to main AXON server on same host, port 7777 ──
+const AXON_HOST = location.hostname;
+const AXON_PORT = 7777;
+const socket = io(`http://${AXON_HOST}:${AXON_PORT}`, {
+  reconnection: true,
+  reconnectionAttempts: Infinity,
+  reconnectionDelay: 500,
+  reconnectionDelayMax: 3000,
+  timeout: 8000,
+});
+
+const connDot   = document.getElementById('conn-dot');
+const connLabel = document.getElementById('conn-label');
+socket.on('connect',    () => { connDot.classList.add('online');    connLabel.textContent='connected'; });
+socket.on('disconnect', () => { connDot.classList.remove('online'); connLabel.textContent='disconnected'; });
+
+// ── Shared state ──────────────────────────────────────────────────
+let neuralState = null;
+window.neuralState = null;
+let _sparkHistory = {};
+let fatigueMap = {};
+let winnerRegions = new Set();
+let loserRegions  = new Set();
+let winnerSmooth  = {};
+let conflictPairs = [];
+let activationTrails = [];
+let learningBursts   = [];
+let ghostPaths       = [];
+let exploreMode  = false;
+let exploitMode  = false;
+let epsilonLevel = 0.18;
+const pulses     = [];
+let axonFrame    = 0;
+let _hebbianWeights = {};
+let playbackBuffer   = [];
+let playbackActive   = false;
+let playbackStep     = 0;
+const PLAYBACK_BUF_LEN = 10;
+let confidenceLevel  = 0.5;
+let uncertaintyLevel = 0.5;
+
+// ── Canvas setup ──────────────────────────────────────────────────
+const nCanvas = document.getElementById('neural-canvas');
+const nCtx    = nCanvas.getContext('2d');
+
+const REGION_DEFS = {
+  // Positions pulled toward center, spreads 2x larger so clusters fill canvas
+  prefrontal:   { x:.28, y:.18, color:'#00d4ff', spread:.13, count:340, label:'Prefrontal Cortex' },
+  hippocampus:  { x:.42, y:.35, color:'#a855f7', spread:.10, count:260, label:'Hippocampus' },
+  amygdala:     { x:.30, y:.55, color:'#ff6b35', spread:.09, count:210, label:'Amygdala' },
+  visual:       { x:.72, y:.30, color:'#ffcc00', spread:.11, count:280, label:'Visual Cortex' },
+  auditory:     { x:.62, y:.18, color:'#00ff88', spread:.10, count:240, label:'Auditory Cortex' },
+  language:     { x:.52, y:.28, color:'#c084fc', spread:.10, count:270, label:'Language' },
+  default_mode: { x:.50, y:.68, color:'#4ade80', spread:.12, count:280, label:'Default Mode' },
+  thalamus:     { x:.50, y:.48, color:'#f9a8d4', spread:.07, count:150, label:'Thalamus' },
+  cerebellum:   { x:.70, y:.65, color:'#7ec8e3', spread:.11, count:260, label:'Cerebellum' },
+  association:  { x:.60, y:.45, color:'#fb923c', spread:.10, count:240, label:'Association' },
+  social:       { x:.36, y:.65, color:'#ff006e', spread:.09, count:200, label:'Social / Empathy' },
+  metacognition:{ x:.60, y:.60, color:'#ff4060', spread:.09, count:190, label:'Metacognition' },
+};
+
+// Hard-wired cross-region axon paths (biological connections)
+// Each entry: [srcRegion, dstRegion, weight]
+const AXON_ROUTES = [
+  ['thalamus',    'prefrontal',   0.9],
+  ['thalamus',    'visual',       0.8],
+  ['thalamus',    'auditory',     0.8],
+  ['thalamus',    'language',     0.7],
+  ['thalamus',    'amygdala',     0.7],
+  ['prefrontal',  'language',     0.8],
+  ['prefrontal',  'hippocampus',  0.7],
+  ['prefrontal',  'association',  0.8],
+  ['prefrontal',  'metacognition',0.7],
+  ['prefrontal',  'thalamus',     0.6],
+  ['hippocampus', 'language',     0.7],
+  ['hippocampus', 'default_mode', 0.8],
+  ['hippocampus', 'association',  0.6],
+  ['amygdala',    'prefrontal',   0.8],
+  ['amygdala',    'social',       0.7],
+  ['amygdala',    'hippocampus',  0.6],
+  ['visual',      'association',  0.7],
+  ['visual',      'language',     0.6],
+  ['auditory',    'language',     0.9],
+  ['auditory',    'association',  0.6],
+  ['language',    'association',  0.7],
+  ['language',    'default_mode', 0.6],
+  ['social',      'prefrontal',   0.6],
+  ['social',      'amygdala',     0.7],
+  ['social',      'default_mode', 0.5],
+  ['default_mode','prefrontal',   0.6],
+  ['default_mode','metacognition',0.6],
+  ['association', 'prefrontal',   0.6],
+  ['association', 'metacognition',0.7],
+  ['metacognition','prefrontal',  0.8],
+  ['metacognition','association', 0.6],
+  ['cerebellum',  'prefrontal',   0.5],
+  ['cerebellum',  'association',  0.5],
+];
+
+// Travelling signal pulses along axon routes
+const pulses = [];   // {x0,y0,x1,y1,t,color,strength}
+
+// ── Winner/loser tracking (dominance visualization) ───────────────────
+let winnerRegions  = new Set();   // regions currently dominating
+let loserRegions   = new Set();
+let winnerSmooth   = {};          // per-region smooth dominance 0-1
+let conflictPairs  = [];          // [{r1,r2,intensity,t}] tension arcs
+
+// ── Activation trails (comet tails) ──────────────────────────────────
+const activationTrails = [];      // {x,y,color,life,radius}
+
+// ── Learning burst events ─────────────────────────────────────────────
+const learningBursts = [];        // {x,y,color,t,type,radius}
+
+// ── Ghost paths (memory influence) ───────────────────────────────────
+const ghostPaths = [];            // {x0,y0,x1,y1,color,alpha,life}
+
+// ── Cluster fatigue overlay ───────────────────────────────────────────
+let fatigueMap = {};              // region → 0-1 fatigue level
+
+// ── Exploration vs exploitation mode ─────────────────────────────────
+let exploreMode   = false;        // true = high epsilon, show exploration flares
+let exploitMode   = false;        // true = tight pathways
+let epsilonLevel  = 0.18;
+
+// ── Playback buffer (Decision Playback Mode) ─────────────────────────
+const PLAYBACK_BUF_LEN = 10;
+const playbackBuffer  = [];       // ring of {regions, dominantSet, timestamp}
+let   playbackActive  = false;
+let   playbackStep    = 0;
+
+// ── Per-region confidence glow (belief field) ─────────────────────────
+let confidenceLevel = 0.5;        // global scalar from backend
+let uncertaintyLevel = 0.5;
+
+function addPulse(r1, r2, strength) {
+
+
+function addSynapseEvent(srcRegion, dstRegion, strength, type) {
+  const d1 = REGION_DEFS[srcRegion], d2 = REGION_DEFS[dstRegion];
+  if (!d1 || !d2 || srcRegion === dstRegion) return;
+  const W = nCanvas.width, H = nCanvas.height;
+  // Pick neurons near the EDGE of each cluster (facing each other)
+  const srcNeurons = neuronNodes.filter(n => n.region === srcRegion);
+  const dstNeurons = neuronNodes.filter(n => n.region === dstRegion);
+  if (!srcNeurons.length || !dstNeurons.length) return;
+  // Edge-biased pick for src
+  const c2x = d2.x*W, c2y = d2.y*H, c1x = d1.x*W, c1y = d1.y*H;
+  const snCands = srcNeurons.length > 8 ? srcNeurons.filter((_,i)=>i%2===0) : srcNeurons;
+  const sn = snCands.reduce((a,b) => {
+    const adx=a.x-c1x, ady=a.y-c1y, bdx=b.x-c1x, bdy=b.y-c1y;
+    const dd=Math.hypot(c2x-c1x,c2y-c1y)||1;
+    const ux=(c2x-c1x)/dd, uy=(c2y-c1y)/dd;
+    const al=Math.hypot(adx,ady)||1, bl=Math.hypot(bdx,bdy)||1;
+    const aScore = (adx/al)*ux+(ady/al)*uy + Math.random()*0.3;
+    const bScore = (bdx/bl)*ux+(bdy/bl)*uy + Math.random()*0.3;
+    return aScore > bScore ? a : b;
+  });
+  const dnCands = dstNeurons.length > 8 ? dstNeurons.filter((_,i)=>i%2===0) : dstNeurons;
+  const dn = dnCands.reduce((a,b) => {
+    const adx=a.x-c2x, ady=a.y-c2y, bdx=b.x-c2x, bdy=b.y-c2y;
+    const dd=Math.hypot(c1x-c2x,c1y-c2y)||1;
+    const ux=(c1x-c2x)/dd, uy=(c1y-c2y)/dd;
+    const al=Math.hypot(adx,ady)||1, bl=Math.hypot(bdx,bdy)||1;
+    const aScore = (adx/al)*ux+(ady/al)*uy + Math.random()*0.3;
+    const bScore = (bdx/bl)*ux+(bdy/bl)*uy + Math.random()*0.3;
+    return aScore > bScore ? a : b;
+  });
+  const color = type === 'new' ? '#ffffff' : d1.color;
+  synapseEvents.push({
+    x0: sn.x, y0: sn.y,
+    x1: dn.x, y1: dn.y,
+    color,
+    srcColor: d1.color,
+    dstColor: d2.color,
+    t: 0,          // 0 = just born, 1 = fully drawn
+    life: 1.0,     // fades after fully drawn
+    strength,
+    type,          // 'new' | 'strengthen'
+    // Particles that shoot along the arc on formation
+    particles: Array.from({length: type==='new' ? 5 : 3}, () => ({
+      t: Math.random() * 0.3,
+      speed: 0.018 + Math.random() * 0.015,
+    })),
+  });
+  // Also briefly boost the two neurons
+  if (sn) sn.activation = Math.min(1, sn.activation + 0.35);
+  if (dn) dn.activation = Math.min(1, dn.activation + 0.25);
+}
+
+// Map backend region keys → canvas display props
+// Backend sends: prefrontal, hippocampus, amygdala, visual, auditory,
+//                language, default_mode, thalamus, cerebellum,
+//                association, social, metacognition
+const REGION_DEFS = {
+  // Positions pulled toward center, spreads 2x larger so clusters fill canvas
+  prefrontal:   { x:.28, y:.18, color:'#00d4ff', spread:.13, count:340, label:'Prefrontal Cortex' },
+  hippocampus:  { x:.42, y:.35, color:'#a855f7', spread:.10, count:260, label:'Hippocampus' },
+  amygdala:     { x:.30, y:.55, color:'#ff6b35', spread:.09, count:210, label:'Amygdala' },
+  visual:       { x:.72, y:.30, color:'#ffcc00', spread:.11, count:280, label:'Visual Cortex' },
+  auditory:     { x:.62, y:.18, color:'#00ff88', spread:.10, count:240, label:'Auditory Cortex' },
+  language:     { x:.52, y:.28, color:'#c084fc', spread:.10, count:270, label:'Language' },
+  default_mode: { x:.50, y:.68, color:'#4ade80', spread:.12, count:280, label:'Default Mode' },
+  thalamus:     { x:.50, y:.48, color:'#f9a8d4', spread:.07, count:150, label:'Thalamus' },
+  cerebellum:   { x:.70, y:.65, color:'#7ec8e3', spread:.11, count:260, label:'Cerebellum' },
+  association:  { x:.60, y:.45, color:'#fb923c', spread:.10, count:240, label:'Association' },
+  social:       { x:.36, y:.65, color:'#ff006e', spread:.09, count:200, label:'Social / Empathy' },
+  metacognition:{ x:.60, y:.60, color:'#ff4060', spread:.09, count:190, label:'Metacognition' },
+};
+
+// Hard-wired cross-region axon paths (biological connections)
+// Each entry: [srcRegion, dstRegion, weight]
+const AXON_ROUTES = [
+  ['thalamus',    'prefrontal',   0.9],
+  ['thalamus',    'visual',       0.8],
+  ['thalamus',    'auditory',     0.8],
+  ['thalamus',    'language',     0.7],
+  ['thalamus',    'amygdala',     0.7],
+  ['prefrontal',  'language',     0.8],
+  ['prefrontal',  'hippocampus',  0.7],
+  ['prefrontal',  'association',  0.8],
+  ['prefrontal',  'metacognition',0.7],
+  ['prefrontal',  'thalamus',     0.6],
+  ['hippocampus', 'language',     0.7],
+  ['hippocampus', 'default_mode', 0.8],
+  ['hippocampus', 'association',  0.6],
+  ['amygdala',    'prefrontal',   0.8],
+  ['amygdala',    'social',       0.7],
+  ['amygdala',    'hippocampus',  0.6],
+  ['visual',      'association',  0.7],
+  ['visual',      'language',     0.6],
+  ['auditory',    'language',     0.9],
+  ['auditory',    'association',  0.6],
+  ['language',    'association',  0.7],
+  ['language',    'default_mode', 0.6],
+  ['social',      'prefrontal',   0.6],
+  ['social',      'amygdala',     0.7],
+  ['social',      'default_mode', 0.5],
+  ['default_mode','prefrontal',   0.6],
+  ['default_mode','metacognition',0.6],
+  ['association', 'prefrontal',   0.6],
+  ['association', 'metacognition',0.7],
+  ['metacognition','prefrontal',  0.8],
+  ['metacognition','association', 0.6],
+  ['cerebellum',  'prefrontal',   0.5],
+  ['cerebellum',  'association',  0.5],
+];
+
+// Travelling signal pulses along axon routes
+const pulses = [];   // {x0,y0,x1,y1,t,color,strength}
+
+// ── Winner/loser tracking (dominance visualization) ───────────────────
+let winnerRegions  = new Set();   // regions currently dominating
+let loserRegions   = new Set();
+let winnerSmooth   = {};          // per-region smooth dominance 0-1
+let conflictPairs  = [];          // [{r1,r2,intensity,t}] tension arcs
+
+// ── Activation trails (comet tails) ──────────────────────────────────
+const activationTrails = [];      // {x,y,color,life,radius}
+
+// ── Learning burst events ─────────────────────────────────────────────
+const learningBursts = [];        // {x,y,color,t,type,radius}
+
+// ── Ghost paths (memory influence) ───────────────────────────────────
+const ghostPaths = [];            // {x0,y0,x1,y1,color,alpha,life}
+
+// ── Cluster fatigue overlay ───────────────────────────────────────────
+let fatigueMap = {};              // region → 0-1 fatigue level
+
+// ── Exploration vs exploitation mode ─────────────────────────────────
+let exploreMode   = false;        // true = high epsilon, show exploration flares
+let exploitMode   = false;        // true = tight pathways
+let epsilonLevel  = 0.18;
+
+// ── Playback buffer (Decision Playback Mode) ─────────────────────────
+const PLAYBACK_BUF_LEN = 10;
+const playbackBuffer  = [];       // ring of {regions, dominantSet, timestamp}
+let   playbackActive  = false;
+let   playbackStep    = 0;
+
+// ── Per-region confidence glow (belief field) ─────────────────────────
+let confidenceLevel = 0.5;        // global scalar from backend
+let uncertaintyLevel = 0.5;
+
+function addPulse(r1, r2, strength) {
+  const d1 = REGION_DEFS[r1], d2 = REGION_DEFS[r2];
+  if (!d1 || !d2) return;
+  const W = nCanvas.width, H = nCanvas.height;
+  // Find an edge neuron to start/end the pulse (more realistic fiber routing)
+  const srcNodes = neuronNodes.filter(n => n.region === r1);
+  const dstNodes = neuronNodes.filter(n => n.region === r2);
+  const c2x = d2.x * W, c2y = d2.y * H;
+  const c1x = d1.x * W, c1y = d1.y * H;
+  // Pick src neuron facing dst
+  let sx = d1.x*W, sy = d1.y*H;
+  let ex = d2.x*W, ey = d2.y*H;
+  if (srcNodes.length > 3) {
+    const cands = srcNodes.filter((_,i) => i%3===0);
+    const best = cands.reduce((a,b) => {
+      const ax=(a.x-d1.x*W)/W, ay=(a.y-d1.y*H)/H;
+      const bx=(b.x-d1.x*W)/W, by=(b.y-d1.y*H)/H;
+      const dx=(c2x-d1.x*W)/W, dy=(c2y-d1.y*H)/H;
+      const la=Math.hypot(ax,ay)||1, lb=Math.hypot(bx,by)||1;
+      return (ax/la*dx+ay/la*dy) > (bx/lb*dx+by/lb*dy) ? a : b;
+    });
+    sx = best.x; sy = best.y;
+  }
+  if (dstNodes.length > 3) {
+    const cands = dstNodes.filter((_,i) => i%3===0);
+    const best = cands.reduce((a,b) => {
+      const ax=(a.x-d2.x*W)/W, ay=(a.y-d2.y*H)/H;
+      const bx=(b.x-d2.x*W)/W, by=(b.y-d2.y*H)/H;
+      const dx=(c1x-d2.x*W)/W, dy=(c1y-d2.y*H)/H;
+      const la=Math.hypot(ax,ay)||1, lb=Math.hypot(bx,by)||1;
+      return (ax/la*dx+ay/la*dy) > (bx/lb*dx+by/lb*dy) ? a : b;
+    });
+    ex = best.x; ey = best.y;
+  }
+  pulses.push({
+    x0: sx, y0: sy,
+    x1: ex, y1: ey,
+    t:  0,
+    color: d1.color,
+    strength: Math.min(1, strength),
+  });
+}
+
+// ── Learning burst: ripple at a region centroid ───────────────────────
+function addLearningBurst(regionKey, type, intensity) {
+  // type: 'surprise' | 'reward' | 'penalty' | 'weight_update'
+  const d = REGION_DEFS[regionKey];
+  if (!d) return;
+  const W = nCanvas.width, H = nCanvas.height;
+  const colors = {
+    surprise:      '#ffffff',
+    reward:        '#22c55e',
+    penalty:       '#ef4444',
+    weight_update: '#a855f7',
+  };
+  learningBursts.push({
+    x:       d.x * W,
+    y:       d.y * H,
+    color:   colors[type] || '#ffffff',
+    t:       0.0,    // 0→1 lifetime
+    type,
+    radius:  14 + intensity * 24,
+    rings:   type === 'surprise' ? 3 : 2,
+  });
+}
+
+// ── Ghost path: memory influence highlight ────────────────────────────
+function addGhostPath(r1, r2, alpha) {
+  const d1 = REGION_DEFS[r1], d2 = REGION_DEFS[r2];
+  if (!d1 || !d2 || r1 === r2) return;
+  const W = nCanvas.width, H = nCanvas.height;
+  ghostPaths.push({
+    x0: d1.x*W, y0: d1.y*H,
+    x1: d2.x*W, y1: d2.y*H,
+    color: d1.color,
+    alpha: Math.min(0.35, alpha),
+    life:  1.0,
+  });
+}
+
+// ── Conflict pair: tension arc between competing regions ──────────────
+function addConflictPair(r1, r2, intensity) {
+  const existing = conflictPairs.find(p =>
+    (p.r1===r1&&p.r2===r2)||(p.r1===r2&&p.r2===r1));
+  if (existing) {
+    existing.intensity = Math.max(existing.intensity, intensity);
+    existing.t = 0;
+    return;
+  }
+  conflictPairs.push({ r1, r2, intensity, t: 0 });
+}
+
+// Per-neuron neighbor list (cross-region via AXON_ROUTES + within-region)
+function initNeurons() {
+  // Use parent container dimensions if canvas reports 0 (layout not settled yet)
+  const W = nCanvas.offsetWidth  || nCanvas.parentElement.offsetWidth  || 700;
+  const H = nCanvas.offsetHeight || nCanvas.parentElement.offsetHeight || 440;
+  nCanvas.width  = W;
+  nCanvas.height = H;
+  neuronNodes = [];
+
+  for (const [region, props] of Object.entries(REGION_DEFS)) {
+    const cx = props.x * W;
+    const cy = props.y * H;
+    const sx = props.spread * W;
+    const sy = props.spread * H * 0.75;
+    for (let i = 0; i < props.count; i++) {
+      // Square-root radius gives uniform disk fill (avoids center clumping)
+      const angle = Math.random() * Math.PI * 2;
+      const rr    = Math.sqrt(Math.random());   // uniform disk
+      neuronNodes.push({
+        x:          cx + Math.cos(angle) * rr * sx,
+        y:          cy + Math.sin(angle) * rr * sy,
+        region,
+        color:      props.color,
+        activation: Math.random() * 0.04,
+        baseR:      1.0 + Math.random() * 1.2,
+        phase:      Math.random() * Math.PI * 2,
+        speed:      0.015 + Math.random() * 0.035,
+        neighbors:  [],       // filled below
+        xNeighbors: [],       // cross-region (axon targets)
+      });
+    }
+  }
+
+  // Build within-region neighbor lists
+  const BY_REGION = {};
+  neuronNodes.forEach((n, i) => {
+    if (!BY_REGION[n.region]) BY_REGION[n.region] = [];
+    BY_REGION[n.region].push(i);
+  });
+  neuronNodes.forEach((n, i) => {
+    const pool = (BY_REGION[n.region] || []).filter(j => j !== i);
+    n.neighbors = pool.sort(() => Math.random() - .5).slice(0, 9);  // was 5
+  });
+
+  // Build cross-region axon neighbors:
+  // 22% of src neurons get cross-region pointers (was 10%)
+  // Bidirectional: also wire the reverse direction at half rate
+  AXON_ROUTES.forEach(([src, dst, w]) => {
+    const srcPool = BY_REGION[src] || [];
+    const dstPool = BY_REGION[dst] || [];
+    if (!srcPool.length || !dstPool.length) return;
+    // Forward connections
+    const fwdCount = Math.max(4, Math.floor(srcPool.length * 0.22));
+    for (let k = 0; k < fwdCount; k++) {
+      const si = srcPool[Math.floor(Math.random() * srcPool.length)];
+      const di = dstPool[Math.floor(Math.random() * dstPool.length)];
+      neuronNodes[si].xNeighbors.push(di);
+    }
+    // Weaker reverse connections (feedback loops)
+    const revCount = Math.max(2, Math.floor(dstPool.length * 0.08 * w));
+    for (let k = 0; k < revCount; k++) {
+      const di = dstPool[Math.floor(Math.random() * dstPool.length)];
+      const si = srcPool[Math.floor(Math.random() * srcPool.length)];
+      neuronNodes[di].xNeighbors.push(si);
+    }
+  });
+
+  buildLegend();
+}
+
+function buildLegend() {
+  const leg = document.getElementById('region-legend');
+  if (!leg) return;
+  leg.innerHTML = Object.entries(REGION_DEFS).map(([, p]) =>
+    `<div class="rl"><span class="dot" style="background:${p.color};box-shadow:0 0 5px ${p.color};"></span>${p.label}</div>`
+  ).join('');
+}
+
+function gaussRand() {
+  let u=0, v=0;
+  while(u===0) u=Math.random();
+  while(v===0) v=Math.random();
+  return Math.sqrt(-2*Math.log(u)) * Math.cos(2*Math.PI*v);
+}
+
+// Spike queue: neurons scheduled to fire {idx, at_frame}
+const spikeQueue = [];
+let lastTopClusters = [];
+
+function scheduleSpikeWave(regionName, intensity) {
+  const nodes = neuronNodes
+    .map((n,i)=>({n,i}))
+    .filter(({n})=> n.region === regionName);
+  if (!nodes.length) return;
+  // Fire a random subset proportional to intensity
+  const fireCount = Math.max(1, Math.floor(nodes.length * intensity * 0.05));
+  const shuffled  = nodes.sort(()=>Math.random()-.5).slice(0, fireCount);
+  shuffled.forEach(({i}, k) => {
+    spikeQueue.push({ idx: i, at: axonFrame + k });
+  });
+}
+
+
+
+function drawNeural() {
+  try {
+
+  // Self-heal: if canvas buffer is 0x0, re-sync from CSS layout
+  if (nCanvas.width === 0 || nCanvas.height === 0) {
+    const pw = nCanvas.offsetWidth  || nCanvas.parentElement.offsetWidth  || 700;
+    const ph = nCanvas.offsetHeight || nCanvas.parentElement.offsetHeight || 440;
+    if (pw > 0 && ph > 0) {
+      nCanvas.width  = pw;
+      nCanvas.height = ph;
+      if (neuronNodes.length === 0) { initNeurons(); buildLegend(); }
+    } else {
+      requestAnimationFrame(drawNeural);
+      return; // can't draw yet, wait for layout
+    }
+  }
+  axonFrame++;
+  const W = nCanvas.width, H = nCanvas.height;
+
+  // Trail fade — faster = tighter, more reactive visual
+  // At 60fps: 0.35 means ~5-6 frames persistence (sharp and clean)
+  nCtx.fillStyle = 'rgba(2,2,6,0.38)';  // gentle wipe so ghost clusters stay visible
+  nCtx.fillRect(0, 0, W, H);
+
+  const regionMap = (neuralState && neuralState.regions) ? neuralState.regions : {};
+
+  // ── Region contrast stretch ─────────────────────────────────────────────────
+  // GOAL: idle brain = visibly lit at 20-40% (DMN hot, all regions glowing).
+  //        active clusters = bright and punchy above the baseline.
+  // Backend idle ≈ 0.12–0.35, moderate ≈ 0.35–0.55, active ≈ 0.55–1.0
+  // Mapping preserves the contrast between baseline and stimulated states:
+  //   0.00 → 0.15  (minimum — always visible, no dead clusters)
+  //   0.12 → 0.25  (typical idle floor: clearly glowing)
+  //   0.35 → 0.50  (DMN idle: nicely lit)
+  //   0.55 → 0.80  (active: bright)
+  //   0.80 → 1.00  (peak: full glow)
+  const sharpenedRegion = {};
+  for (const [k, v] of Object.entries(regionMap)) {
+    let out;
+    if (v < 0.12) {
+      // Below floor — always draw something (dead cluster = dead brain)
+      out = 0.15 + (v / 0.12) * 0.10;
+    } else if (v < 0.35) {
+      // Idle resting range: 0.25 → 0.48
+      const t = (v - 0.12) / 0.23;
+      out = 0.25 + Math.pow(t, 0.8) * 0.23;
+    } else if (v < 0.60) {
+      // Active above baseline: 0.48 → 0.75
+      const t = (v - 0.35) / 0.25;
+      out = 0.48 + Math.pow(t, 0.9) * 0.27;
+    } else {
+      // High activity: 0.75 → 1.0
+      const t = (v - 0.60) / 0.40;
+      out = 0.75 + Math.pow(t, 0.7) * 0.25;
+    }
+    sharpenedRegion[k] = Math.max(0, Math.min(1.0, out));
+  }
+
+  // ── Receive new state and schedule spike waves ──────────────────────
+  if (neuralState && neuralState.top_clusters && axonFrame % 8 === 0) {
+    const newTop = (neuralState.top_clusters || []).slice(0, 8);
+
+    // ── Determine winner / loser regions ─────────────────────────────
+    const allRegionActs = Object.entries(sharpenedRegion);
+    allRegionActs.sort((a,b) => b[1]-a[1]);
+    // Only regions genuinely above the active threshold count as winners
+    const activeThresh = 0.42; // above-baseline stimulation (idle floor is now ~0.12-0.35)
+    const genuinelyActive = allRegionActs.filter(([r,v]) => v > activeThresh);
+    const topN = genuinelyActive.length
+      ? Math.max(1, Math.min(3, Math.ceil(genuinelyActive.length * 0.35)))
+      : 1;
+    winnerRegions = new Set(allRegionActs.slice(0, topN).map(r=>r[0]));
+    loserRegions  = new Set(allRegionActs.slice(topN).map(r=>r[0]));
+    // Smooth the dominance value per region
+    for (const [r, v] of allRegionActs) {
+      winnerSmooth[r] = (winnerSmooth[r] || 0) * 0.85 + v * 0.15;
+    }
+
+    // ── Update confidence / uncertainty from backend ──────────────────
+    if (neuralState.cognitive_state) {
+      confidenceLevel  = neuralState.cognitive_state.confidence  || 0.5;
+      uncertaintyLevel = neuralState.cognitive_state.uncertainty || 0.5;
+    }
+
+    // ── Exploration / exploitation mode from epsilon ──────────────────
+    if (neuralState.meta) {
+      epsilonLevel  = neuralState.explore_eps || 0.18;
+      exploreMode   = (neuralState.meta.mood === 'bored' ||
+                       neuralState.meta.mood === 'entrapped' ||
+                       epsilonLevel > 0.28);
+      exploitMode   = (neuralState.meta.mood === 'surprised' || epsilonLevel < 0.08);
+      updateModeBadge(neuralState.meta, epsilonLevel);
+    } else {
+      epsilonLevel = neuralState.explore_eps || 0.18;
+      exploreMode  = epsilonLevel > 0.28;
+      exploitMode  = epsilonLevel < 0.08;
+      updateModeBadge(null, epsilonLevel);
+    }
+
+    // ── Conflict pairs from top competing regions ─────────────────────
+    // Pairs where two high-activation regions compete via lateral inhibition
+    const topWinners = allRegionActs.slice(0, 4).map(r=>r[0]);
+    for (let i=0; i<topWinners.length; i++) {
+      for (let j=i+1; j<topWinners.length; j++) {
+        const a1 = sharpenedRegion[topWinners[i]] || 0;
+        const a2 = sharpenedRegion[topWinners[j]] || 0;
+        if (a1 > 0.25 && a2 > 0.25) {
+          addConflictPair(topWinners[i], topWinners[j], Math.min(a1, a2));
+        }
+      }
+    }
+
+    // ── Playback buffer snapshot ──────────────────────────────────────
+    if (!playbackActive) {
+      playbackBuffer.push({
+        regions:     {...sharpenedRegion},
+        dominantSet: new Set(winnerRegions),
+        eps:         epsilonLevel,
+        ts:          Date.now(),
+      });
+      if (playbackBuffer.length > PLAYBACK_BUF_LEN) playbackBuffer.shift();
+    }
+
+    newTop.forEach(c => {
+      const sharpAct = sharpenedRegion[c.region || regionForCluster(c.name)] || 0;
+      // Lower threshold — even resting clusters get mild spike waves
+      if (sharpAct > 0.04) {
+        scheduleSpikeWave(c.region || regionForCluster(c.name), Math.max(0.08, sharpAct));
+      }
+    });
+    // Spontaneous idle spike — only on ACTIVE regions, proportional to their activity
+    // No more random all-region constant noise
+    if (axonFrame % 20 === 0) {
+      // Find genuinely active regions only
+      const activeRegs = Object.entries(sharpenedRegion)
+        .filter(([,v]) => v > 0.20)
+        .sort((a,b) => b[1]-a[1]);
+      if (activeRegs.length) {
+        // Fire on top 1-2 active regions to reinforce real activity
+        const pick = activeRegs[Math.floor(Math.random() * Math.min(2, activeRegs.length))];
+        scheduleSpikeWave(pick[0], pick[1] * 0.6);
+      }
+    }
+
+    // Reinforce active routes based on region data from backend
+    // Only runs every 12 frames to avoid overwhelming the canvas
+    if (axonFrame % 12 === 0) {
+      AXON_ROUTES.forEach(([src, dst, w]) => {
+        const sa = sharpenedRegion[src] || 0;
+        const da = sharpenedRegion[dst] || 0;
+        if (sa < 0.18 || da < 0.12) return;
+        const coact = sa * da;
+        // Add Hebbian boost so learned paths fire more readily
+        const hebbBoost = (window._hebbianWeights && window._hebbianWeights[src+'>'+dst]) || 0;
+        if ((coact + hebbBoost * 0.3) > 0.04 && Math.random() < (coact + hebbBoost * 0.2) * w) {
+          addPulse(src, dst, Math.min(1.0, Math.sqrt(coact) * w + hebbBoost * 0.4));
+        }
+      });
+    }
+
+    // ── Exploration flares: random cluster bursts when in explore mode ─
+    if (exploreMode && Math.random() < 0.4) {
+      const rKeys = Object.keys(REGION_DEFS);
+      const rnd   = rKeys[Math.floor(Math.random()*rKeys.length)];
+      if (loserRegions.has(rnd)) scheduleSpikeWave(rnd, 0.25 + Math.random()*0.3);
+    }
+
+    // ── Ghost paths: show memory-biased pathways ──────────────────────
+    // Show routes that connect the top winning regions as faint prior paths
+    if (axonFrame % 24 === 0) {
+      const topTwo = allRegionActs.slice(0, 2).map(r=>r[0]);
+      if (topTwo.length >= 2) {
+        const route = AXON_ROUTES.find(([s,d]) =>
+          (topTwo.includes(s) && topTwo.includes(d)));
+        if (route) addGhostPath(route[0], route[1], 0.22);
+      }
+    }
+  }
+
+  // ── Synapse formation — ONLY trigger when regions are genuinely active ──
+  // No more fake idle connections. Connections form when real activity happens.
+  {
+    const topActVal = Math.max(0, ...Object.values(sharpenedRegion));
+    if (topActVal > 0.30 && axonFrame % 40 === 0 && Math.random() < 0.85) {
+      // Pick a route where BOTH endpoints are active
+      const activeRoutes = AXON_ROUTES.filter(([s,d]) =>
+        (sharpenedRegion[s]||0) > 0.20 && (sharpenedRegion[d]||0) > 0.15);
+      if (activeRoutes.length) {
+        const r = activeRoutes[Math.floor(Math.random() * activeRoutes.length)];
+        addSynapseEvent(r[0], r[1], 0.4 + topActVal * 0.5, 'strengthen');
+      }
+    }
+    // New pathway formation — rarer, only when activity is high
+    if (topActVal > 0.55 && axonFrame % 90 === 0 && Math.random() < 0.6) {
+      const hotRoutes = AXON_ROUTES.filter(([s,d]) =>
+        (sharpenedRegion[s]||0) > 0.40 && (sharpenedRegion[d]||0) > 0.30);
+      if (hotRoutes.length) {
+        const r = hotRoutes[Math.floor(Math.random() * hotRoutes.length)];
+        addSynapseEvent(r[0], r[1], 0.6 + topActVal * 0.4, 'new');
+      }
+    }
+  }
+
+  // ── Axon pulses — only when activity warrants it ──────────────────
+  // Pulses represent actual signal propagation, not decorative noise.
+  if (axonFrame % 8 === 0) {
+    AXON_ROUTES.forEach(([src, dst, w]) => {
+      const sa = sharpenedRegion[src] || 0;
+      const da = sharpenedRegion[dst] || 0;
+      const coact = sa * da;
+      // Only fire pulse if BOTH endpoints are active enough
+      if (sa > 0.15 && coact > 0.04 && Math.random() < coact * w * 1.2) {
+        addPulse(src, dst, Math.sqrt(coact) * w);
+      }
+    });
+  }
+  // Thalamus always has some baseline relay activity — the sensory hub never sleeps
+  if (axonFrame % 35 === 0) {
+    const thalAct = sharpenedRegion['thalamus'] || 0.08;
+    const tRoutes = AXON_ROUTES.filter(([s]) => s === 'thalamus');
+    const tr = tRoutes[Math.floor(Math.random() * tRoutes.length)];
+    if (tr && thalAct > 0.05) addPulse(tr[0], tr[1], 0.08 + thalAct * 0.4);
+  }
+
+  // ── Update neuron activations ──────────────────────────────────────
+  // DESIGN GOAL: neurons are DARK at rest, only light up when their region
+  // is genuinely active. Contrast between active/inactive must be stark.
+  const TRAIL_SAMPLE_RATE = 8;
+  neuronNodes.forEach(n => {
+    const regionAct = sharpenedRegion[n.region] || 0;
+    const fatigue = fatigueMap[n.region] || 0;
+    const fatigueScale = 1.0 - fatigue * 0.45;
+
+    n.phase += n.speed;
+
+    // Each neuron has its own sensitivity multiplier (set once)
+    if (!n.personalMult) n.personalMult = 0.5 + Math.random() * 1.0;
+
+    if (regionAct < 0.05) {
+      // Region is quiet — neuron decays hard toward zero
+      // Only a tiny fraction spontaneously fire (biological noise)
+      n.activation *= 0.88;
+      if (Math.random() < 0.0008) {
+        // Rare spontaneous spike — dims quickly
+        n.activation = Math.min(0.18, n.activation + 0.12);
+      }
+    } else {
+      // Region is active — drive neuron toward target activation
+      // personalMult creates natural spread: some neurons in the region
+      // fire hard, others lag — realistic heterogeneity
+      const target = Math.min(1.0, regionAct * n.personalMult * fatigueScale);
+      // Fast rise, slow decay (like real membrane potential)
+      const lerpRate = target > n.activation ? 0.12 : 0.05;
+      n.activation += (target - n.activation) * lerpRate;
+      // Biological noise jitter — only when region is firing
+      const jitter = (Math.sin(n.phase) * 0.5 + 0.5) * regionAct * 0.04;
+      n.activation = Math.max(0.0, Math.min(1.0, n.activation + jitter));
+    }
+
+    // Activation trails (comet tails) — only for genuinely firing neurons
+    if (n.activation > 0.68 && axonFrame % TRAIL_SAMPLE_RATE === 0) {
+      activationTrails.push({
+        x:      n.x,
+        y:      n.y,
+        color:  n.color,
+        life:   1.0,
+        radius: n.baseR * 0.7 + n.activation * 1.5,
+      });
+    }
+  });
+
+  // Advance trails (2-4 second lifespan @ 60fps → ~0.004/frame decay)
+  for (let i = activationTrails.length - 1; i >= 0; i--) {
+    activationTrails[i].life -= 0.006;
+    if (activationTrails[i].life <= 0) activationTrails.splice(i, 1);
+  }
+  // Cap trail count to avoid memory issues
+  if (activationTrails.length > 1200) activationTrails.splice(0, 200);
+
+  // ── Process spike queue ─────────────────────────────────────────────
+  const remaining = [];
+  for (const sp of spikeQueue) {
+    if (sp.at <= axonFrame) {
+      const n = neuronNodes[sp.idx];
+      if (n) n.activation = Math.min(1.0, n.activation + 0.28 + Math.random()*0.12);
+    } else {
+      remaining.push(sp);
+    }
+  }
+  spikeQueue.length = 0;
+  spikeQueue.push(...remaining);
+
+  // ── Propagate spikes to neighbors ────────────────────────────────────
+  const nextActivation = neuronNodes.map(n => n.activation);
+  neuronNodes.forEach((n, i) => {
+    if (n.activation < 0.65) return;
+    // Within-region: spread to nearby neurons to create coherent firing clusters
+    const signal = n.activation * 0.06;
+    n.neighbors.forEach(j => {
+      nextActivation[j] = Math.min(1.0, nextActivation[j] + signal * (0.35 + Math.random()*0.25));
+    });
+    // Cross-region: only strongly firing neurons propagate across regions
+    if (n.activation > 0.65) {
+      n.xNeighbors.forEach(j => {
+        if (Math.random() < n.activation * 0.45) {
+          const delay = 3 + Math.floor(Math.random() * 10);
+          spikeQueue.push({ idx: j, at: axonFrame + delay });
+        }
+      });
+    }
+  });
+  neuronNodes.forEach((n, i) => { n.activation = nextActivation[i]; });
+
+  // ── Draw activation trails (comet tails) ────────────────────────────
+  for (const trail of activationTrails) {
+    const a = Math.round(trail.life * 55).toString(16).padStart(2,'0');
+    nCtx.beginPath();
+    nCtx.arc(trail.x, trail.y, trail.radius, 0, Math.PI*2);
+    nCtx.fillStyle = trail.color + a;
+    nCtx.fill();
+  }
+
+  // ── Draw ghost paths (memory influence) ──────────────────────────────
+  for (let i = ghostPaths.length-1; i >= 0; i--) {
+    const g = ghostPaths[i];
+    g.life -= 0.008;
+    if (g.life <= 0) { ghostPaths.splice(i,1); continue; }
+    const W = nCanvas.width, H = nCanvas.height;
+    const alpha = Math.round(g.alpha * g.life * 180).toString(16).padStart(2,'0');
+    const mx = (g.x0 + g.x1)/2;
+    const my = (g.y0 + g.y1)/2 - 20;
+    // Dashed ghost arc
+    nCtx.save();
+    nCtx.setLineDash([4, 6]);
+    nCtx.lineWidth = 1.2;
+    nCtx.beginPath();
+    nCtx.moveTo(g.x0, g.y0);
+    nCtx.quadraticCurveTo(mx, my, g.x1, g.y1);
+    nCtx.strokeStyle = g.color + alpha;
+    nCtx.stroke();
+    nCtx.setLineDash([]);
+    // Small memory dot at midpoint
+    const midT = 0.5;
+    const bx = (1-midT)*(1-midT)*g.x0 + 2*(1-midT)*midT*mx + midT*midT*g.x1;
+    const by = (1-midT)*(1-midT)*g.y0 + 2*(1-midT)*midT*my + midT*midT*g.y1;
+    nCtx.beginPath();
+    nCtx.arc(bx, by, 2.5, 0, Math.PI*2);
+    nCtx.fillStyle = g.color + alpha;
+    nCtx.fill();
+    nCtx.restore();
+  }
+
+  // ── Draw conflict tension arcs ────────────────────────────────────────
+  for (let i = conflictPairs.length-1; i >= 0; i--) {
+    const cp = conflictPairs[i];
+    cp.t += 0.025;
+    if (cp.t > 1.2) { conflictPairs.splice(i,1); continue; }
+    const d1 = REGION_DEFS[cp.r1], d2 = REGION_DEFS[cp.r2];
+    if (!d1||!d2) { conflictPairs.splice(i,1); continue; }
+    const W = nCanvas.width, H = nCanvas.height;
+    const x1 = d1.x*W, y1 = d1.y*H;
+    const x2 = d2.x*W, y2 = d2.y*H;
+    // Jitter: the arc wiggles to show tension
+    const jitter = Math.sin(axonFrame * 0.18 + i) * 8 * cp.intensity;
+    const mx = (x1+x2)/2 + jitter;
+    const my = (y1+y2)/2 - 30 + jitter * 0.5;
+    const fade = Math.min(1.0, 1.0 - (cp.t - 0.7) / 0.5);  // fade after 0.7
+    const alpha = Math.round(cp.intensity * fade * 160).toString(16).padStart(2,'0');
+    // Draw both colors fighting — two overlapping lines with opposite colors
+    nCtx.save();
+    nCtx.lineWidth = 1.0 + cp.intensity * 1.5;
+    nCtx.setLineDash([3, 4]);
+    // Line 1 (region 1 color)
+    nCtx.beginPath();
+    nCtx.moveTo(x1, y1);
+    nCtx.quadraticCurveTo(mx, my, x2, y2);
+    nCtx.strokeStyle = d1.color + alpha;
+    nCtx.stroke();
+    // Line 2 (region 2 color, slight offset jitter)
+    const jitter2 = Math.sin(axonFrame * 0.22 + i + 1.2) * 6 * cp.intensity;
+    const mx2 = (x1+x2)/2 + jitter2;
+    const my2 = (y1+y2)/2 - 28 + jitter2 * 0.5;
+    nCtx.beginPath();
+    nCtx.moveTo(x1, y1);
+    nCtx.quadraticCurveTo(mx2, my2, x2, y2);
+    nCtx.strokeStyle = d2.color + Math.round(parseInt(alpha,16)*0.5).toString(16).padStart(2,'0');
+    nCtx.stroke();
+    nCtx.setLineDash([]);
+    // Tension midpoint spark
+    const spark = nCtx.createRadialGradient(mx,my,0,mx,my,5+cp.intensity*6);
+    spark.addColorStop(0, '#ffffff' + alpha);
+    spark.addColorStop(1, d1.color + '00');
+    nCtx.beginPath();
+    nCtx.arc(mx, my, 5+cp.intensity*6, 0, Math.PI*2);
+    nCtx.fillStyle = spark;
+    nCtx.fill();
+    nCtx.restore();
+  }
+
+  // ── Draw within-region synaptic connections ─────────────────────────
+  // Only draw dendrites when BOTH neurons are genuinely active.
+  // This creates sparse, meaningful connection flashes vs always-on noise.
+  nCtx.lineWidth = 0.4;
+  neuronNodes.forEach(n => {
+    if (n.activation < 0.30) return;  // must be meaningfully active
+    n.neighbors.forEach(j => {
+      const m   = neuronNodes[j];
+      if (m.activation < 0.20) return;  // neighbor must also be active
+      const sig = n.activation * m.activation;
+      if (sig < 0.08) return;
+      const alpha = Math.min(120, Math.round(sig * 180));
+      nCtx.beginPath();
+      nCtx.moveTo(n.x, n.y);
+      nCtx.lineTo(m.x, m.y);
+      nCtx.strokeStyle = n.color + alpha.toString(16).padStart(2,'0');
+      nCtx.stroke();
+    });
+  });
+
+  // ── Draw cross-region axon connections — neuron-edge-to-neuron-edge ──
+  // Connections draw from the actual boundary of each cluster cloud, not center,
+  // so they're visible BETWEEN clouds. Multiple fibers per route.
+  // Runs every frame for living, dynamic feel.
+  {
+    // Helper: pick a neuron near the EDGE of a region (toward a target point)
+    function edgeNeuronToward(region, tx, ty) {
+      const nodes = neuronNodes.filter(n => n.region === region);
+      if (!nodes.length) return null;
+      // Pick the neuron closest to the line from centroid toward target
+      const d = REGION_DEFS[region];
+      const cx = d.x * W, cy = d.y * H;
+      // Direction toward target
+      const dx = tx - cx, dy = ty - cy;
+      const len = Math.hypot(dx, dy) || 1;
+      const ux = dx / len, uy = dy / len;
+      // Score: dot product with direction + some randomness
+      let best = null, bestScore = -Infinity;
+      const sample = nodes.length > 60 ? nodes.filter((_,i)=>i%3===0) : nodes;
+      sample.forEach(n => {
+        const nx = n.x - cx, ny = n.y - cy;
+        const nl = Math.hypot(nx, ny) || 1;
+        const dot = (nx/nl)*ux + (ny/nl)*uy;
+        const score = dot * 0.7 + (Math.hypot(nx,ny) / (d.spread * W + 1)) * 0.3
+                     + (Math.random() - 0.5) * 0.2;
+        if (score > bestScore) { bestScore = score; best = n; }
+      });
+      return best;
+    }
+
+    AXON_ROUTES.forEach(([src, dst, w]) => {
+      const d1 = REGION_DEFS[src], d2 = REGION_DEFS[dst];
+      if (!d1||!d2) return;
+      const sa = sharpenedRegion[src] || 0;
+      const da = sharpenedRegion[dst] || 0;
+      const combined = Math.max(sa, da);
+      const hebbKey  = src + ">" + dst;
+      const hebbW    = (window._hebbianWeights && window._hebbianWeights[hebbKey]) || 0;
+      const totalW   = w * (1.0 + hebbW * 3.0);
+
+      // Only draw cross-region fibers when BOTH regions are meaningfully active
+      // OR when Hebbian weight is strong (established pathway)
+      const minActivity = Math.max(combined, hebbW * 0.5);
+      if (minActivity < 0.04 && hebbW < 0.2) return;  // skip truly idle routes
+
+      // Alpha: very dim at low activity, bright when both regions fire together
+      const activeAlpha = Math.round(Math.pow(minActivity, 0.7) * totalW * 160);
+      const baseAlpha   = Math.max(hebbW > 0.3 ? 8 : 3, activeAlpha);
+      const alpha       = Math.min(200, baseAlpha).toString(16).padStart(2,'0');
+      const lineW       = Math.max(0.3, Math.min(4.0, totalW * Math.max(combined, 0.04) * 5));
+
+      // Centroid positions (for curve control point)
+      const c1x = d1.x * W, c1y = d1.y * H;
+      const c2x = d2.x * W, c2y = d2.y * H;
+
+      // Pick edge neurons (recompute every ~15 frames to animate which fiber shows)
+      const frameSlot = Math.floor(axonFrame / 15);
+      if (!window._axonFibers) window._axonFibers = {};
+      const fKey = src + ">" + dst + "_" + (frameSlot % 4);
+      if (!window._axonFibers[fKey]) {
+        const n1 = edgeNeuronToward(src, c2x, c2y);
+        const n2 = edgeNeuronToward(dst, c1x, c1y);
+        if (n1 && n2) window._axonFibers[fKey] = {x0:n1.x,y0:n1.y,x1:n2.x,y1:n2.y};
+      }
+      const fiber = window._axonFibers[fKey];
+      if (!fiber) return;
+
+      // Control point arcs BETWEEN the two clouds
+      const mx = (fiber.x0 + fiber.x1) / 2;
+      // Perpendicular offset so the arc bows outward between clouds
+      const ddx = fiber.x1 - fiber.x0, ddy = fiber.y1 - fiber.y0;
+      const dist = Math.hypot(ddx, ddy);
+      const perpX = -ddy / dist, perpY = ddx / dist;
+      const bow = Math.min(60, dist * 0.18);
+      const mcy = (fiber.y0 + fiber.y1) / 2 + perpY * bow;
+      const mcx = mx + perpX * bow;
+
+      // Primary fiber
+      nCtx.beginPath();
+      nCtx.moveTo(fiber.x0, fiber.y0);
+      nCtx.quadraticCurveTo(mcx, mcy, fiber.x1, fiber.y1);
+      nCtx.lineWidth   = lineW;
+      nCtx.strokeStyle = d1.color + alpha;
+      nCtx.stroke();
+
+      // Glow layer for active / Hebbian routes
+      if (combined > 0.25 || hebbW > 0.3) {
+        nCtx.save();
+        nCtx.shadowBlur  = 6 + hebbW * 16 + combined * 10;
+        nCtx.shadowColor = d1.color;
+        nCtx.beginPath();
+        nCtx.moveTo(fiber.x0, fiber.y0);
+        nCtx.quadraticCurveTo(mcx, mcy, fiber.x1, fiber.y1);
+        nCtx.lineWidth   = lineW * 1.8;
+        const glowA = Math.min(80, Math.round((combined * 0.6 + hebbW * 0.5) * 80)).toString(16).padStart(2,'0');
+        nCtx.strokeStyle = d1.color + glowA;
+        nCtx.stroke();
+        nCtx.restore();
+      }
+
+      // Draw additional fibers for strong routes
+      if (combined > 0.4 || hebbW > 0.5) {
+        const fiberCount = Math.min(4, 1 + Math.floor(combined * 4 + hebbW * 3));
+        for (let f = 1; f < fiberCount; f++) {
+          const fKey2 = src + ">" + dst + "_extra_" + f;
+          if (!window._axonFibers[fKey2] || axonFrame % 45 === 0) {
+            const n1 = edgeNeuronToward(src, c2x, c2y);
+            const n2 = edgeNeuronToward(dst, c1x, c1y);
+            if (n1 && n2) window._axonFibers[fKey2] = {x0:n1.x,y0:n1.y,x1:n2.x,y1:n2.y};
+          }
+          const fi = window._axonFibers[fKey2];
+          if (!fi) continue;
+          const mx2 = (fi.x0 + fi.x1) / 2;
+          const dd2x = fi.x1 - fi.x0, dd2y = fi.y1 - fi.y0;
+          const dist2 = Math.hypot(dd2x, dd2y) || 1;
+          const bow2 = Math.min(50, dist2 * 0.15) * (f % 2 === 0 ? -1 : 1);
+          const mc2x = mx2 + (-dd2y/dist2) * bow2;
+          const mc2y = (fi.y0 + fi.y1)/2 + (dd2x/dist2) * bow2;
+          const a2 = Math.max(5, Math.round(combined * 50)).toString(16).padStart(2,'0');
+          nCtx.beginPath();
+          nCtx.moveTo(fi.x0, fi.y0);
+          nCtx.quadraticCurveTo(mc2x, mc2y, fi.x1, fi.y1);
+          nCtx.lineWidth   = Math.max(0.3, lineW * 0.6);
+          nCtx.strokeStyle = d1.color + a2;
+          nCtx.stroke();
+        }
+      }
+    });
+    nCtx.lineWidth = 0.5;
+  }
+
+  // ── Advance & draw travelling signal pulses ─────────────────────────
+  const alivePulses = [];
+  for (const p of pulses) {
+    p.t += 0.022 + p.strength * 0.010;
+    if (p.t >= 1.0) continue;  // remove on arrival
+    alivePulses.push(p);
+
+    const px = p.x0 + (p.x1 - p.x0) * p.t;
+    const py = p.y0 + (p.y1 - p.y0) * p.t;
+    const r  = 1.5 + p.strength * 1.8;
+
+    // Trail dots
+    for (let s = 0; s < 3; s++) {
+      const tp = Math.max(0, p.t - s*0.04);
+      const tx = p.x0 + (p.x1 - p.x0) * tp;
+      const ty = p.y0 + (p.y1 - p.y0) * tp;
+      const a  = Math.round((1 - s*0.3) * p.strength * 120).toString(16).padStart(2,'0');
+      nCtx.beginPath();
+      nCtx.arc(tx, ty, r * (1 - s*0.25), 0, Math.PI*2);
+      nCtx.fillStyle = p.color + a;
+      nCtx.fill();
+    }
+
+    // Glow at pulse head
+    const grd = nCtx.createRadialGradient(px,py,0,px,py,r*2.2);
+    grd.addColorStop(0, p.color + '55');
+    grd.addColorStop(1, p.color + '00');
+    nCtx.beginPath();
+    nCtx.arc(px, py, r*2.2, 0, Math.PI*2);
+    nCtx.fillStyle = grd;
+    nCtx.fill();
+
+    // When pulse arrives, burst the destination region neurons
+    if (p.t > 0.88 && p.t < 0.92) {
+      const dstDef = Object.entries(REGION_DEFS).find(([k])=>
+        REGION_DEFS[k] && REGION_DEFS[k].x===REGION_DEFS[Object.keys(REGION_DEFS).find(r=>REGION_DEFS[r].x*nCanvas.width===p.x1)]?.x
+      );
+      // Stimulate neurons near the arrival point
+      const arrivalThresh = 40 + p.strength * 30;
+      neuronNodes.forEach(n => {
+        const dx = n.x - p.x1, dy = n.y - p.y1;
+        if (dx*dx + dy*dy < arrivalThresh*arrivalThresh) {
+          n.activation = Math.min(1.0, n.activation + p.strength * 0.15);
+        }
+      });
+    }
+  }
+  pulses.length = 0;
+  pulses.push(...alivePulses);
+
+  // ── Draw live synapse formation events ────────────────────────────────
+  for (let i = synapseEvents.length - 1; i >= 0; i--) {
+    const s = synapseEvents[i];
+
+    // Grow the arc from src→dst
+    if (s.t < 1.0) s.t += 0.04 + s.strength * 0.02;
+    else            s.life -= 0.022;  // then fade
+
+    if (s.life <= 0) { synapseEvents.splice(i, 1); continue; }
+
+    const progress = Math.min(1, s.t);
+    const alpha    = s.life;
+
+    // Draw partial arc (quadratic bezier sampled at intervals)
+    const cx = (s.x0 + s.x1) / 2;
+    const cy = (s.y0 + s.y1) / 2 - Math.hypot(s.x1-s.x0, s.y1-s.y0) * 0.22;
+    const steps = Math.floor(progress * 24) + 1;
+    nCtx.beginPath();
+    for (let step = 0; step <= steps; step++) {
+      const tt  = (step / 24) * progress;
+      const bx  = (1-tt)*(1-tt)*s.x0 + 2*(1-tt)*tt*cx + tt*tt*s.x1;
+      const by  = (1-tt)*(1-tt)*s.y0 + 2*(1-tt)*tt*cy + tt*tt*s.y1;
+      step === 0 ? nCtx.moveTo(bx, by) : nCtx.lineTo(bx, by);
+    }
+    const baseA = Math.round(alpha * (s.type === 'new' ? 220 : 150));
+    const lineColor = s.type === 'new'
+      ? `rgba(255,255,255,${alpha * 0.85})`
+      : s.srcColor + Math.round(alpha * 140).toString(16).padStart(2,'0');
+    nCtx.strokeStyle = lineColor;
+    nCtx.lineWidth   = s.type === 'new' ? 1.2 : 0.8;
+    nCtx.stroke();
+
+    // Glow at the growing tip
+    if (s.t < 1.0) {
+      const tipT = progress;
+      const tx = (1-tipT)*(1-tipT)*s.x0 + 2*(1-tipT)*tipT*cx + tipT*tipT*s.x1;
+      const ty = (1-tipT)*(1-tipT)*s.y0 + 2*(1-tipT)*tipT*cy + tipT*tipT*s.y1;
+      const tr = s.type === 'new' ? 4 : 2.5;
+      const tg = nCtx.createRadialGradient(tx,ty,0,tx,ty,tr*2.5);
+      tg.addColorStop(0, s.color + 'cc');
+      tg.addColorStop(1, s.color + '00');
+      nCtx.beginPath();
+      nCtx.arc(tx, ty, tr*2.5, 0, Math.PI*2);
+      nCtx.fillStyle = tg;
+      nCtx.fill();
+    }
+
+    // Particles racing along the arc
+    for (const p of s.particles) {
+      p.t = Math.min(1, p.t + p.speed);
+      const pt  = p.t;
+      const px  = (1-pt)*(1-pt)*s.x0 + 2*(1-pt)*pt*cx + pt*pt*s.x1;
+      const py  = (1-pt)*(1-pt)*s.y0 + 2*(1-pt)*pt*cy + pt*pt*s.y1;
+      const pa  = Math.round(alpha * (1 - pt) * 180).toString(16).padStart(2,'0');
+      nCtx.beginPath();
+      nCtx.arc(px, py, 1.5, 0, Math.PI*2);
+      nCtx.fillStyle = s.srcColor + pa;
+      nCtx.fill();
+    }
+
+    // Endpoint flash when arc arrives
+    if (s.t >= 1.0 && s.life > 0.85) {
+      const fg = nCtx.createRadialGradient(s.x1,s.y1,0,s.x1,s.y1,8);
+      fg.addColorStop(0, s.dstColor + 'cc');
+      fg.addColorStop(1, s.dstColor + '00');
+      nCtx.beginPath();
+      nCtx.arc(s.x1, s.y1, 8, 0, Math.PI*2);
+      nCtx.fillStyle = fg;
+      nCtx.fill();
+    }
+  }
+
+  // ── Draw neurons ────────────────────────────────────────────────────────────
+  // NO resting glow floor. Neurons are drawn based purely on their activation.
+  // Idle = nearly invisible dark dot. Active = bright, glowing, large.
+  neuronNodes.forEach(n => {
+    const act       = n.activation;
+    const regionAct = sharpenedRegion[n.region] || 0;
+    const isWinner  = winnerRegions.has(n.region) && regionAct > 0.15;
+    const fatigue   = fatigueMap[n.region] || 0;
+    const dominance = winnerSmooth[n.region] || 0;
+
+    // Skip truly dark neurons — no point drawing them
+    if (act < 0.015) return;
+
+    const fatigueDim = 1.0 - fatigue * 0.45;
+    const sizeMult   = isWinner ? (1.0 + dominance * 0.6) : 1.0;
+
+    // Radius: small at rest, much larger when firing
+    const r = (n.baseR * 0.5 + act * 2.8) * sizeMult;
+
+    // Alpha: dimly lit at rest, vivid when firing
+    // act=0.15 (idle) → alpha≈70, act=0.30 → ≈110, act=0.55 → ≈160, act=1.0 → 220
+    const alphaMult = isWinner ? 1.0 : 0.82;
+    const alphaVal  = Math.round(Math.pow(act, 0.55) * 220 * alphaMult * fatigueDim);
+    const alpha     = Math.min(220, Math.max(20, alphaVal)).toString(16).padStart(2,'0');
+
+    // Core dot
+    nCtx.beginPath();
+    nCtx.arc(n.x, n.y, r, 0, Math.PI*2);
+    nCtx.fillStyle = n.color + alpha;
+    nCtx.fill();
+
+    // Glow halo — idle brain glows softly, active brain blazes
+    if (act > 0.22) {
+      const glowR   = r * (isWinner ? (2.2 + dominance * 1.2) : 1.6) + act * 2.5;
+      const glowAlp = Math.round((act - 0.18) * (isWinner ? 0.75 : 0.40) * fatigueDim * 110).toString(16).padStart(2,'0');
+      const grd = nCtx.createRadialGradient(n.x, n.y, r, n.x, n.y, glowR);
+      grd.addColorStop(0, n.color + glowAlp);
+      grd.addColorStop(1, n.color + '00');
+      nCtx.beginPath();
+      nCtx.arc(n.x, n.y, glowR, 0, Math.PI*2);
+      nCtx.fillStyle = grd;
+      nCtx.fill();
+    }
+
+    // Spike ring — only for peak-firing neurons
+    if (act > 0.87) {
+      const pulsePeriod = isWinner ? 10 : 16;
+      const ringExp = (axonFrame % pulsePeriod) / pulsePeriod;
+      const ring    = r + ringExp * (isWinner ? 6 : 4);
+      const ringA   = Math.round((1 - ringExp) * (isWinner ? 55 : 30)).toString(16).padStart(2,'0');
+      nCtx.beginPath();
+      nCtx.arc(n.x, n.y, ring, 0, Math.PI*2);
+      nCtx.strokeStyle = n.color + ringA;
+      nCtx.lineWidth   = isWinner ? 1.0 : 0.6;
+      nCtx.stroke();
+    }
+
+    // Exploration flare — only when in explore mode and region is actually dormant
+    if (exploreMode && regionAct < 0.08 && act > 0.10 && Math.random() < 0.002) {
+      const fg = nCtx.createRadialGradient(n.x, n.y, 0, n.x, n.y, r * 5);
+      fg.addColorStop(0, '#ffffff44');
+      fg.addColorStop(1, n.color + '00');
+      nCtx.beginPath();
+      nCtx.arc(n.x, n.y, r * 5, 0, Math.PI*2);
+      nCtx.fillStyle = fg;
+      nCtx.fill();
+    }
+  });
+
+  // ── Learning bursts (ripple through the network at surprise/reward) ──
+  for (let i = learningBursts.length-1; i >= 0; i--) {
+    const b = learningBursts[i];
+    b.t += 0.04;
+    if (b.t >= 1.0) { learningBursts.splice(i,1); continue; }
+    for (let ring = 0; ring < b.rings; ring++) {
+      const offset  = ring / b.rings;
+      const rt      = Math.max(0, b.t - offset * 0.3);
+      if (rt <= 0) continue;
+      const rr      = b.radius * rt * (1 + ring * 0.4);
+      const alpha   = Math.round((1 - rt) * (1 - ring*0.3) * 160).toString(16).padStart(2,'0');
+      const lw      = (1 - rt) * (b.type === 'surprise' ? 2.0 : 1.4);
+      nCtx.beginPath();
+      nCtx.arc(b.x, b.y, rr, 0, Math.PI*2);
+      nCtx.strokeStyle = b.color + alpha;
+      nCtx.lineWidth   = lw;
+      nCtx.stroke();
+    }
+  }
+
+  // ── Push cluster activation map to physics engine ────────────────────────
+  if (window._updateClusterActs) {
+    const physActMap = {};
+    for (const [key] of Object.entries(REGION_DEFS)) physActMap[key] = sharpenedRegion[key] || 0;
+    window._updateClusterActs(physActMap);
+    if (window._initClusterForce && !window._clusterForceInited) {
+      window._initClusterForce(Object.keys(REGION_DEFS), W, H);
+      window._clusterForceInited = true;
+    }
+  }
+
+  // ── Draw region labels directly on canvas near cluster centers ──────────────
+  nCtx.save();
+  for (const [key, props] of Object.entries(REGION_DEFS)) {
+    // Use force-physics position for dominant clusters, else fixed centroid
+    const force = window._axonClusterForce && window._axonClusterForce[key];
+    const dom   = winnerSmooth[key] || 0;
+    const useFx = force && dom > 0.25;
+    // Blend: smoothly shift toward physics position as dominance grows
+    const fxBlend = Math.min(1, dom * 2.5);
+    const cx  = useFx
+      ? props.x * W * (1 - fxBlend) + force.x * fxBlend
+      : props.x * W;
+    const cy  = useFx
+      ? props.y * H * (1 - fxBlend) + force.y * fxBlend
+      : props.y * H;
+    const act = sharpenedRegion[key] || 0;
+    const isW = winnerRegions.has(key);
+    const isL = loserRegions.has(key) && act > 0.05;
+    const fat = fatigueMap[key] || 0;
+
+    // Size: winners are bigger labels
+    const labelAlpha = isW ? Math.min(1.0, 0.55 + dom * 0.6) :
+                       isL ? 0.25 + act * 0.3 :
+                             0.38 + act * 0.5;
+    const labelSize  = isW ? Math.round(10 + dom * 4) : Math.round(9 + act * 2);
+
+    nCtx.font = `${labelSize}px monospace`;
+    const tw = nCtx.measureText(props.label).width;
+    const px = cx - tw / 2 - 4;
+    const py = cy + props.spread * H * 0.75 + 10;
+    const ph = labelSize + 5;
+
+    // Winner gets a glowing pill background
+    if (isW) {
+      nCtx.fillStyle = props.color + Math.round(dom * 40).toString(16).padStart(2,'0');
+      nCtx.beginPath();
+      nCtx.roundRect(px-2, py - ph + 1, tw + 12, ph + 2, 4);
+      nCtx.fill();
+    } else {
+      nCtx.fillStyle = `rgba(2,2,10,${0.55 + act * 0.3})`;
+      nCtx.beginPath();
+      nCtx.roundRect(px, py - ph + 3, tw + 8, ph, 3);
+      nCtx.fill();
+    }
+
+    // Fatigue indicator: ⚡ suffix when tired
+    const label = fat > 0.5 ? props.label + ' ⚡' : props.label;
+    const hexAlpha = Math.round(labelAlpha * 255).toString(16).padStart(2,'0');
+    nCtx.fillStyle = props.color + hexAlpha;
+    nCtx.fillText(label, cx - tw/2, py);
+
+    // Dominant crown marker above winner labels
+    if (isW && dom > 0.4) {
+      nCtx.font = `${labelSize - 1}px monospace`;
+      nCtx.fillStyle = '#ffffff' + Math.round(dom * 180).toString(16).padStart(2,'0');
+      nCtx.fillText('▲', cx - 4, py - ph - 1);
+    }
+
+    // ── Thought bubble — fire when cluster decisively wins (dom > 0.65) ──
+    if (isW && dom > 0.65 && axonFrame % 90 === Math.floor(Math.random()*4)) {
+      spawnThoughtBubble(cx, cy - props.spread * H * 0.75 - 18, key, dom);
+    }
+
+    // Center dot — larger for winners
+    const dotR  = isW ? 3.5 + dom * 3 : 2.5 + act * 2;
+    const dotA  = Math.round((0.5 + act * 0.5) * 255).toString(16).padStart(2,'0');
+    nCtx.beginPath();
+    nCtx.arc(cx, cy, dotR, 0, Math.PI*2);
+    nCtx.fillStyle = props.color + dotA;
+    nCtx.fill();
+
+    // Loser: faint cross-out overlay
+    if (isL && act < 0.1) {
+      nCtx.strokeStyle = '#ffffff11';
+      nCtx.lineWidth   = 0.5;
+      nCtx.beginPath();
+      nCtx.moveTo(cx - dotR, cy - dotR);
+      nCtx.lineTo(cx + dotR, cy + dotR);
+      nCtx.stroke();
+    }
+  }
+  nCtx.restore();
+
+  // ── Exploit mode: draw tight high-opacity pathways between winners ───
+  if (exploitMode) {
+    const topW = [...winnerRegions].slice(0,3);
+    AXON_ROUTES.forEach(([src, dst, w]) => {
+      if (topW.includes(src) && topW.includes(dst)) {
+        const d1 = REGION_DEFS[src], d2 = REGION_DEFS[dst];
+        if (!d1||!d2) return;
+        const mx = (d1.x*W + d2.x*W)/2;
+        const my = (d1.y*H + d2.y*H)/2 - 20;
+        nCtx.save();
+        nCtx.lineWidth = 1.5;
+        nCtx.beginPath();
+        nCtx.moveTo(d1.x*W, d1.y*H);
+        nCtx.quadraticCurveTo(mx, my, d2.x*W, d2.y*H);
+        nCtx.strokeStyle = d1.color + '66';
+        nCtx.stroke();
+        nCtx.restore();
+      }
+    });
+  }
+
+  // ── Thought bubbles overlay ────────────────────────────────────────────
+  drawThoughtBubbles(nCtx);
+  // ── Pruned connection fades ────────────────────────────────────────────
+  drawPrunedConnections(nCtx, W, H);
+
+  } catch(e) { console.warn("[AXON] drawNeural error:", e); }
+  requestAnimationFrame(drawNeural);
+}
+
+// ── Decision Playback Mode ───────────────────────────────────────────────────
+function startPlayback() {
+  if (playbackBuffer.length < 2) return;
+  playbackActive = true;
+  playbackStep   = 0;
+  document.getElementById('playback-btn').style.display     = 'none';
+  document.getElementById('playback-scrubber').style.display = 'flex';
+  renderPlaybackStep();
+}
+
+function stopPlayback() {
+  playbackActive = false;
+  document.getElementById('playback-btn').style.display     = 'inline-block';
+  document.getElementById('playback-scrubber').style.display = 'none';
+  // Restore live state
+  if (neuralState && neuralState.regions) {
+    for (const [k,v] of Object.entries(neuralState.regions)) {
+      winnerSmooth[k] = v;
+    }
+  }
+}
+
+function stepPlayback(dir) {
+  playbackStep = Math.max(0, Math.min(playbackBuffer.length-1, playbackStep + dir));
+  renderPlaybackStep();
+}
+
+function renderPlaybackStep() {
+  const label = document.getElementById('playback-step-label');
+  if (label) label.textContent = `${playbackStep+1}/${playbackBuffer.length}`;
+  const frame = playbackBuffer[playbackStep];
+  if (!frame) return;
+  // Override winner/loser sets for this step
+  const entries = Object.entries(frame.regions).sort((a,b)=>b[1]-a[1]);
+  const topN = Math.max(2, Math.floor(entries.length * 0.20));
+  winnerRegions = new Set(entries.slice(0, topN).map(r=>r[0]));
+  loserRegions  = new Set(entries.slice(topN).map(r=>r[0]));
+  for (const [r,v] of entries) winnerSmooth[r] = v;
+  // Highlight the dominant set as winners
+  frame.dominantSet.forEach(r => {
+    const region = regionForCluster(r);
+    winnerSmooth[region] = Math.max(winnerSmooth[region]||0, 0.75);
+  });
+  // Flash reward/winner clusters
+  for (const r of frame.dominantSet) {
+    const reg = regionForCluster(r);
+    addLearningBurst(reg, 'reward', 0.5);
+  }
+}
+
+// ── Update HUD mode badge ────────────────────────────────────────────────────
+function updateModeBadge(meta, eps) {
+  const badge = document.getElementById('mode-badge');
+  if (!badge) return;
+  const mood = (meta && meta.mood) || 'stable';
+  const colors = {
+    bored:      {bg:'#1a1500', border:'#eab308', color:'#eab308', label:'BORED'},
+    entrapped:  {bg:'#1a0a0a', border:'#ef4444', color:'#ef4444', label:'ENTRAPPED'},
+    searching:  {bg:'#120a1a', border:'#a855f7', color:'#a855f7', label:'SEARCHING'},
+    surprised:  {bg:'#1a0e00', border:'#f97316', color:'#f97316', label:'SURPRISED'},
+    stable:     {bg:'#0a1a0a', border:'#22c55e', color:'#22c55e', label:'STABLE'},
+    neutral:    {bg:'#0a0a1a', border:'#6366f1', color:'#6366f1', label:'NEUTRAL'},
+  };
+  const c = colors[mood] || colors.neutral;
+  badge.style.background   = c.bg;
+  badge.style.borderColor  = c.border;
+  badge.style.color        = c.color;
+  const epsLabel = eps !== undefined ? ` ε=${(eps*100).toFixed(0)}%` : '';
+  badge.textContent = (exploreMode ? '⚡ ' : exploitMode ? '🎯 ' : '') + c.label + epsLabel;
+}
+
+// Helper: map cluster name → region key
+
+
+function regionForCluster(name) {
+  if (name.includes('hippocamp')||name.includes('episodic')||name.includes('spatial')||name.includes('pattern')) return 'hippocampus';
+  if (name.includes('amygdala')||name.includes('fear')||name.includes('reward_ant')||name.includes('threat')) return 'amygdala';
+  if (name.includes('visual')||name.includes('color')||name.includes('motion')||name.includes('depth')||name.includes('object')||name.includes('pattern_rec')) return 'visual';
+  if (name.includes('auditory')||name.includes('speech')||name.includes('phoneme')||name.includes('prosody')) return 'auditory';
+  if (name.includes('language')||name.includes('semantic')||name.includes('syntax')||name.includes('metaphor')||name.includes('pragmatic')||name.includes('meaning')) return 'language';
+  if (name.includes('mind_wand')||name.includes('self_ref')||name.includes('daydream')||name.includes('narrative')||name.includes('identity')||name.includes('future_sim')) return 'default_mode';
+  if (name.includes('thalamus')||name.includes('consciousness')||name.includes('attention')||name.includes('sensory_relay')) return 'thalamus';
+  if (name.includes('cerebellum')||name.includes('motor')||name.includes('timing')||name.includes('sequence')||name.includes('error_corr')||name.includes('coord')) return 'cerebellum';
+  if (name.includes('creativity')||name.includes('conceptual')||name.includes('analogy')||name.includes('abstract')||name.includes('insight')||name.includes('curiosity')) return 'association';
+  if (name.includes('social')||name.includes('empathy')||name.includes('face')||name.includes('social_pain')||name.includes('mentaliz')) return 'social';
+  if (name.includes('metacog')||name.includes('self_aware')||name.includes('conflict')||name.includes('error_det')||name.includes('uncertainty')) return 'metacognition';
+  if (name.includes('goal')||name.includes('planning')||name.includes('future_plan')||name.includes('action_sel')||name.includes('value_weight')) return 'planning_cortex';
+  if (name.includes('working_mem')||name.includes('context_bind')||name.includes('executive')||name.includes('decision')) return 'working_memory_cortex';
+  if (name.includes('inhibit')||name.includes('impulse')||name.includes('suppress')) return 'inhibitory_cortex';
+  return 'planning_cortex';  // default (maps to PFC family)
+}
+
+// -- Vision canvas ---------------------------------------------
+const vCanvas = document.getElementById('vision-canvas');
+const vCtx    = vCanvas.getContext('2d');
+function drawVision(pixels, edges, W=64, H=48) {
+  vCanvas.width  = W; vCanvas.height = H;
+  const img = vCtx.createImageData(W, H);
+  for (let i=0; i<W*H; i++) {
+    const row = Math.floor(i/W), col = i%W;
+    const pr  = Math.floor(row * pixels.length / H);
+    const pc  = Math.floor(col * (pixels[0]||[]).length / W);
+    const v   = pixels[pr] ? (pixels[pr][pc]||0) : 0;
+    const e   = edges[pr]  ? (edges[pr][pc]||0)  : 0;
+    img.data[i*4]   = Math.min(255, v*200 + e*55);
+    img.data[i*4+1] = Math.min(255, v*180);
+    img.data[i*4+2] = Math.min(255, v*160 + e*80);
+    img.data[i*4+3] = 255;
+  }
+  vCtx.putImageData(img, 0, 0);
+}
+
+// -- Bar helpers -----------------------------------------------
+function makeBar(label, val, cls='', color='') {
+  const pct = Math.round((val||0)*100);
+  const fill = color ? `background:${color}` : '';
+  const hotCls = pct > 70 ? (pct > 90 ? 'max' : 'hot') : (pct > 40 ? 'mid' : '');
+  return `<div class="bar-row ${cls} ${hotCls}">
+    <div class="bar-label">${label}</div>
+    <div class="bar-track"><div class="bar-fill" style="width:${pct}%;${fill}"></div></div>
+    <div class="bar-val">${pct}%</div>
+  </div>`;
+}
+
+// -- Sparkline history buffers -----------------------------------
+const _sparkHistory = {};
+const SPARK_LEN = 40;
+function pushSpark(key, val) {
+  if (!_sparkHistory[key]) _sparkHistory[key] = [];
+  _sparkHistory[key].push(val);
+  if (_sparkHistory[key].length > SPARK_LEN) _sparkHistory[key].shift();
+}
+function drawSparkline(canvas, data, color='#6366f1') {
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0,0,W,H);
+  if (!data || data.length < 2) return;
+  const step = W / (data.length - 1);
+  ctx.beginPath();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  data.forEach((v,i) => {
+    const x = i * step;
+    const y = H - v * H * 0.9 - H * 0.05;
+    i === 0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+  });
+  ctx.stroke();
+  ctx.lineTo((data.length-1)*step, H);
+  ctx.lineTo(0, H);
+  ctx.closePath();
+  ctx.fillStyle = color.replace(')', ',0.18)').replace('rgb','rgba').replace('#','rgba(').replace('rgba(','rgba(0,0,0,0)');
+  // simpler fill
+  const grad = ctx.createLinearGradient(0,0,0,H);
+  grad.addColorStop(0, color + '44');
+  grad.addColorStop(1, color + '00');
+  ctx.fillStyle = grad;
+  ctx.fill();
+}
+
+// -- VA Scatter plot (valence/arousal space) ---------------------
+const _vaTrail = [];   // [{v, a, col}] last 20 points
+function updateVAPlot(emo) {
+  const canvas = document.getElementById('va-plot');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const v = parseFloat(emo.valence || 0);
+  const a = parseFloat(emo.arousal || 0);
+  const col = emo._color || '#a855f7';
+  _vaTrail.push({v, a, col});
+  if (_vaTrail.length > 20) _vaTrail.shift();
+
+  ctx.clearRect(0,0,W,H);
+  // Background
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0,0,W,H);
+  // Grid
+  ctx.strokeStyle = '#1e293b';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(W/2,0); ctx.lineTo(W/2,H);   // vertical axis
+  ctx.moveTo(0,H/2); ctx.lineTo(W,H/2);   // horizontal axis
+  ctx.stroke();
+  // Axis labels
+  ctx.fillStyle = '#374151';
+  ctx.font = '8px monospace';
+  ctx.fillText('−', 4, H/2+4);
+  ctx.fillText('+', W-10, H/2+4);
+  ctx.fillText('↑', W/2-4, 10);
+  ctx.fillText('↓', W/2-4, H-3);
+  // Quadrant shades
+  const quads = [
+    {x:W/2,y:0,w:W/2,h:H/2,c:'rgba(0,255,136,0.04)'},   // calm
+    {x:0,  y:0,w:W/2,h:H/2,c:'rgba(239,68,68,0.04)'},    // tense
+    {x:W/2,y:H/2,w:W/2,h:H/2,c:'rgba(99,102,241,0.04)'}, // happy
+    {x:0,  y:H/2,w:W/2,h:H/2,c:'rgba(168,85,247,0.04)'}, // sad
+  ];
+  quads.forEach(q => { ctx.fillStyle=q.c; ctx.fillRect(q.x,q.y,q.w,q.h); });
+  // Trail
+  _vaTrail.forEach((pt, i) => {
+    const px = (pt.v + 1) / 2 * (W - 16) + 8;
+    const py = (1 - (pt.a + 1) / 2) * (H - 16) + 8;
+    const alpha = (i + 1) / _vaTrail.length;
+    ctx.beginPath();
+    ctx.arc(px, py, 3 + alpha * 3, 0, Math.PI * 2);
+    ctx.fillStyle = pt.col + Math.round(alpha * 200).toString(16).padStart(2,'0');
+    ctx.fill();
+  });
+  // Current point — bright
+  if (_vaTrail.length) {
+    const pt = _vaTrail[_vaTrail.length-1];
+    const px = (pt.v + 1) / 2 * (W - 16) + 8;
+    const py = (1 - (pt.a + 1) / 2) * (H - 16) + 8;
+    ctx.beginPath();
+    ctx.arc(px, py, 7, 0, Math.PI * 2);
+    ctx.strokeStyle = pt.col;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = pt.col + '66';
+    ctx.fill();
+    // Glow
+    ctx.beginPath();
+    ctx.arc(px, py, 12, 0, Math.PI * 2);
+    ctx.strokeStyle = pt.col + '33';
+    ctx.lineWidth = 4;
+    ctx.stroke();
+  }
+}
+
+// -- Brain Radar chart -------------------------------------------
+function drawBrainRadar(regions) {
+
+
+function drawBrainRadar(regions) {
+  try {
+
+  const canvas = document.getElementById('brain-radar');
+  if (!canvas) return;
+  // Only resize if the canvas is visible (offsetWidth > 0)
+  // If hidden, keep existing buffer size so we can draw into it for when it reappears
+  if (canvas.offsetWidth > 0) {
+    canvas.width  = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight || Math.round(canvas.offsetWidth * (200/260));
+  }
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width  || 260;
+  const H = canvas.height || 200;
+  const cx = W/2, cy = H/2 + 6;
+  const R = Math.min(W,H) / 2 - 28;
+  ctx.clearRect(0,0,W,H);
+
+  const keys = Object.keys(regions);
+  if (keys.length === 0) return;
+  const n = keys.length;
+  const angleStep = (Math.PI * 2) / n;
+
+  // Grid rings
+  for (let ring = 1; ring <= 4; ring++) {
+    ctx.beginPath();
+    for (let i = 0; i <= n; i++) {
+      const angle = i * angleStep - Math.PI/2;
+      const r = R * ring / 4;
+      const x = cx + Math.cos(angle) * r;
+      const y = cy + Math.sin(angle) * r;
+      i === 0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+    }
+    ctx.closePath();
+    ctx.strokeStyle = ring === 2 ? '#1e293b' : '#111827';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+  // Axis spokes
+  keys.forEach((k,i) => {
+    const angle = i * angleStep - Math.PI/2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(angle)*R, cy + Math.sin(angle)*R);
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  });
+
+  // Filled polygon
+  ctx.beginPath();
+  keys.forEach((k,i) => {
+    const angle = i * angleStep - Math.PI/2;
+    const r = R * (regions[k] || 0);
+    const x = cx + Math.cos(angle) * r;
+    const y = cy + Math.sin(angle) * r;
+    i === 0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+  });
+  ctx.closePath();
+  const grad = ctx.createRadialGradient(cx,cy,0,cx,cy,R);
+  grad.addColorStop(0,'rgba(99,102,241,0.55)');
+  grad.addColorStop(1,'rgba(168,85,247,0.15)');
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.strokeStyle = '#818cf8';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Labels
+  ctx.font = '7.5px monospace';
+  ctx.fillStyle = '#64748b';
+  ctx.textAlign = 'center';
+  keys.forEach((k,i) => {
+    const angle = i * angleStep - Math.PI/2;
+    const labelR = R + 16;
+    const x = cx + Math.cos(angle) * labelR;
+    const y = cy + Math.sin(angle) * labelR + 3;
+    const label = k.length > 6 ? k.slice(0,6) : k;
+    ctx.fillText(label, x, y);
+  });
+  } catch(e) { console.warn("[AXON] drawBrainRadar:", e); }
+}
+
+const NM_COLORS = {
+
+
+const NM_COLORS = {
+  dopamine:'#ffcc00', serotonin:'#00ff88', norepinephrine:'#ff6b35',
+  acetylcholine:'#00d4ff', gaba:'#ff006e', glutamate:'#ff4060'
+};
+
+function updateNeuralPanel(state) {
+  if (!state) return;
+  try {
+
+  // ── Conflict + CognitiveState + Critic panel ──────────────────────────────
+  if (state.conflict) {
+    const dom = (state.conflict.top_dominant || []).slice(0,3)
+                  .map(s => s.replace(/_/g,' ')).join(' ▶ ');
+
+
+const NM_COLORS = {
+  dopamine:'#ffcc00', serotonin:'#00ff88', norepinephrine:'#ff6b35',
+  acetylcholine:'#00d4ff', gaba:'#ff006e', glutamate:'#ff4060'
+};
+
+function updateNeuralPanel(state) {
+  if (!state) return;
+  try {
+
+  // ── Conflict + CognitiveState + Critic panel ──────────────────────────────
+  if (state.conflict) {
+    const dom = (state.conflict.top_dominant || []).slice(0,3)
+                  .map(s => s.replace(/_/g,' ')).join(' ▶ ');
+    const el = document.getElementById('conflict-dominant');
+    if (el) el.textContent = dom || '—';
+  }
+  // Cognitive state bars
+  if (state.cognitive_state) {
+    const cs = state.cognitive_state;
+    const setBar = (id, val, valId) => {
+      const b = document.getElementById(id);
+      const v = document.getElementById(valId);
+      const pct = Math.round((val||0)*100);
+      if (b) b.style.width = pct + '%';
+      if (v) v.textContent = pct + '%';
+    };
+    setBar('cog-conf-bar', cs.confidence,  'cog-conf-val');
+    setBar('cog-unc-bar',  cs.uncertainty, 'cog-unc-val');
+    setBar('cog-urg-bar',  cs.urgency,     'cog-urg-val');
+  }
+  // Critic
+  if (state.critic) {
+    const cr = state.critic;
+    const rg = document.getElementById('cog-regret');
+    if (rg) rg.textContent = (cr.last_regret||0).toFixed(3);
+    const hs = document.getElementById('cog-hesit');
+    if (hs) hs.textContent = cr.hesitations || 0;
+  }
+  // Top routes
+  if (state.top_routes && state.top_routes.length) {
+    const rt = document.getElementById('top-routes');
+    if (rt) rt.textContent = state.top_routes
+      .map(r => (r.src||r[0]||'').replace(/_/g,' ') + '→' + (r.dst||r[1]||'').replace(/_/g,' '))
+      .join('  ');
+  }
+  const ps = document.getElementById('pred-surprise');
+  if (ps && state.prediction_surprise !== undefined)
+    ps.textContent = state.prediction_surprise.toFixed(3);
+  const ee = document.getElementById('explore-eps');
+  if (ee && state.explore_eps !== undefined)
+    ee.textContent = (state.explore_eps * 100).toFixed(1) + '%';
+  const tr = document.getElementById('temp-reward');
+  if (tr && state.temporal_reward)
+    tr.textContent = '+' + (state.temporal_reward.total_reward||0).toFixed(2);
+  // Temporal momentum bar
+  if (state.temporal_momentum !== undefined) {
+    const tmb = document.getElementById('temporal-momentum-bar');
+    const tmv = document.getElementById('temporal-momentum-val');
+    const tmPct = Math.round(((state.temporal_momentum + 1) / 2) * 100); // -1..1 → 0..100
+    if (tmb) tmb.style.width = tmPct + '%';
+    if (tmv) tmv.textContent = state.temporal_momentum.toFixed(2);
+  }
+  if (state.temporal_depth !== undefined) {
+    const td = document.getElementById('temporal-depth');
+    if (td) td.textContent = state.temporal_depth;
+  }
+
+  // ── Learning bursts: fire visual events from neural state changes ──
+  if (state.prediction_surprise !== undefined) {
+    const surp = state.prediction_surprise;
+    if (surp > 0.12) {
+      // Surprise burst: fire at the top active region
+      const topRegion = state.top_clusters && state.top_clusters[0]
+        ? (state.top_clusters[0].region || regionForCluster(state.top_clusters[0].name))
+        : 'thalamus';
+      addLearningBurst(topRegion, 'surprise', Math.min(1, surp * 4));
+    }
+  }
+  if (state.temporal_reward) {
+    const netR = (state.temporal_reward.total_reward || 0);
+    // Check if reward jumped (crude delta: store last value)
+    const prevR = window._lastTotalReward || 0;
+    const delta = netR - prevR;
+    window._lastTotalReward = netR;
+    if (delta > 0.08) {
+      // Reward burst: fire at top dominant cluster region
+      const domConf = state.conflict && state.conflict.top_dominant;
+      if (domConf && domConf.length) {
+        const reg = regionForCluster(domConf[0]);
+        addLearningBurst(reg, 'reward', Math.min(1, delta * 5));
+      }
+    }
+  }
+
+  // ── Fatigue map update ────────────────────────────────────────────
+  // Use cluster_wear from state (normalized 0-500 → 0-1)
+  if (state.cluster_wear !== undefined) {
+    const wearNorm = Math.min(1.0, state.cluster_wear / 80.0);
+    // Apply to top dominant clusters (they're the ones that tire)
+    const domList = state.conflict && state.conflict.top_dominant || [];
+    domList.forEach((clName, idx) => {
+      const reg = regionForCluster(clName);
+      fatigueMap[reg] = Math.max(fatigueMap[reg]||0, wearNorm * (1 - idx * 0.18));
+    });
+    // Decay all fatigue slowly
+    for (const r of Object.keys(fatigueMap)) {
+      fatigueMap[r] = Math.max(0, (fatigueMap[r]||0) - 0.003);
+    }
+  }
+
+  // Neuromodulators with role descriptions
+  const NM_DESC = {
+    dopamine:       'Reward, motivation, goal pursuit',
+    serotonin:      'Mood stability, patience, contentment',
+    norepinephrine: 'Alertness, arousal, stress response',
+    acetylcholine:  'Attention, learning, memory encoding',
+    gaba:           'Inhibition, calm, noise reduction',
+    glutamate:      'Excitation, plasticity, energy',
+  };
+  // Build NM bars with live sparklines (update incrementally, not via innerHTML)
+  const nmContainer = document.getElementById('nm-bars');
+  for (const [k,v] of Object.entries(state.neuromod||{})) {
+    const pct  = Math.round((v||0)*100);
+    const col  = NM_COLORS[k] || '#64748b';
+    const desc = NM_DESC[k] || '';
+    pushSpark('nm_' + k, v||0);
+    let row = nmContainer.querySelector(`[data-nm="${k}"]`);
+    if (!row) {
+      row = document.createElement('div');
+      row.className = 'bar-row';
+      row.dataset.nm = k;
+      row.style.position = 'relative';
+      const displayName = k.charAt(0).toUpperCase() + k.slice(1);
+      row.innerHTML = `
+        <div class="bar-label" title="${desc}">${displayName}</div>
+        <div class="bar-track"><div class="bar-fill nm-fill" style="width:0%;background:${col}"></div></div>
+        <div class="bar-val nm-val">0%</div>
+        <canvas class="spark bar-spark" width="52" height="18" style="flex-shrink:0;"></canvas>
+        ${desc ? `<div class="region-desc"><strong style="color:#e2e8f0;">${displayName}</strong><br>${desc}</div>` : ''}`;
+      nmContainer.appendChild(row);
+    }
+    row.querySelector('.nm-fill').style.width = pct + '%';
+    row.querySelector('.nm-val').textContent  = pct + '%';
+    const spark = row.querySelector('canvas.spark');
+    if (spark) drawSparkline(spark, _sparkHistory['nm_' + k], col);
+  }
+
+  // Traits
+  let traits = '';
+  for (const [k,v] of Object.entries(state.personality||{})) {
+    traits += makeBar(k.replace('_',' '), v, 'trait-bar');
+  }
+  document.getElementById('trait-bars').innerHTML = traits;
+
+  // Top clusters with descriptions
+  const CLUSTER_DESC = {
+    working_memory:'Holds information in mind right now for active use.',
+    executive_control:'Manages goals, switches tasks, overrides impulses.',
+    decision_making:'Weighs options and selects actions.',
+    planning:'Sequences future actions toward a goal.',
+    inhibitory_control:'Suppresses irrelevant responses.',
+    action_selection:'Picks the best action from candidates.',
+    hippocampus_encode:'Writes new experiences into long-term memory.',
+    hippocampus_retrieve:'Reads and reconstructs past memories.',
+    episodic_memory:'Stores autobiographical event memories.',
+    spatial_memory:'Tracks position, maps, and navigation context.',
+    pattern_completion:'Reconstructs full memories from partial cues.',
+    pattern_separation:'Keeps similar memories distinct and non-overlapping.',
+    amygdala_fear:'Processes fear signals and threat responses.',
+    amygdala_reward:'Tracks reward expectation and emotional valence.',
+    threat_detection:'Rapid detection of danger or negative stimuli.',
+    reward_anticipation:'Anticipates positive outcomes and drives motivation.',
+    primary_visual:'Raw pixel-level visual processing.',
+    object_recognition:'Identifies and categorizes objects in view.',
+    speech_perception:'Converts incoming speech sounds to meaning.',
+    language_comprehension:'Understands the meaning of words and sentences.',
+    semantic_memory:'Stores facts about the world.',
+    creativity:'Generates novel combinations and unexpected ideas.',
+    conceptual_blending:'Merges two concepts into something new.',
+    social_cognition:'Models other people\'s mental states.',
+    empathy:'Shares and responds to emotional states of others.',
+    metacognition:'Monitors its own thinking processes and confidence.',
+    self_awareness:'Maintains a model of itself as a distinct entity.',
+    consciousness_gate:'Regulates what reaches conscious attention.',
+    attention_filter:'Suppresses distracting signals, boosts relevant ones.',
+    curiosity_drive:'Generates motivation to explore unknowns.',
+    identity_core:'Stable self-representation — who AXON understands itself to be.',
+  };
+  const clusterContainer = document.getElementById('cluster-bars');
+  const topClusters = (state.top_clusters||[]).slice(0,14);
+  topClusters.forEach(c => {
+    const pct  = Math.round((c.activation||0)*100);
+    const heat = pct > 80 ? 'hot' : pct > 50 ? 'warm' : '';
+    const desc = CLUSTER_DESC[c.name] || '';
+    const lbl  = c.name.replace(/_/g,' ');
+    let row = clusterContainer.querySelector(`[data-cluster="${c.name}"]`);
+    if (!row) {
+      row = document.createElement('div');
+      row.className = 'bar-row cluster-bar';
+      row.dataset.cluster = c.name;
+      row.style.position = 'relative';
+      row.innerHTML = `
+        <div class="bar-label" style="cursor:${desc?'help':'default'};">${lbl}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:0%;"></div></div>
+        <div class="bar-val">0%</div>
+        ${desc ? `<div class="region-desc"><strong style="color:#e2e8f0;">${lbl}</strong><br>${desc}</div>` : ''}`;
+      clusterContainer.appendChild(row);
+    }
+    row.className = `bar-row cluster-bar ${heat}`;
+    row.querySelector('.bar-fill').style.width = pct + '%';
+    row.querySelector('.bar-val').textContent  = pct + '%';
+  });
+
+  // Regions with descriptions
+  const REGION_INFO = {
+    prefrontal:           { color:'#00d4ff', desc:'Decision-making, planning, working memory. The "CEO" — coordinates all other regions.' },
+    planning_cortex:      { color:'#00d4ff', desc:'Goal maintenance, future planning, action selection. Dorsolateral PFC — deliberate thinking.' },
+    working_memory_cortex:{ color:'#38bdf8', desc:'Active holding of information — what AXON is currently thinking about. Ventrolateral PFC.' },
+    inhibitory_cortex:    { color:'#7dd3fc', desc:'Impulse suppression, response inhibition, conflict arbitration. Keeps behavior controlled.' },
+    hippocampus:          { color:'#a855f7', desc:'Encodes new memories, spatial navigation, pattern completion. Active when learning something new.' },
+    amygdala:             { color:'#ff6b35', desc:'Emotional processing, threat detection, reward signals. Fires on emotionally significant events.' },
+    visual:               { color:'#ffcc00', desc:'Processes everything seen — color, motion, objects, faces, depth perception.' },
+    auditory:             { color:'#00ff88', desc:'Speech perception, sound processing, phoneme detection. Primary gateway for voice input.' },
+    language:             { color:'#c084fc', desc:'Language comprehension, semantics, syntax, meaning construction. Active during every conversation.' },
+    default_mode:         { color:'#4ade80', desc:'Self-reflection, mind-wandering, future simulation. Most active during rest and introspection.' },
+    thalamus:             { color:'#f9a8d4', desc:'The sensory relay hub — filters and routes signals to the right cortical regions. Consciousness gatekeeper.' },
+    cerebellum:           { color:'#7ec8e3', desc:'Timing, prediction, motor coordination, error correction. Keeps cognitive rhythms smooth.' },
+    association:          { color:'#fb923c', desc:'Creativity, analogy-formation, conceptual blending. Where novel ideas emerge.' },
+    social:               { color:'#ff006e', desc:'Empathy, face recognition, mentalizing (understanding others\' minds), social pain.' },
+    metacognition:        { color:'#ff4060', desc:'Thinking about thinking. Self-awareness, confidence monitoring, uncertainty detection.' },
+  };
+  const regContainer = document.getElementById('region-bars');
+  for (const [r,v] of Object.entries(state.regions||{})) {
+    const info  = REGION_INFO[r] || { color:'#64748b', desc:'' };
+    const pct   = Math.round((v||0)*100);
+    const heat  = pct > 80 ? 'max' : pct > 55 ? 'hot' : pct > 30 ? 'mid' : '';
+    const label = r.replace(/_/g,' ');
+    pushSpark('reg_' + r, v||0);
+    let row = regContainer.querySelector(`[data-reg="${r}"]`);
+    if (!row) {
+      row = document.createElement('div');
+      row.className = 'bar-row region-bar';
+      row.dataset.reg = r;
+      row.style.position = 'relative';
+      row.innerHTML = `
+        <div class="bar-label" title="${info.desc}">${label}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:0%;background:${info.color}"></div></div>
+        <div class="bar-val">0%</div>
+        <canvas class="spark bar-spark" width="52" height="18" style="flex-shrink:0;"></canvas>
+        ${info.desc ? `<div class="region-desc"><strong style="color:#e2e8f0;">${label}</strong><br>${info.desc}</div>` : ''}`;
+      regContainer.appendChild(row);
+    }
+    row.className = `bar-row region-bar ${heat}`;
+    row.querySelector('.bar-fill').style.width = pct + '%';
+    row.querySelector('.bar-val').textContent  = pct + '%';
+    const spark = row.querySelector('canvas.spark');
+    if (spark) drawSparkline(spark, _sparkHistory['reg_' + r], info.color);
+  }
+  // Draw brain radar from region data
+  drawBrainRadar(state.regions||{});
+
+  // Emotion
+  const emo = state.emotion || {};
+  const eName = emo.emotion || 'neutral';
+  const eColors = {
+    joy:'#ffcc00', curiosity:'#00d4ff', calm:'#00ff88',
+    melancholy:'#a855f7', anxiety:'#ff4060', awe:'#ff6b35',
+    frustration:'#ff006e', contentment:'#4ade80', excitement:'#ffcc00',
+    confusion:'#c084fc', empathy:'#f9a8d4', wonder:'#7ec8e3',
+  };
+  const eColor = eColors[eName] || '#a855f7';
+  document.getElementById('e-circle').style.borderColor = eColor;
+  document.getElementById('e-circle').style.boxShadow = `0 0 28px ${eColor}55, 0 0 8px ${eColor}33`;
+  document.getElementById('e-name').textContent = eName;
+  document.getElementById('e-label').style.color = eColor;
+  document.getElementById('e-label').textContent = eName;
+  const vVal = parseFloat(emo.valence||0).toFixed(2);
+  const aVal = parseFloat(emo.arousal||0).toFixed(2);
+  const iVal = parseFloat(emo.intensity||0).toFixed(2);
+  document.getElementById('e-coords').textContent = `v:${vVal}  a:${aVal}  i:${iVal}`;
+  document.getElementById('emotion-pill').textContent = eName;
+  document.getElementById('emotion-pill').style.borderColor = eColor;
+  document.getElementById('emotion-pill').style.color = eColor;
+  // Update VA scatter plot
+  updateVAPlot({ valence: emo.valence||0, arousal: emo.arousal||0, _color: eColor });
+
+  // Counts
+  document.getElementById('neuron-count').textContent =
+    (state.total_neurons||0).toLocaleString();
+  // conn-count updated via synapse_count event
+  } catch(err) {
+    console.warn("[AXON] updateNeuralPanel threw:", err);
+  }
+}
+
+// -- Chat ------------------------------------------------------
+function sendChat() {
+  const inp = document.getElementById('chat-in');
+  const txt = inp.value.trim();
+  if (!txt) return;
+  // Intercept diagnostic triggers: "diagnostic", "/diagnostic", "/diag"
+
+
+// ── Socket event handlers ─────────────────────────────────────────
+
+socket.on('neural_state', d => {
+  neuralState = d;
+  window.neuralState = d;
+  try { updateNeuralPanel(d); } catch(e) { console.warn('[Monitor] updateNeuralPanel:', e); }
+
+  // Header bar
+  if (d.total_neurons) {
+    const n = (d.total_neurons||0).toLocaleString();
+    const el1 = document.getElementById('hdr-neurons');
+    const el2 = document.getElementById('hdr-neurons2');
+    if (el1) el1.textContent = n;
+    if (el2) el2.textContent = n;
+  }
+  const el_eps = document.getElementById('hdr-eps');
+  if (el_eps && d.explore_eps !== undefined)
+    el_eps.textContent = (d.explore_eps*100).toFixed(1)+'%';
+  const el_tick = document.getElementById('hdr-tick');
+  if (el_tick && d.tick !== undefined)
+    el_tick.textContent = d.tick.toLocaleString();
+  const el_emo = document.getElementById('hdr-emotion');
+  if (el_emo && d.emotion) el_emo.textContent = d.emotion.emotion || '—';
+
+  // Canvas: region spikes
+  if (d.regions) {
+    Object.entries(d.regions).forEach(([region, act]) => {
+      if (act > 0.12) scheduleSpikeWave(region, act);
+    });
+  }
+  if (d.new_synapses && d.new_synapses.length) {
+    d.new_synapses.forEach(s => {
+      if (s.src_region && s.dst_region && s.src_region !== s.dst_region) {
+        addSynapseEvent(s.src_region, s.dst_region, s.strength||0.4, s.type||'strengthen');
+      }
+    });
+  }
+  if (d.top_routes && d.top_routes.length) {
+    d.top_routes.forEach(route => {
+      if (route.src_region && route.dst_region && route.src_region !== route.dst_region) {
+        addPulse(route.src_region, route.dst_region, Math.min(1.0, (route.weight||0.3)*1.5));
+      }
+      if (route.src_region && route.dst_region) {
+        const key = route.src_region+'>'+route.dst_region;
+        _hebbianWeights[key] = Math.max(_hebbianWeights[key]||0, route.weight||0);
+      }
+    });
+  }
+});
+
+socket.on('synapse_count', d => {
+  const el = document.getElementById('conn-count');
+  if (el) el.textContent = (d.connections||0).toLocaleString();
+  const hn = document.getElementById('hdr-synapses');
+  if (hn) hn.textContent = (d.connections||0).toLocaleString();
+});
+
+socket.on('thought', d => {
+  const stream = document.getElementById('thought-stream');
+  if (!stream || !d.text) return;
+  // Remove 'new' class from prior items
+  stream.querySelectorAll('.thought-item.new').forEach(el => el.classList.remove('new'));
+  const item = document.createElement('div');
+  item.className = 'thought-item new';
+  item.textContent = d.text;
+  stream.appendChild(item);
+  // Keep max 30 thoughts
+  while (stream.children.length > 30) stream.removeChild(stream.firstChild);
+  stream.scrollTop = stream.scrollHeight;
+});
+
+socket.on('hebbian_event', data => {
+  const srcR = data.src_region, dstR = data.dst_region;
+  if (srcR && dstR && srcR !== dstR) {
+    addSynapseEvent(srcR, dstR, Math.min(1.0, (data.weight||0.3)*2), data.type||'strengthen');
+    addPulse(srcR, dstR, Math.min(1.0, data.weight||0.4));
+    scheduleSpikeWave(srcR, Math.min(1.0, (data.weight||0.3)*1.5));
+    scheduleSpikeWave(dstR, Math.min(0.8, (data.weight||0.3)*1.2));
+    if (!_hebbianWeights) _hebbianWeights = {};
+    _hebbianWeights[srcR+'>'+dstR] = Math.max(_hebbianWeights[srcR+'>'+dstR]||0, data.weight||0);
+  }
+});
+
+socket.on('region_spike', data => {
+  if (data.region) scheduleSpikeWave(data.region, data.intensity||0.5);
+});
+
+socket.on('drive_state', d => {
+  if (d.explore_eps !== undefined) {
+    exploreMode  = d.explore_eps > 0.35;
+    exploitMode  = d.explore_eps < 0.08;
+    epsilonLevel = d.explore_eps;
+  }
+});
+
+// ── Speed control (emits to engine via socket) ─────────────────────
+function setSpeed(mult) {
+  socket.emit('set_speed', { multiplier: mult });
+  const label = {0.1:'💤 Dreaming',0.5:'🐢 Slow',1.0:'✅ Normal',2.0:'⚡ Alert',5.0:'🚀 Hyperdrive'}[mult] || (mult+'×');
+  const el = document.getElementById('speed-label');
+  if (el) el.textContent = label;
+}
+function onSpeedSlider(v) {
+  const mult = parseFloat((v / 10).toFixed(1));
+  setSpeed(mult);
+  const hz = (20 * mult).toFixed(1);
+  const el = document.getElementById('speed-hz-label');
+  if (el) el.textContent = hz + ' Hz';
+}
+
+// ── Canvas boot ───────────────────────────────────────────────────
+window.addEventListener('load', () => {
+  // Size canvas to parent
+  const col = document.getElementById('canvas-col');
+  nCanvas.width  = col.offsetWidth;
+  nCanvas.height = col.offsetHeight;
+  initNeurons();
+  buildLegend();
+  requestAnimationFrame(drawNeural);
+});
+window.addEventListener('resize', () => {
+  const col = document.getElementById('canvas-col');
+  nCanvas.width  = col.offsetWidth;
+  nCanvas.height = col.offsetHeight;
+  neuronNodes = [];
+  initNeurons();
+  buildLegend();
+});
+
+// ── Stub: playback not needed here ───────────────────────────────
+function startPlayback() {}
+function stopPlayback()  {}
+function stepPlayback()  {}
+</script>
+</body>
+</html>

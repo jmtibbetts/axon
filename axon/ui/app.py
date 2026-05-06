@@ -66,6 +66,10 @@ def _apply_deferred_onboarding(brain):
 def index():
     return render_template("index.html")
 
+@app.route("/monitor")
+def monitor():
+    return render_template("monitor.html")
+
 @app.route("/api/ready")
 def ready():
     """Lightweight liveness probe — returns 200 as soon as the server is up."""
@@ -1067,7 +1071,18 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT,  _shutdown)
     signal.signal(signal.SIGTERM, _shutdown)
 
-    print("\n  AXON — Emerging Intelligence\n  Open: http://localhost:7777\n")
+    print("\n  AXON — Emerging Intelligence")
+    print("  Main UI:      http://localhost:7777")
+    print("  Neural Monitor: http://localhost:7777/monitor\n")
+    # Auto-open both windows in browser
+    import threading as _th
+    def _open_browser():
+        import time as _t, webbrowser as _wb
+        _t.sleep(1.5)
+        _wb.open("http://localhost:7777")
+        _t.sleep(0.4)
+        _wb.open("http://localhost:7777/monitor")
+    _th.Thread(target=_open_browser, daemon=True).start()
     print("  Axon Non-Commercial License | Copyright (c) 2026 Jon Tibbetts")
     print("  Commercial use requires a license: jon@jontibbetts.com\n")
     print("  Press Ctrl+C to exit\n")
