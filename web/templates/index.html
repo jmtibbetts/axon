@@ -3450,28 +3450,6 @@ function scanCameras() {
   });
 }
 
-function startAxon() {
-  socket.emit('start_engine', {
-    api_key:      document.getElementById('cfg-api').value,
-    lm_url:       document.getElementById('cfg-lmurl').value || 'http://localhost:1234',
-    lm_model:     document.getElementById('cfg-lmmodel').value || null,
-    prefer_local: document.getElementById('cfg-local').checked,
-    voice:        document.getElementById('cfg-voice').checked,
-    camera:       document.getElementById('cfg-cam').checked,
-    mic:          document.getElementById('cfg-mic').checked,
-    mic_index:    parseInt(document.getElementById('cfg-micidx').value),
-    camera_index: parseInt(document.getElementById('cfg-camidx').value) || -1,
-  });
-  sysLog('Activating AXON...');
-}
-function stopAxon()  { socket.emit('stop_engine'); }
-function reprobe()   { socket.emit('reprobe_lm'); sysLog('Re-probing LM Studio...'); }
-function resetOnboarding() {
-  if (!confirm("Re-run the setup wizard? You\'ll need to reload after.")) return;
-  fetch("/api/onboarding/reset", {method:"POST"})
-    .then(r => r.json())
-    .then(d => { sysLog("🔄 " + d.msg); setTimeout(() => location.reload(), 800); });
-}
 
 // -- Socket events ---------------------------------------------
 socket.on('connect', () => {
@@ -5373,7 +5351,70 @@ function saveLMStudioUrl() {
 
 // LLM tab hook is now built into the main switchTab above.
 
+
+  // Expose inner functions as globals so onclick= attributes can call them
+  window.filterTimeline = typeof filterTimeline !== 'undefined' ? filterTimeline : window.filterTimeline;
+  window.forgetPerson = typeof forgetPerson !== 'undefined' ? forgetPerson : window.forgetPerson;
+  window.ingestKnowledgeText = typeof ingestKnowledgeText !== 'undefined' ? ingestKnowledgeText : window.ingestKnowledgeText;
+  window.loadBrain = typeof loadBrain !== 'undefined' ? loadBrain : window.loadBrain;
+  window.previewVoice = typeof previewVoice !== 'undefined' ? previewVoice : window.previewVoice;
+  window.promptNamePerson = typeof promptNamePerson !== 'undefined' ? promptNamePerson : window.promptNamePerson;
+  window.removeInterest = typeof removeInterest !== 'undefined' ? removeInterest : window.removeInterest;
+  window.requestDiagnostic = typeof requestDiagnostic !== 'undefined' ? requestDiagnostic : window.requestDiagnostic;
+  window.requestExplanation = typeof requestExplanation !== 'undefined' ? requestExplanation : window.requestExplanation;
+  window.resetPersonality = typeof resetPersonality !== 'undefined' ? resetPersonality : window.resetPersonality;
+  window.runAutonomous = typeof runAutonomous !== 'undefined' ? runAutonomous : window.runAutonomous;
+  window.saveBrain = typeof saveBrain !== 'undefined' ? saveBrain : window.saveBrain;
+  window.saveLMStudioUrl = typeof saveLMStudioUrl !== 'undefined' ? saveLMStudioUrl : window.saveLMStudioUrl;
+  window.saveNote = typeof saveNote !== 'undefined' ? saveNote : window.saveNote;
+  window.savePersonality = typeof savePersonality !== 'undefined' ? savePersonality : window.savePersonality;
+  window.saveProviderKey = typeof saveProviderKey !== 'undefined' ? saveProviderKey : window.saveProviderKey;
+  window.scanCameras = typeof scanCameras !== 'undefined' ? scanCameras : window.scanCameras;
+  window.scanMics = typeof scanMics !== 'undefined' ? scanMics : window.scanMics;
+  window.seedInterest = typeof seedInterest !== 'undefined' ? seedInterest : window.seedInterest;
+  window.selectVoice = typeof selectVoice !== 'undefined' ? selectVoice : window.selectVoice;
+  window.sendChat = typeof sendChat !== 'undefined' ? sendChat : window.sendChat;
+  window.setActiveProvider = typeof setActiveProvider !== 'undefined' ? setActiveProvider : window.setActiveProvider;
+  window.startPlayback = typeof startPlayback !== 'undefined' ? startPlayback : window.startPlayback;
+  window.stepPlayback = typeof stepPlayback !== 'undefined' ? stepPlayback : window.stepPlayback;
+  window.stopPlayback = typeof stopPlayback !== 'undefined' ? stopPlayback : window.stopPlayback;
+  window.testCurrentVoice = typeof testCurrentVoice !== 'undefined' ? testCurrentVoice : window.testCurrentVoice;
+  window.toggleNotes = typeof toggleNotes !== 'undefined' ? toggleNotes : window.toggleNotes;
+  window.uploadKnowledgeFile = typeof uploadKnowledgeFile !== 'undefined' ? uploadKnowledgeFile : window.uploadKnowledgeFile;
+  window.sysLog = typeof sysLog !== 'undefined' ? sysLog : window.sysLog;
+  window.switchTab = typeof switchTab !== 'undefined' ? switchTab : window.switchTab;
+  window.forkBrain = typeof forkBrain !== 'undefined' ? forkBrain : window.forkBrain;
+  window.shareBrain = typeof shareBrain !== 'undefined' ? shareBrain : window.shareBrain;
+  window.writeText = typeof writeText !== 'undefined' ? writeText : window.writeText;
+
+  // Flush any socket events registered from other script blocks
+  if (window._socketFlushHooks) window._socketFlushHooks.forEach(function(f){f();});
 } // end _bindSocketEvents()
+
+// ── Global UI helpers (called from HTML onclick attributes) ──
+function startAxon() {
+  socket.emit('start_engine', {
+    api_key:      document.getElementById('cfg-api').value,
+    lm_url:       document.getElementById('cfg-lmurl').value || 'http://localhost:1234',
+    lm_model:     document.getElementById('cfg-lmmodel').value || null,
+    prefer_local: document.getElementById('cfg-local').checked,
+    voice:        document.getElementById('cfg-voice').checked,
+    camera:       document.getElementById('cfg-cam').checked,
+    mic:          document.getElementById('cfg-mic').checked,
+    mic_index:    parseInt(document.getElementById('cfg-micidx').value),
+    camera_index: parseInt(document.getElementById('cfg-camidx').value) || -1,
+  });
+  sysLog('Activating AXON...');
+}
+function stopAxon()  { socket.emit('stop_engine'); }
+function reprobe()   { socket.emit('reprobe_lm'); sysLog('Re-probing LM Studio...'); }
+function resetOnboarding() {
+  if (!confirm("Re-run the setup wizard? You\'ll need to reload after.")) return;
+  fetch("/api/onboarding/reset", {method:"POST"})
+    .then(r => r.json())
+    .then(d => { sysLog("🔄 " + d.msg); setTimeout(() => location.reload(), 800); });
+}
+
 
 </script>
 
@@ -5603,6 +5644,21 @@ function saveLMStudioUrl() {
 // ═══════════════════════════════════════════════════════════════
 // ONBOARDING
 // ═══════════════════════════════════════════════════════════════
+// Deferred socket event binder — safe to call before socket initialises
+var _socketQueue = [];
+function _on(ev, fn) {
+  if (window.socket) { window.socket.on(ev, fn); }
+  else { _socketQueue.push([ev, fn]); }
+}
+function _flushSocketQueue() {
+  _socketQueue.forEach(function(pair) { socket.on(pair[0], pair[1]); });
+  _socketQueue = [];
+}
+// Hook into socket init — called from _bindSocketEvents
+if (typeof window._socketFlushHooks === 'undefined') window._socketFlushHooks = [];
+window._socketFlushHooks.push(_flushSocketQueue);
+
+
 let obState    = { step: 0, name: "", preset: "", sampleId: "", presets: {}, samples: [] };
 let obSelectedPreset = "";
 let obSelectedSample = "";
@@ -5743,7 +5799,7 @@ function obFinish() {
 // ═══════════════════════════════════════════════════════════════
 // SURPRISE TOASTS
 // ═══════════════════════════════════════════════════════════════
-socket.on("surprise_event", event => {
+_on("surprise_event", event => {
   showSurpriseToast(event);
 });
 
@@ -5837,7 +5893,7 @@ function renderGoals(goals) {
 setInterval(loadGoals, 10000);
 
 // Real-time goal push from cognitive cycle
-socket.on("goals_update", d => {
+_on("goals_update", d => {
   if (d && d.goals) renderGoals(d.goals);
 });
 
@@ -5880,7 +5936,7 @@ function shareBrain() {
 // ═══════════════════════════════════════════════════════════════
 let _reflectionCount = 0;
 
-socket.on("reflection", (d) => {
+_on("reflection", (d) => {
   _reflectionCount++;
   const el = document.getElementById("reflection-count");
   if (el) el.textContent = `${_reflectionCount} thoughts`;
@@ -5991,7 +6047,7 @@ function renderThoughtCompetition(comp, container, prepend) {
 }
 
 // Live socket handler — new competition result arrives
-socket.on("thought_competition", (d) => {
+_on("thought_competition", (d) => {
   const list = document.getElementById("thought-competition-list");
   const countEl = document.getElementById("thought-comp-count");
   if (!list) return;
@@ -6024,7 +6080,7 @@ function loadReflections() {
 // ═══════════════════════════════════════════════════════════════
 // NARRATIVE WORLDVIEWS
 // ═══════════════════════════════════════════════════════════════
-socket.on("narrative_state", (d) => {
+_on("narrative_state", (d) => {
   renderNarratives(d);
 });
 
@@ -6472,7 +6528,7 @@ function speedLabel(s) {
   return "Hyperdrive";
 }
 
-socket.on("speed_changed", d => {
+_on("speed_changed", d => {
   applySpeedUI(d.speed_scale);
   const slider = document.getElementById("speed-slider");
   if (slider) slider.value = scaleToSliderVal(d.speed_scale);
