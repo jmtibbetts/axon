@@ -1949,6 +1949,13 @@ function drawNeural() {
     requestAnimationFrame(drawNeural);
     return;
   }
+  // Debug: if neurons never initialised, show visible warning and retry init
+  if (neuronNodes.length === 0 && axonFrame % 60 === 0) {
+    const p = document.getElementById('neural-panel-body');
+    const pw = p ? p.offsetWidth : 0, ph = p ? p.offsetHeight : 0;
+    console.warn('[AXON] drawNeural: no neurons! canvas:', nCanvas.width+'x'+nCanvas.height, 'parent:', pw+'x'+ph);
+    if (pw > 20 && ph > 20) initNeurons(pw, ph);
+  }
   axonFrame++;
   const W = nCanvas.width, H = nCanvas.height;
 
@@ -4273,15 +4280,24 @@ window.addEventListener('load', () => {
   // Strategy: observe the PARENT for size changes. When we get a real size,
   // sync the canvas pixel buffer and init neurons. No polling needed.
   function _syncCanvasToParent(w, h) {
-    if (w < 20 || h < 20) return;
-    nCanvas.width  = w;
-    nCanvas.height = h;
-    initNeurons(w, h);
-    buildLegend();
+    if (w < 20 || h < 20) {
+      console.warn('[AXON] _syncCanvasToParent skipped — bad dims:', w, h);
+      return;
+    }
+    // Only resize if significantly different (avoids wipe on sub-pixel jitter)
+    const wChanged = Math.abs(nCanvas.width  - w) > 4;
+    const hChanged = Math.abs(nCanvas.height - h) > 4;
+    if (wChanged || hChanged || neuronNodes.length === 0) {
+      console.log('[AXON] canvas resize:', nCanvas.width+'x'+nCanvas.height, '->', w+'x'+h);
+      nCanvas.width  = w;
+      nCanvas.height = h;
+      initNeurons(w, h);
+      buildLegend();
+    }
     if (!_neuralBooted) {
       _neuralBooted = true;
       drawNeural();  // start the animation loop (self-perpetuating via rAF)
-      console.log('[AXON] neural canvas live:', w, 'x', h);
+      console.log('[AXON] neural canvas live:', w, 'x', h, 'neurons:', neuronNodes.length);
     }
   }
 
@@ -4312,12 +4328,9 @@ window.addEventListener('load', () => {
       if (!_canvasParent) return;
       const w = _canvasParent.offsetWidth;
       const h = _canvasParent.offsetHeight;
-      if (w > 20 && h > 20 && (Math.abs(nCanvas.width - w) > 4 || Math.abs(nCanvas.height - h) > 4)) {
-        nCanvas.width  = w;
-        nCanvas.height = h;
-        initNeurons(w, h);  // rebuilds neuronNodes
-        buildLegend();
-        // loop is already running — it will pick up the new neurons on next frame
+      console.log('[AXON] bootPoll:', w, 'x', h, 'neurons:', neuronNodes.length, 'booted:', _neuralBooted);
+      if (w > 20 && h > 20) {
+        _syncCanvasToParent(w, h);
       }
     }
     [100, 300, 700, 1500].forEach(t => setTimeout(_bootPoll, t));
