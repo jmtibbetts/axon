@@ -1588,7 +1588,7 @@ socket.on('diagnostic_result', function(d) {
 // ═══════════════════════════════════════════════════════════════
 
 // -- Neural canvas ---------------------------------------------
-const nCanvas = document.getElementById('neural-canvas');
+const nCanvas = document.getElementById('neural-canvas') || (() => { console.error('[AXON] neural-canvas NOT FOUND — check HTML ID'); return document.createElement('canvas'); })();
 const nCtx    = nCanvas.getContext('2d');
 let neuronNodes  = [];
 let neuralState  = null;
@@ -1961,7 +1961,7 @@ function drawNeural() {
   const _IDLE_BASELINE = {
     prefrontal:0.18, hippocampus:0.14, amygdala:0.10, visual:0.12,
     auditory:0.10, language:0.12, default_mode:0.22, thalamus:0.16,
-    motor:0.08, cerebellum:0.10, brainstem:0.12, basal_ganglia:0.08
+    cerebellum:0.10, association:0.15, social:0.12, metacognition:0.14
   };
   const regionMap = (neuralState && neuralState.regions && Object.keys(neuralState.regions).length > 0)
     ? neuralState.regions
@@ -2823,6 +2823,18 @@ function drawNeural() {
   drawPrunedConnections(nCtx, W, H);
 
   } catch(e) { console.warn("[AXON] drawNeural error:", e); }
+
+  // ── Canvas status HUD (bottom-left, small) ────────────────────────────────
+  try {
+    nCtx.save();
+    const fps = axonFrame > 0 ? Math.round(1000 / Math.max(1, performance.now() / axonFrame)) : 0;
+    const backendStr = neuralState ? ('NS#' + (window._nsCount||0)) : 'idle';
+    nCtx.font = '8px monospace';
+    nCtx.fillStyle = 'rgba(0,212,255,0.35)';
+    nCtx.fillText('AXON-CANVAS f:' + axonFrame + ' ' + backendStr, 6, nCanvas.height - 6);
+    nCtx.restore();
+  } catch(_) {}
+
   requestAnimationFrame(drawNeural);
 }
 
