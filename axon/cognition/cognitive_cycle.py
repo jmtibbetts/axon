@@ -260,6 +260,27 @@ class CognitiveCycle:
                         sl.record_path(path)
                 except Exception:
                     pass
+                # ── Emit active pathway to canvas every ~0.5s (5 ticks @ 10Hz) ──
+                if self._tick_n % 5 == 0 and len(path) >= 2:
+                    try:
+                        # Build region-tagged path pairs for canvas routing
+                        path_pairs = []
+                        for idx in range(len(path) - 1):
+                            src_name = path[idx]
+                            dst_name = path[idx + 1]
+                            src_r = e.fabric.clusters[src_name].region if src_name in e.fabric.clusters else ""
+                            dst_r = e.fabric.clusters[dst_name].region if dst_name in e.fabric.clusters else ""
+                            w     = activations.get(src_name, 0.0) * activations.get(dst_name, 0.0)
+                            if src_r and dst_r and src_r != dst_r and w > 0.05:
+                                path_pairs.append({
+                                    "src_region": src_r, "dst_region": dst_r,
+                                    "src": src_name, "dst": dst_name,
+                                    "weight": round(float(w), 3),
+                                })
+                        if path_pairs:
+                            e._emit("active_pathways", {"pairs": path_pairs})
+                    except Exception:
+                        pass
             # Surprise: dominant cluster flip
             if dominant and hasattr(e, "surprise"):
                 top_name, top_act = dominant[0]

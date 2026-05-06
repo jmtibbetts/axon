@@ -2079,7 +2079,14 @@ class NeuralFabric:
             "explore_eps":        round(self._explore_eps, 4),
             "cognitive_state":    self.cog_state.to_dict(),
             "critic":             self.critic.to_dict(),
-            "top_routes":         self.predictor.top_routes(self._cluster_names, 3),
+            "top_routes":         [
+                {
+                    "src": r[0], "dst": r[1], "weight": r[2],
+                    "src_region": self.clusters[r[0]].region if r[0] in self.clusters else "",
+                    "dst_region": self.clusters[r[1]].region if r[1] in self.clusters else "",
+                }
+                for r in self.predictor.top_routes(self._cluster_names, 5)
+            ],
             "meta":               self.meta.to_dict(),
             "strategy_lib":       self.strategy_lib.stats(),
             "cluster_wear":       round(float(getattr(self, "_cluster_use_count", torch.zeros(1)).mean()), 2),

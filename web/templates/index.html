@@ -2080,16 +2080,21 @@ function drawNeural() {
       }
     }
 
-    // Fire pulses along active axon routes — only when both regions are genuinely firing
-    AXON_ROUTES.forEach(([src, dst, w]) => {
-      const sa = sharpenedRegion[src] || 0;
-      const da = sharpenedRegion[dst] || 0;
-      if (sa < 0.12 || da < 0.08) return;  // both must be meaningfully active
-      const coact = sa * da;
-      if (coact > 0.015 && Math.random() < coact * w * 1.0) {
-        addPulse(src, dst, Math.sqrt(coact) * w);
-      }
-    });
+    // Reinforce active routes based on region data from backend
+    // Only runs every 12 frames to avoid overwhelming the canvas
+    if (axonFrame % 12 === 0) {
+      AXON_ROUTES.forEach(([src, dst, w]) => {
+        const sa = sharpenedRegion[src] || 0;
+        const da = sharpenedRegion[dst] || 0;
+        if (sa < 0.18 || da < 0.12) return;
+        const coact = sa * da;
+        // Add Hebbian boost so learned paths fire more readily
+        const hebbBoost = (window._hebbianWeights && window._hebbianWeights[src+'>'+dst]) || 0;
+        if ((coact + hebbBoost * 0.3) > 0.04 && Math.random() < (coact + hebbBoost * 0.2) * w) {
+          addPulse(src, dst, Math.min(1.0, Math.sqrt(coact) * w + hebbBoost * 0.4));
+        }
+      });
+    }
 
     // ── Exploration flares: random cluster bursts when in explore mode ─
     if (exploreMode && Math.random() < 0.4) {
@@ -3890,7 +3895,7 @@ const _origSysLog = sysLog;
 
 // ── Activity feed hooks ───────────────────────────────────────────────────
 socket.on('hebbian_event', data => {
-  // data: {type:'new'|'strengthen', a, b, weight, fires}
+  // data: {type:'new'|'strengthen', a, b, weight, fires, src_region, dst_region}
   const icon  = data.type === 'new' ? '🔗' : '⚡';
   const color = data.type === 'new' ? '#00d4ff' : '#a855f7';
   const pct   = Math.round((data.weight||0)*100);
@@ -3898,13 +3903,50 @@ socket.on('hebbian_event', data => {
     ? `New pathway formed: ${(data.a||'').replace(/_/g,' ')} ↔ ${(data.b||'').replace(/_/g,' ')}`
     : `Pathway strengthened: ${(data.a||'').replace(/_/g,' ')} ↔ ${(data.b||'').replace(/_/g,' ')}`;
   addFeedEvent(icon, label, `Strength: ${pct}% · fired ${data.fires||1}×`, color);
+
+  // ── Drive canvas directly ──────────────────────────────────────────
+  const srcR = data.src_region;
+  const dstR = data.dst_region;
+  if (srcR && dstR && srcR !== dstR) {
+    // Synapse arc between the two brain regions
+    addSynapseEvent(srcR, dstR, Math.min(1.0, (data.weight||0.3) * 2), data.type || 'strengthen');
+    // Pulse along the pathway
+    addPulse(srcR, dstR, Math.min(1.0, data.weight || 0.4));
+    // Spike both regions
+    scheduleSpikeWave(srcR, Math.min(1.0, (data.weight||0.3) * 1.5));
+    scheduleSpikeWave(dstR, Math.min(0.8, (data.weight||0.3) * 1.2));
+    // Update Hebbian weight map for fiber glow
+    if (!window._hebbianWeights) window._hebbianWeights = {};
+    window._hebbianWeights[srcR + '>' + dstR] = Math.max(
+      window._hebbianWeights[srcR+'>'+dstR] || 0,
+      data.weight || 0
+    );
+  }
 });
 
 socket.on('memory_event', data => {
-  // data: {type:'episode'|'fact', label, detail}
-  const icons = { episode:'💾', fact:'📌', topic:'🏷️' };
+  // data: {type:'episode'|'fact', label, detail, region}
+  const icons  = { episode:'💾', fact:'📌', topic:'🏷️' };
   const colors = { episode:'#00ff88', fact:'#ffcc00', topic:'#fb923c' };
   addFeedEvent(icons[data.type]||'💾', data.label, data.detail||'', colors[data.type]||'#64748b');
+
+  // ── Memory → canvas: hippocampus lights up + pathway to relevant region ──
+  scheduleSpikeWave('hippocampus', 0.55);
+  addLearningBurst('hippocampus', 'weight_update', 0.5);
+  // Episode: hippocampus ↔ default_mode (replay / consolidation)
+  if (data.type === 'episode') {
+    addSynapseEvent('hippocampus', 'default_mode', 0.5, 'strengthen');
+    addPulse('hippocampus', 'default_mode', 0.45);
+  }
+  // Fact / semantic: hippocampus ↔ language (conceptual encoding)
+  if (data.type === 'fact') {
+    addSynapseEvent('hippocampus', 'language', 0.4, 'strengthen');
+    addPulse('hippocampus', 'language', 0.4);
+  }
+  // If a specific region is tagged
+  if (data.region && data.region !== 'hippocampus') {
+    addPulse('hippocampus', data.region, 0.35);
+  }
 });
 
 socket.on('region_spike', data => {
@@ -3915,23 +3957,63 @@ socket.on('region_spike', data => {
     default_mode:'#4ade80', thalamus:'#f9a8d4', cerebellum:'#7ec8e3',
     association:'#fb923c', social:'#ff006e', metacognition:'#ff4060',
   };
+  const col = REGION_COLORS[data.region] || '#64748b';
   if (data.activation > 0.5) {
-    const col = REGION_COLORS[data.region] || '#64748b';
     addFeedEvent('🧠', `${(data.region||'').replace(/_/g,' ')} surging`, data.reason||`Activation: ${Math.round(data.activation*100)}%`, col);
+  }
+
+  // ── Fire into canvas directly ──────────────────────────────────────
+  if (data.region && (data.activation||0) > 0.20) {
+    scheduleSpikeWave(data.region, data.activation || 0.4);
+    addLearningBurst(data.region, 'surprise', data.activation || 0.3);
+
+    // Automatically pulse the thalamus→region pathway (all signals route via thalamus)
+    if (data.region !== 'thalamus') {
+      addPulse('thalamus', data.region, (data.activation||0.3) * 0.7);
+    }
+    // If high activation, pulse to association cortex (cross-modal binding)
+    if ((data.activation||0) > 0.55 && data.region !== 'association') {
+      addPulse(data.region, 'association', (data.activation||0.3) * 0.5);
+    }
   }
 });
 
-// Intercept existing socket events
-const _origResponse = null;
+// Intercept existing socket events and drive canvas
 socket.on('thinking', d => {
-  if (d.state) addFeedEvent('⚙️', 'Processing input…', 'Neural fabric integrating stimulus', '#64748b');
+  if (d.state) {
+    addFeedEvent('⚙️', 'Processing input…', 'Neural fabric integrating stimulus', '#64748b');
+    // Thinking = prefrontal + thalamus + association light up
+    scheduleSpikeWave('prefrontal', 0.70);
+    scheduleSpikeWave('thalamus', 0.60);
+    scheduleSpikeWave('association', 0.50);
+    addPulse('thalamus', 'prefrontal', 0.65);
+    addPulse('prefrontal', 'association', 0.55);
+    addLearningBurst('prefrontal', 'surprise', 0.5);
+  } else {
+    // Done thinking — metacognition evaluates the output
+    scheduleSpikeWave('metacognition', 0.45);
+  }
 });
 socket.on('response', () => {
   addFeedEvent('💬', 'Response generated', 'Language + prefrontal cortex output', '#00d4ff');
+  // Response generation = language → prefrontal → social
+  scheduleSpikeWave('language', 0.75);
+  scheduleSpikeWave('prefrontal', 0.55);
+  addSynapseEvent('prefrontal', 'language', 0.6, 'strengthen');
+  addPulse('prefrontal', 'language', 0.65);
+  addPulse('language', 'social', 0.45);
+  addLearningBurst('language', 'weight_update', 0.55);
 });
 socket.on('transcript', d => {
   addFeedEvent('🎤', 'Voice input received', `"${(d.text||'').slice(0,50)}${d.text&&d.text.length>50?'…':''}"`, '#00ff88');
-  addSynapseEvent('auditory', 'language', 0.6, 'strengthen');
+  // Hearing voice = auditory → language → thalamus gates attention
+  scheduleSpikeWave('auditory', 0.80);
+  scheduleSpikeWave('language', 0.60);
+  scheduleSpikeWave('thalamus', 0.55);
+  addSynapseEvent('auditory', 'language', 0.65, 'strengthen');
+  addPulse('auditory', 'language', 0.70);
+  addPulse('thalamus', 'prefrontal', 0.50);
+  addLearningBurst('auditory', 'surprise', 0.6);
 });
 
 
@@ -3949,15 +4031,132 @@ socket.on('synapse_count', data => {
 
 socket.on('thought', d => {
   document.getElementById('thought-bar').textContent = d.text || '';
+  // Inner monologue = default_mode + prefrontal + metacognition activate
+  scheduleSpikeWave('default_mode', 0.55);
+  scheduleSpikeWave('prefrontal', 0.35);
+  addPulse('default_mode', 'prefrontal', 0.40);
+  addPulse('default_mode', 'metacognition', 0.35);
+});
+
+socket.on('knowledge_ingested', d => {
+  // Knowledge ingestion: association + language + hippocampus fire together
+  scheduleSpikeWave('association', 0.65);
+  scheduleSpikeWave('language', 0.55);
+  scheduleSpikeWave('hippocampus', 0.60);
+  addSynapseEvent('language', 'association', 0.55, 'strengthen');
+  addSynapseEvent('association', 'hippocampus', 0.50, 'new');
+  addPulse('language', 'association', 0.60);
+  addPulse('association', 'hippocampus', 0.55);
+  addLearningBurst('association', 'weight_update', 0.65);
+  addLearningBurst('hippocampus', 'reward', 0.45);
+});
+
+socket.on('surprise_event', d => {
+  // Surprise: amygdala + thalamus spike hard, norepinephrine floods system
+  scheduleSpikeWave('amygdala', 0.80);
+  scheduleSpikeWave('thalamus', 0.70);
+  scheduleSpikeWave('prefrontal', 0.60);
+  addPulse('thalamus', 'amygdala', 0.75);
+  addPulse('amygdala', 'prefrontal', 0.65);
+  addLearningBurst('amygdala', 'surprise', 0.80);
+  addSynapseEvent('thalamus', 'amygdala', 0.7, 'new');
+});
+
+socket.on('drive_state', d => {
+  // Active drives correspond to specific brain regions
+  const driveRegions = {
+    curiosity:    'association',
+    rest:         'default_mode',
+    social:       'social',
+    explore:      'association',
+    consolidate:  'hippocampus',
+    reflect:      'metacognition',
+    maintain:     'cerebellum',
+  };
+  if (d.drives) {
+    Object.entries(d.drives).forEach(([drive, info]) => {
+      const urgency = typeof info === 'object' ? (info.urgency || 0) : info;
+      const region  = driveRegions[drive];
+      if (region && urgency > 0.40) {
+        scheduleSpikeWave(region, Math.min(1.0, urgency * 0.8));
+        addPulse('thalamus', region, urgency * 0.6);
+      }
+    });
+  }
+});
+
+// ── Active pathway signal from cognitive cycle (every ~0.5s) ─────────────────
+// This is the REAL-TIME dominant activation route through the brain.
+// At idle: default_mode → prefrontal → metacognition
+// During thought: thalamus → association → language → prefrontal
+// etc.
+socket.on('active_pathways', d => {
+  if (!d.pairs || !d.pairs.length) return;
+  d.pairs.forEach(pair => {
+    const { src_region, dst_region, weight } = pair;
+    if (!src_region || !dst_region || src_region === dst_region) return;
+    // Pulse along the real cognitive pathway
+    addPulse(src_region, dst_region, Math.min(1.0, (weight || 0.2) * 3));
+    // Spike both regions proportional to their actual activations
+    scheduleSpikeWave(src_region, Math.min(0.9, (weight || 0.2) * 2.5));
+    scheduleSpikeWave(dst_region, Math.min(0.7, (weight || 0.2) * 2.0));
+    // Update Hebbian weight so established paths glow persistently
+    if (!window._hebbianWeights) window._hebbianWeights = {};
+    const key = src_region + '>' + dst_region;
+    window._hebbianWeights[key] = Math.min(1.0,
+      (window._hebbianWeights[key] || 0) * 0.92 + (weight || 0.2) * 0.08
+    );
+  });
+  // Slow decay: learned paths that aren't used gradually dim
+  if (window._hebbianWeights) {
+    Object.keys(window._hebbianWeights).forEach(k => {
+      window._hebbianWeights[k] *= 0.995;
+      if (window._hebbianWeights[k] < 0.01) delete window._hebbianWeights[k];
+    });
+  }
 });
 
 socket.on('neural_state', d => {
   neuralState = d;
   updateNeuralPanel(d);
-  // Animate newly formed / strengthened synapses
+
+  // ── Drive canvas directly from real backend events ──────────────────
+  // 1. Newly formed / strengthened Hebbian synapses → visible arc on canvas
   if (d.new_synapses && d.new_synapses.length) {
     d.new_synapses.forEach(s => {
-      addSynapseEvent(s.src_region, s.dst_region, s.strength, s.type);
+      if (s.src_region && s.dst_region && s.src_region !== s.dst_region) {
+        addSynapseEvent(s.src_region, s.dst_region, s.strength || 0.4, s.type || 'strengthen');
+      }
+    });
+  }
+
+  // 2. Top routes from predictor → pulse along the brain's strongest pathways
+  if (d.top_routes && d.top_routes.length) {
+    d.top_routes.forEach(route => {
+      const srcR = route.src_region;
+      const dstR = route.dst_region;
+      const w    = route.weight || 0.3;
+      if (srcR && dstR && srcR !== dstR) {
+        addPulse(srcR, dstR, Math.min(1.0, w * 1.5));
+      }
+    });
+  }
+
+  // 3. Update Hebbian weight overlay so fibers glow proportional to learned strength
+  if (d.top_routes) {
+    if (!window._hebbianWeights) window._hebbianWeights = {};
+    d.top_routes.forEach(r => {
+      if (r.src_region && r.dst_region) {
+        const key = r.src_region + '>' + r.dst_region;
+        window._hebbianWeights[key] = Math.max(window._hebbianWeights[key]||0, r.weight||0);
+      }
+    });
+  }
+
+  // 4. Spike active regions → light up their neuron clusters
+  if (d.regions) {
+    Object.entries(d.regions).forEach(([region, act]) => {
+      if (act > 0.30) scheduleSpikeWave(region, act);
     });
   }
 });
