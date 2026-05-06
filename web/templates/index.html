@@ -131,7 +131,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);
 .neuro-title{font-size:10px;color:#94a3b8;letter-spacing:2px;
              text-transform:uppercase;margin-bottom:8px;display:flex;align-items:center;gap:6px;
              border-bottom:1px solid #0f172a;padding-bottom:5px;}
-.bar-row{display:flex;align-items:center;gap:7px;margin:5px 0;}
+.bar-row{display:flex;flex-direction:column;gap:2px;margin:6px 0;}
+.bar-row-main{display:flex;align-items:center;gap:7px;}
+.bar-desc{font-size:8px;color:#475569;line-height:1.3;padding-left:2px;margin-bottom:1px;}
 .bar-label{width:120px;font-size:10px;color:#94a3b8;flex-shrink:0;
            overflow:hidden;text-overflow:ellipsis;white-space:nowrap;letter-spacing:.02em;}
 .bar-track{flex:1;height:10px;background:#0a0a18;border-radius:5px;overflow:hidden;position:relative;}
@@ -199,9 +201,7 @@ canvas.spark{display:block;}
 .fact-val{font-size:7.5px;color:#c4b5fd;flex:1;word-break:break-word;}
 .topic-chip{display:inline-block;background:#1e1b4b;border:1px solid #3730a3;border-radius:10px;padding:2px 7px;font-size:7.5px;color:#818cf8;margin:2px;}
 /* Region bar tooltips */
-.bar-row{position:relative;}
-.bar-row .region-desc{display:none;position:absolute;left:100%;top:0;z-index:20;width:160px;background:#0d1117;border:1px solid #1e293b;border-radius:5px;padding:6px 8px;font-size:8px;color:#94a3b8;line-height:1.5;white-space:normal;margin-left:6px;}
-.bar-row:hover .region-desc{display:block;}
+
 
 /* -- VISION -- */
 #vision-canvas{width:100%;height:100%;display:block;image-rendering:pixelated;}
@@ -3299,11 +3299,13 @@ function updateNeuralPanel(state) {
       const desc = NM_DESC[k] || '';
       const displayName = k.charAt(0).toUpperCase() + k.slice(1);
       pushSpark('nm_' + k, v||0);
-      nmHtml += `<div class="bar-row" style="position:relative;" data-nm="${k}">
-        <div class="bar-label" title="${desc}">${displayName}</div>
-        <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${col}"></div></div>
-        <div class="bar-val">${pct}%</div>
-        ${desc ? `<div class="region-desc"><strong style="color:#e2e8f0;">${displayName}</strong><br>${desc}</div>` : ''}
+      nmHtml += `<div class="bar-row" data-nm="${k}">
+        <div class="bar-row-main">
+          <div class="bar-label">${displayName}</div>
+          <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${col}"></div></div>
+          <div class="bar-val">${pct}%</div>
+        </div>
+        ${desc ? `<div class="bar-desc">${desc}</div>` : ''}
       </div>`;
     }
     nmContainer.innerHTML = nmHtml;
@@ -3360,11 +3362,13 @@ function updateNeuralPanel(state) {
       const heat = pct > 80 ? 'hot' : pct > 50 ? 'warm' : '';
       const desc = CLUSTER_DESC[c.name] || '';
       const lbl  = c.name.replace(/_/g,' ');
-      clHtml += `<div class="bar-row cluster-bar ${heat}" data-cluster="${c.name}" style="position:relative;">
-        <div class="bar-label" style="cursor:${desc?'help':'default'};">${lbl}</div>
-        <div class="bar-track"><div class="bar-fill" style="width:${pct}%;"></div></div>
-        <div class="bar-val">${pct}%</div>
-        ${desc ? `<div class="region-desc"><strong style="color:#e2e8f0;">${lbl}</strong><br>${desc}</div>` : ''}
+      clHtml += `<div class="bar-row cluster-bar ${heat}" data-cluster="${c.name}">
+        <div class="bar-row-main">
+          <div class="bar-label">${lbl}</div>
+          <div class="bar-track"><div class="bar-fill" style="width:${pct}%;"></div></div>
+          <div class="bar-val">${pct}%</div>
+        </div>
+        ${desc ? `<div class="bar-desc">${desc}</div>` : ''}
       </div>`;
     });
     clusterContainer.innerHTML = clHtml;
@@ -3398,11 +3402,13 @@ function updateNeuralPanel(state) {
       const heat  = pct > 80 ? 'max' : pct > 55 ? 'hot' : pct > 30 ? 'mid' : '';
       const label = r.replace(/_/g,' ');
       pushSpark('reg_' + r, v||0);
-      regHtml += `<div class="bar-row region-bar ${heat}" data-reg="${r}" style="position:relative;">
-        <div class="bar-label" title="${info.desc}">${label}</div>
-        <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${info.color}"></div></div>
-        <div class="bar-val">${pct}%</div>
-        ${info.desc ? `<div class="region-desc"><strong style="color:#e2e8f0;">${label}</strong><br>${info.desc}</div>` : ''}
+      regHtml += `<div class="bar-row region-bar ${heat}" data-reg="${r}">
+        <div class="bar-row-main">
+          <div class="bar-label">${label}</div>
+          <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${info.color}"></div></div>
+          <div class="bar-val">${pct}%</div>
+        </div>
+        ${info.desc ? `<div class="bar-desc">${info.desc}</div>` : ''}
       </div>`;
     }
     regContainer.innerHTML = regHtml;
