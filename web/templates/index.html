@@ -331,9 +331,9 @@ canvas.spark{display:block;}
   </div>
 
   <!-- COL 2: Neural Canvas (top) + Chat (bottom) -->
-  <div class="panel" style="grid-column:2;min-height:0;height:100%;display:flex;flex-direction:column;">
+  <div class="panel" style="grid-column:2;min-height:0;display:flex;flex-direction:column;">
     <div class="panel-title">🧠 Neural Activity -- <span id="neuron-count">0</span> neurons | <span id="conn-count" style="color:#00ff88;transition:color 0.3s;">0</span> synaptic connections</div>
-    <div class="panel-body" id="neural-panel-body" style="padding:0;background:#020205;position:relative;overflow:hidden;flex:1;min-height:400px;">
+    <div class="panel-body" id="neural-panel-body" style="padding:0;background:#020205;position:relative;overflow:hidden;flex:1;min-height:0;">
       <canvas id="neural-canvas" width="800" height="500" style="width:100%;height:100%;display:block;"></canvas>
       <div id="region-legend" style="
         position:absolute;top:8px;right:8px;
@@ -1553,10 +1553,7 @@ socket.on('diagnostic_result', function(d) {
 
 // -- Neural canvas ---------------------------------------------
 const nCanvas = document.getElementById('neural-canvas');
-if (!nCanvas) { console.error('[AXON] FATAL: neural-canvas element not found in DOM'); }
-const nCtx    = nCanvas ? nCanvas.getContext('2d') : null;
-if (!nCtx)    { console.error('[AXON] FATAL: could not get 2d context from canvas'); }
-console.log('[AXON] canvas element:', nCanvas, 'ctx:', nCtx ? 'OK' : 'NULL');
+const nCtx    = nCanvas.getContext('2d');
 let neuronNodes  = [];
 let neuralState  = null;
 let axonFrame    = 0;
@@ -1805,14 +1802,14 @@ function addConflictPair(r1, r2, intensity) {
 
 // Per-neuron neighbor list (cross-region via AXON_ROUTES + within-region)
 function initNeurons(forceW, forceH) {
-  // Use forced dimensions first, then BoundingClientRect, then hardcoded fallback
+  // MOST RELIABLE: read the canvas element's own rendered rect
+  // (works even when parent is position:relative with no explicit height)
   const r = nCanvas.getBoundingClientRect();
-  const W = (forceW && forceW > 10) ? forceW : (Math.round(r.width) > 10 ? Math.round(r.width) : 800);
-  const H = (forceH && forceH > 10) ? forceH : (Math.round(r.height) > 10 ? Math.round(r.height) : 500);
-  // Always set canvas pixel buffer — never bail
+  const W = forceW || Math.round(r.width)  || 800;
+  const H = forceH || Math.round(r.height) || 500;
+  if (W < 10 || H < 10) return;   // not laid out yet — caller will retry
   nCanvas.width  = W;
   nCanvas.height = H;
-  console.log("[AXON] neuronNodes WIPE — W:", W, "H:", H, new Error().stack.split("\n")[2]);
   neuronNodes = [];
 
   for (const [region, props] of Object.entries(REGION_DEFS)) {
@@ -1873,7 +1870,6 @@ function initNeurons(forceW, forceH) {
     }
   });
 
-  console.log('[AXON] initNeurons done:', neuronNodes.length, 'neurons, canvas:', nCanvas.width, 'x', nCanvas.height);
   buildLegend();
 }
 
@@ -1917,20 +1913,12 @@ function drawNeural() {
     requestAnimationFrame(drawNeural);
     return;
   }
-  if (axonFrame === 1) {
-    console.log('[AXON] drawNeural first paint — canvas:', nCanvas.width, 'x', nCanvas.height, 'neurons:', neuronNodes.length);
-    // Paint a visible red flash on frame 1 to prove the canvas is reachable
-    nCtx.fillStyle = '#ff0000';
-    nCtx.fillRect(0, 0, nCanvas.width, nCanvas.height);
-    nCtx.fillStyle = '#ffffff';
-    nCtx.font = 'bold 32px monospace';
-    nCtx.fillText('AXON PAINT TEST', 50, 80);
-  }
   axonFrame++;
   const W = nCanvas.width, H = nCanvas.height;
 
-  // Trail fade
-  nCtx.fillStyle = 'rgba(2,2,6,0.38)';
+  // Trail fade — faster = tighter, more reactive visual
+  // At 60fps: 0.35 means ~5-6 frames persistence (sharp and clean)
+  nCtx.fillStyle = 'rgba(2,2,6,0.38)';  // gentle wipe so ghost clusters stay visible
   nCtx.fillRect(0, 0, W, H);
 
   // When backend isn't connected, use an idle baseline so neurons stay visible
@@ -2798,7 +2786,7 @@ function drawNeural() {
   // ── Pruned connection fades ────────────────────────────────────────────
   drawPrunedConnections(nCtx, W, H);
 
-  } catch(e) { console.error("[AXON] drawNeural CRASH:", e.message, e.stack); }
+  } catch(e) { console.warn("[AXON] drawNeural error:", e); }
   requestAnimationFrame(drawNeural);
 }
 
@@ -4213,54 +4201,84 @@ socket.on('voice_speaking', d => {
 
 // -- Init ------------------------------------------------------
 window.addEventListener('resize', () => {
+  // Debounce resize
   clearTimeout(window._resizeTimer);
   window._resizeTimer = setTimeout(() => {
-    // Resize the canvas pixels but don't restart the loop
-    const p = document.getElementById('neural-panel-body');
-    if (p && p.offsetWidth > 20 && p.offsetHeight > 20) {
-      nCanvas.width  = p.offsetWidth;
-      nCanvas.height = p.offsetHeight;
-      initNeurons(p.offsetWidth, p.offsetHeight);
-      buildLegend();
-      // If loop somehow died, restart it
-      if (!_neuralLoopStarted) { _neuralLoopStarted = true; drawNeural(); }
-    }
+    initNeurons();
     const vc = document.getElementById('vision-canvas');
-    if (vc && vc.offsetWidth > 0) {
+    if (vc.offsetWidth > 0) {
       vc.width  = vc.offsetWidth;
       vc.height = vc.offsetHeight;
     }
+    // Redraw radar if brain tab is active
     if (window.neuralState) drawBrainRadar(window.neuralState.regions || {});
   }, 150);
 });
-// ── Neural Canvas Boot ────────────────────────────────────────────────────────
-let _neuralLoopStarted = false;
-
-function _bootNeuralCanvas() {
-  if (!nCanvas || !nCtx) { console.error('[AXON] canvas/ctx null at boot'); return; }
-  const p = document.getElementById('neural-panel-body');
-  const w = (p && p.offsetWidth > 20) ? p.offsetWidth : (nCanvas.offsetWidth > 20 ? nCanvas.offsetWidth : 800);
-  const h = (p && p.offsetHeight > 20) ? p.offsetHeight : (nCanvas.offsetHeight > 20 ? nCanvas.offsetHeight : 500);
-  nCanvas.width  = w;
-  nCanvas.height = h;
-  initNeurons(w, h);
-  buildLegend();
-  if (!_neuralLoopStarted) {
-    _neuralLoopStarted = true;
-    console.log('[AXON] starting drawNeural loop — canvas:', w, 'x', h, 'neurons:', neuronNodes.length);
-    drawNeural();
-  }
-}
-
 window.addEventListener('load', () => {
   buildPersonalitySliders();
-  _bootNeuralCanvas();
 
-  // Also snap after layout settles
-  setTimeout(_bootNeuralCanvas, 300);
-  setTimeout(_bootNeuralCanvas, 800);
+  // ── Neural Canvas Boot ────────────────────────────────────────────────────
+  // Canvas is position:absolute;inset:0 inside a position:relative parent.
+  // The parent div (#neural-panel-body) fills via flex:1 in its column.
+  // We MUST set nCanvas.width/height (the pixel buffer) to match the PARENT's
+  // rendered size. We read offsetWidth/offsetHeight from the parent — these are
+  // always real pixel values once the browser has laid out the page.
+  let _neuralBooted = false;
 
-  // Brain radar idle baseline
+  // ── Neural Canvas Boot (ResizeObserver — rock solid) ────────────────────────
+  // Strategy: observe the PARENT for size changes. When we get a real size,
+  // sync the canvas pixel buffer and init neurons. No polling needed.
+  function _syncCanvasToParent(w, h) {
+    if (w < 20 || h < 20) return;
+    nCanvas.width  = w;
+    nCanvas.height = h;
+    initNeurons(w, h);
+    buildLegend();
+    if (!_neuralBooted) {
+      _neuralBooted = true;
+      drawNeural();  // start the animation loop (self-perpetuating via rAF)
+      console.log('[AXON] neural canvas live:', w, 'x', h);
+    }
+  }
+
+  const _canvasParent = document.getElementById('neural-panel-body');
+  if (_canvasParent) {
+    // ResizeObserver: fires when the element is laid out and whenever it resizes
+    if (window.ResizeObserver) {
+      const _ro = new ResizeObserver(entries => {
+        for (const e of entries) {
+          const nw = Math.floor(e.contentRect.width);
+          const nh = Math.floor(e.contentRect.height);
+          if (nw > 20 && nh > 20) {
+            if (!_neuralBooted || Math.abs(nCanvas.width - nw) > 4 || Math.abs(nCanvas.height - nh) > 4) {
+              _syncCanvasToParent(nw, nh);
+            }
+          }
+        }
+      });
+      _ro.observe(_canvasParent);
+    }
+    // Fallback: poll in case ResizeObserver fires before layout is complete
+    // Boot immediately with 800x500 — CSS stretches it to fill the panel visually
+    // Don't wait for offsetHeight which may be 0 during grid layout
+    _syncCanvasToParent(800, 500);
+
+    // Then snap to real dimensions once layout is done
+    function _bootPoll() {
+      if (!_canvasParent) return;
+      const w = _canvasParent.offsetWidth;
+      const h = _canvasParent.offsetHeight;
+      if (w > 20 && h > 20) {
+        nCanvas.width  = w;
+        nCanvas.height = h;
+        initNeurons(w, h);
+        buildLegend();
+      }
+    }
+    [100, 300, 700, 1500].forEach(t => setTimeout(_bootPoll, t));
+  }
+
+  // Brain radar idle baseline (doesn't depend on canvas boot)
   [200, 600, 1500].forEach(t => setTimeout(() => { if (typeof drawBrainRadar === 'function') drawBrainRadar({}); }, t));
 });
 
