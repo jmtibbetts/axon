@@ -2791,7 +2791,7 @@ function drawNeural() {
   // ── Pruned connection fades ────────────────────────────────────────────
   drawPrunedConnections(nCtx, W, H);
 
-  } catch(e) { console.warn("[AXON] drawNeural error:", e); }
+  } catch(e) { console.error("[AXON] drawNeural CRASH:", e.message, e.stack); }
   requestAnimationFrame(drawNeural);
 }
 
