@@ -1902,6 +1902,21 @@ function scheduleSpikeWave(regionName, intensity) {
 }
 
 function drawNeural() {
+  try {
+
+  // Self-heal: if canvas buffer is 0x0, re-sync from CSS layout
+  if (nCanvas.width === 0 || nCanvas.height === 0) {
+    const pw = nCanvas.offsetWidth  || nCanvas.parentElement.offsetWidth  || 700;
+    const ph = nCanvas.offsetHeight || nCanvas.parentElement.offsetHeight || 440;
+    if (pw > 0 && ph > 0) {
+      nCanvas.width  = pw;
+      nCanvas.height = ph;
+      if (neuronNodes.length === 0) { initNeurons(); buildLegend(); }
+    } else {
+      requestAnimationFrame(drawNeural);
+      return; // can't draw yet, wait for layout
+    }
+  }
   axonFrame++;
   const W = nCanvas.width, H = nCanvas.height;
 
@@ -2767,6 +2782,7 @@ function drawNeural() {
   // ── Pruned connection fades ────────────────────────────────────────────
   drawPrunedConnections(nCtx, W, H);
 
+  } catch(e) { console.warn("[AXON] drawNeural error:", e); }
   requestAnimationFrame(drawNeural);
 }
 
@@ -2999,6 +3015,8 @@ function updateVAPlot(emo) {
 
 // -- Brain Radar chart -------------------------------------------
 function drawBrainRadar(regions) {
+  try {
+
   const canvas = document.getElementById('brain-radar');
   if (!canvas) return;
   // Only resize if the canvas is visible (offsetWidth > 0)
@@ -3076,6 +3094,7 @@ function drawBrainRadar(regions) {
     const label = k.length > 6 ? k.slice(0,6) : k;
     ctx.fillText(label, x, y);
   });
+  } catch(e) { console.warn("[AXON] drawBrainRadar:", e); }
 }
 
 const NM_COLORS = {
@@ -3084,6 +3103,9 @@ const NM_COLORS = {
 };
 
 function updateNeuralPanel(state) {
+  if (!state) return;
+  try {
+
   // ── Conflict + CognitiveState + Critic panel ──────────────────────────────
   if (state.conflict) {
     const dom = (state.conflict.top_dominant || []).slice(0,3)
@@ -3365,6 +3387,9 @@ function updateNeuralPanel(state) {
   document.getElementById('neuron-count').textContent =
     (state.total_neurons||0).toLocaleString();
   // conn-count updated via synapse_count event
+  } catch(err) {
+    console.warn("[AXON] updateNeuralPanel threw:", err);
+  }
 }
 
 // -- Chat ------------------------------------------------------
@@ -4091,12 +4116,14 @@ socket.on('active_pathways', d => {
 socket.on('neural_state', d => {
   neuralState = d;
   window.neuralState = d;  // expose for tab-switch redraws
-  updateNeuralPanel(d);
+  try { updateNeuralPanel(d); } catch(e) { console.warn('[AXON] updateNeuralPanel error:', e); }
   // Also update emotion bars (merged from duplicate handler)
   if (d && d.neuromod) {
     const reward   = d.recent_reward || d.reward_avg || d.last_reward || 0;
     const surprise = d.last_surprise || 0;
-    if (typeof updateEmotionBars === 'function') updateEmotionBars(d.neuromod, reward, surprise);
+    try {
+      if (typeof updateEmotionBars === 'function') updateEmotionBars(d.neuromod, reward, surprise);
+    } catch(e) { console.warn('[AXON] updateEmotionBars error:', e); }
   }
 
   // ── Drive canvas directly from real backend events ──────────────────
@@ -4172,26 +4199,41 @@ window.addEventListener('resize', () => {
 });
 window.addEventListener('load', () => {
   buildPersonalitySliders();
-  // Defer canvas init until after layout paint so offsetWidth/Height are real
-  function _tryInit(attempts) {
-    const w = nCanvas.offsetWidth;
-    const h = nCanvas.offsetHeight;
-    if (w > 0 && h > 0) {
-      initNeurons();
-      buildLegend();
-      drawNeural();
-    } else if (attempts > 0) {
-      requestAnimationFrame(() => _tryInit(attempts - 1));
-    } else {
-      // Fallback: force a size and start anyway
-      nCanvas.width  = nCanvas.parentElement.offsetWidth  || 700;
-      nCanvas.height = nCanvas.parentElement.offsetHeight || 440;
-      initNeurons();
-      buildLegend();
-      drawNeural();
-    }
+  let _neuralStarted = false;
+  function _startNeuralCanvas() {
+    if (_neuralStarted) return;
+    const pw = nCanvas.parentElement.offsetWidth;
+    const ph = nCanvas.parentElement.offsetHeight;
+    if (pw < 10 || ph < 10) return; // not laid out yet
+    _neuralStarted = true;
+    nCanvas.width  = pw;
+    nCanvas.height = ph;
+    initNeurons();
+    buildLegend();
+    drawNeural();
   }
-  requestAnimationFrame(() => _tryInit(20));
+  // ResizeObserver is the most reliable way to know when layout is ready
+  if (window.ResizeObserver) {
+    const ro = new ResizeObserver(entries => {
+      for (const e of entries) {
+        const { width, height } = e.contentRect;
+        if (width > 10 && height > 10) {
+          _startNeuralCanvas();
+          // Also handle live resize: re-init if already started
+          if (_neuralStarted && (Math.abs(nCanvas.width - width) > 4 || Math.abs(nCanvas.height - height) > 4)) {
+            nCanvas.width  = Math.floor(width);
+            nCanvas.height = Math.floor(height);
+            initNeurons();
+          }
+        }
+      }
+    });
+    ro.observe(nCanvas.parentElement);
+  }
+  // Fallback: also try via RAF in case ResizeObserver misses the initial paint
+  requestAnimationFrame(() => { _startNeuralCanvas(); });
+  setTimeout(_startNeuralCanvas, 200);
+  setTimeout(_startNeuralCanvas, 600);
 });
 
 // ── Personality Sliders ─────────────────────────────────────────────────────
