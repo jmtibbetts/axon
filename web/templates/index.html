@@ -33,8 +33,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);
              padding:0 8px;}
 
 /* -- MAIN GRID -- */
-.grid{display:grid;grid-template-columns:220px 1fr 260px;
-      grid-template-rows:1fr 260px;gap:6px;padding:6px;
+.grid{display:grid;grid-template-columns:220px 1fr;
+      grid-template-rows:1fr;gap:6px;padding:6px;
       flex:1;overflow:hidden;}
 
 /* -- PANELS -- */
@@ -331,9 +331,9 @@ canvas.spark{display:block;}
   </div>
 
   <!-- COL 2: Neural Canvas (top) + Chat (bottom) -->
-  <div class="panel" style="grid-row:1;grid-column:2;">
-    <div class="panel-title">? Neural Activity -- <span id="neuron-count">0</span> neurons | <span id="conn-count" style="color:#00ff88;transition:color 0.3s;">0</span> synaptic connections</div>
-    <div class="panel-body" style="padding:0;background:#020205;position:relative;overflow:hidden;min-height:300px;">
+  <div class="panel" style="grid-row:1/3;grid-column:2;min-height:0;display:flex;flex-direction:column;">
+    <div class="panel-title">🧠 Neural Activity -- <span id="neuron-count">0</span> neurons | <span id="conn-count" style="color:#00ff88;transition:color 0.3s;">0</span> synaptic connections</div>
+    <div class="panel-body" style="padding:0;background:#020205;position:relative;overflow:hidden;flex:1;min-height:0;">
       <canvas id="neural-canvas" style="position:absolute;inset:0;width:100%;height:100%;display:block;"></canvas>
       <div id="region-legend" style="
         position:absolute;top:8px;right:8px;
@@ -367,10 +367,10 @@ canvas.spark{display:block;}
         </div>
       </div>
     </div>
-  </div>
-
-  <div class="panel" style="grid-row:2;grid-column:2;">
-    <div class="panel-title">? Consciousness Interface</div>
+  
+  <!-- Chat area (pinned to bottom of neural panel) -->
+  <div style="flex-shrink:0;height:240px;border-top:1px solid var(--border);">
+<div class="panel-title">💬 Consciousness Interface</div>
     <div class="chat-area">
       <div class="chat-messages" id="chat-messages"></div>
       <div class="chat-input">
@@ -400,797 +400,10 @@ canvas.spark{display:block;}
       </div>
     </div>
   </div>
+</div>
 
-  <!-- COL 3: Tabbed info panel -->
-  <div class="panel" style="grid-row:1/3;grid-column:3;overflow:hidden;display:flex;flex-direction:column;">
-    <!-- Tab bar -->
-    <div style="display:flex;border-bottom:1px solid var(--border);flex-shrink:0;">
-      <button class="info-tab active" data-tab="brain"       onclick="switchTab('brain')">🧠 Brain</button>
-      <button class="info-tab"        data-tab="activity"    onclick="switchTab('activity')">⚡ Activity</button>
-      <button class="info-tab"        data-tab="memory"      onclick="switchTab('memory')">💾 Memory</button>
-      <button class="info-tab"        data-tab="personality" onclick="switchTab('personality')">🎭 Persona</button>
-      <button class="info-tab"        data-tab="explain"     onclick="switchTab('explain');requestExplanation()">🔍 Why?</button>
-      <button class="info-tab"        data-tab="timeline"    onclick="switchTab('timeline')">📅 Timeline</button>
-      <button class="info-tab"        data-tab="knowme"      onclick="switchTab('knowme')">👤 Know Me</button>
-      <button class="info-tab"        data-tab="identity"    onclick="switchTab('identity')">🧬 Identity</button>
-      <button class="info-tab"        data-tab="voice"       onclick="switchTab('voice')">🎙️ Voice</button>
-      <button class="info-tab"        data-tab="people"      onclick="switchTab('people')">👥 People</button>
-      <button class="info-tab"        data-tab="llm"         onclick="switchTab('llm')">🤖 LLM</button>
-    </div>
 
-    <!-- TAB: Brain State -->
-    <div id="tab-brain" class="tab-pane active" style="overflow-y:auto;flex:1;padding:6px 8px;">
-
-      <!-- Emotion -->
-      <div class="neuro-section">
-        <div class="neuro-title">Emotional State</div>
-        <div class="emotion-ring" style="gap:8px;padding:8px 0;">
-          <div class="e-circle" id="e-circle" style="width:90px;height:90px;font-size:12px;">
-            <span id="e-name">...</span>
-          </div>
-          <div style="text-align:center;">
-            <div class="e-label" id="e-label" style="font-size:13px;font-weight:700;letter-spacing:.05em;">neutral</div>
-            <div class="e-coords" id="e-coords" style="font-size:8.5px;margin-top:2px;">v:0 a:0 i:0</div>
-          </div>
-        </div>
-        <!-- Valence / Arousal 2D scatter -->
-        <div style="margin-top:6px;">
-          <canvas id="va-plot" width="240" height="120"></canvas>
-          <div class="va-label">← negative &nbsp;|&nbsp; valence &nbsp;|&nbsp; positive →&nbsp;&nbsp;&nbsp;arousal ↕</div>
-        </div>
-      </div>
-
-      <!-- ─── Time-Scale Slider ─────────────────────────────────────────── -->
-      <div class="neuro-section" style="padding:8px 10px;">
-        <div class="neuro-title" style="display:flex;justify-content:space-between;align-items:center;">
-          <span>⏱ Cognitive Speed</span>
-          <span id="speed-label" style="color:#6366f1;font-size:0.78rem;font-weight:700;">Normal</span>
-        </div>
-        <input id="speed-slider" type="range" min="1" max="50" step="1" value="10"
-          oninput="onSpeedSlider(this.value)"
-          style="width:100%;margin:6px 0;accent-color:#6366f1;cursor:pointer;">
-        <div style="display:flex;justify-content:space-between;
-                    font-size:0.72rem;color:#475569;margin-top:2px;">
-          <span>Dreaming (0.1×)</span>
-          <span id="speed-hz-label" style="color:#94a3b8;">10.0 Hz</span>
-          <span>Hyperdrive (5×)</span>
-        </div>
-        <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
-          <button onclick="setSpeed(0.1)"  class="speed-preset-btn">💤 Dream</button>
-          <button onclick="setSpeed(0.5)"  class="speed-preset-btn">🐢 Slow</button>
-          <button onclick="setSpeed(1.0)"  class="speed-preset-btn">✅ Normal</button>
-          <button onclick="setSpeed(2.0)"  class="speed-preset-btn">⚡ Alert</button>
-          <button onclick="setSpeed(5.0)"  class="speed-preset-btn">🚀 Hyper</button>
-        </div>
-      </div>
-
-      <!-- Neuromodulators with descriptions -->
-      <div class="neuro-section">
-        <div class="neuro-title">Neuromodulators
-          <span class="section-hint">Chemical signals shaping cognition</span>
-        </div>
-        <div id="nm-bars"></div>
-      </div>
-
-      <!-- Personality -->
-      <div class="neuro-section">
-        <div class="neuro-title">Personality Traits</div>
-        <div id="trait-bars"></div>
-      </div>
-
-      <!-- Brain Radar chart -->
-      <div class="neuro-section">
-        <div class="neuro-title">Brain Radar</div>
-        <canvas id="brain-radar" width="260" height="200" style="width:100%;height:auto;max-height:220px;"></canvas>
-      </div>
-
-      <!-- Region Activity with descriptions -->
-      <div class="neuro-section">
-        <div class="neuro-title">Brain Regions
-          <span class="section-hint">Hover for description</span>
-        </div>
-        <div id="region-bars"></div>
-        <div id="conflict-panel" style="margin-top:6px;padding:5px 6px;background:#0a0014;border:1px solid #2d1b4e;border-radius:4px;display:flex;flex-direction:column;gap:4px;">
-
-          <!-- Row 1: Conflict Engine -->
-          <div>
-            <div style="font-size:7px;color:#7c3aed;letter-spacing:.08em;text-transform:uppercase;margin-bottom:2px;">⚔ Conflict Engine</div>
-            <div id="conflict-dominant" style="font-size:7.5px;color:#c4b5fd;">—</div>
-          </div>
-
-          <!-- Row 2: Cognitive State bars -->
-          <div style="font-size:7px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:1px;">🧠 Cognitive State</div>
-          <div style="display:grid;grid-template-columns:58px 1fr 22px;align-items:center;gap:2px 4px;font-size:7px;">
-            <span style="color:#94a3b8;">Confidence</span>
-            <div class="bar-track" style="height:6px;"><div id="cog-conf-bar" class="bar-fill" style="width:50%;background:#4ade80;"></div></div>
-            <span id="cog-conf-val" style="color:#4ade80;text-align:right;">50%</span>
-
-            <span style="color:#94a3b8;">Uncertainty</span>
-            <div class="bar-track" style="height:6px;"><div id="cog-unc-bar" class="bar-fill" style="width:50%;background:#f97316;"></div></div>
-            <span id="cog-unc-val" style="color:#f97316;text-align:right;">50%</span>
-
-            <span style="color:#94a3b8;">Urgency</span>
-            <div class="bar-track" style="height:6px;"><div id="cog-urg-bar" class="bar-fill" style="width:10%;background:#ef4444;"></div></div>
-            <span id="cog-urg-val" style="color:#ef4444;text-align:right;">10%</span>
-
-            <span style="color:#94a3b8;" title="How coherent recent thoughts are — high = on a train of thought, low = wandering">Coherence</span>
-            <div id="temporal-momentum" class="bar-track" style="height:6px;"><div id="temporal-momentum-bar" class="bar-fill" style="width:0%;background:#a78bfa;"></div></div>
-            <span id="temporal-momentum-val" style="color:#a78bfa;text-align:right;">—</span>
-          </div>
-
-          <!-- Row 3: Critic / Regret -->
-          <div style="display:flex;gap:8px;flex-wrap:wrap;font-size:7px;color:var(--muted);border-top:1px solid #1e1b4e;padding-top:3px;margin-top:1px;">
-            <span>Surprise <span id="pred-surprise" style="color:#f97316">—</span></span>
-            <span>ε <span id="explore-eps" style="color:#4ade80">—</span></span>
-            <span>Reward <span id="temp-reward" style="color:#a855f7">—</span></span>
-            <span>Regret <span id="cog-regret" style="color:#fb923c">—</span></span>
-            <span>Hesitations <span id="cog-hesit" style="color:#c084fc">—</span></span>
-            <span>Mem Depth <span id="temporal-depth" style="color:#818cf8">—</span></span>
-          </div>
-
-          <!-- Row 4: Top routes -->
-          <div style="font-size:7px;color:var(--muted);border-top:1px solid #1e1b4e;padding-top:3px;">
-            <span style="color:#475569;text-transform:uppercase;letter-spacing:.06em;">Top Routes: </span>
-            <span id="top-routes" style="color:#818cf8;">—</span>
-          </div>
-
-        </div>
-      </div>
-
-      <!-- Top clusters -->
-      <div class="neuro-section">
-        <div class="neuro-title">Active Clusters
-          <span class="section-hint">Top firing neuron groups</span>
-        </div>
-        <div id="cluster-bars"></div>
-      </div>
-    </div>
-
-    <!-- TAB: Activity Feed -->
-    <div id="tab-activity" class="tab-pane" style="overflow-y:auto;flex:1;display:none;padding:6px 8px;">
-
-      <!-- Drive Meters -->
-      <div class="neuro-section" style="margin-bottom:8px;">
-        <div class="neuro-title">⚡ Internal Drives
-          <span class="section-hint">Motivational pressure — rises when unmet, discharges on satisfaction</span>
-        </div>
-        <div id="drive-meters" style="display:flex;flex-direction:column;gap:5px;margin-top:4px;"></div>
-      </div>
-
-      <!-- Competing Thoughts — Internal Conflict Before Output -->
-      <div class="neuro-section" style="margin-bottom:8px;" id="thought-competition-section">
-        <div class="neuro-title" style="display:flex;justify-content:space-between;align-items:center;">
-          <span>🧠 Competing Thoughts</span>
-          <span id="thought-comp-count" style="font-size:0.72rem;color:#f59e0b;"></span>
-        </div>
-        <div class="section-hint" style="margin-bottom:4px;">Internal struggle before each response — candidates generated, scored, resolved</div>
-        <div id="thought-competition-list" style="display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto;"></div>
-      </div>
-
-      <!-- Autonomous Reflections -->
-      <div class="neuro-section" style="margin-bottom:8px;" id="reflections-section">
-        <div class="neuro-title" style="display:flex;justify-content:space-between;align-items:center;">
-          <span>💭 Autonomous Reflections</span>
-          <span id="reflection-count" style="font-size:0.72rem;color:#6366f1;"></span>
-        </div>
-        <div class="section-hint" style="margin-bottom:4px;">Thoughts AXON forms without being asked</div>
-        <div id="reflection-stream" style="display:flex;flex-direction:column;gap:5px;max-height:220px;overflow-y:auto;"></div>
-      </div>
-
-      <!-- Narrative Worldviews -->
-      <div class="neuro-section" style="margin-bottom:8px;">
-        <div class="neuro-title" style="display:flex;justify-content:space-between;align-items:center;">
-          <span>⚔️ Competing Worldviews</span>
-          <span id="narrative-dominant" style="font-size:0.72rem;color:#f59e0b;font-weight:700;"></span>
-        </div>
-        <div class="section-hint" style="margin-bottom:4px;">Internal belief constellations competing for dominance</div>
-        <div id="narrative-bars" style="display:flex;flex-direction:column;gap:3px;margin-top:4px;"></div>
-      </div>
-
-      <!-- Emotional State Bar -->
-      <div class="neuro-section" style="margin-bottom:8px;">
-        <div class="neuro-title">🎭 Emotional State</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:4px;">
-          <div>
-            <div style="font-size:0.7rem;color:#94a3b8;margin-bottom:2px;">Norepinephrine (alertness)</div>
-            <div style="height:8px;background:#0f172a;border-radius:4px;overflow:hidden;border:1px solid #1e293b;">
-              <div id="emo-ne-bar" style="height:100%;width:50%;background:linear-gradient(90deg,#3b82f6,#8b5cf6);border-radius:4px;transition:width 0.4s;"></div>
-            </div>
-          </div>
-          <div>
-            <div style="font-size:0.7rem;color:#94a3b8;margin-bottom:2px;">Reward trend</div>
-            <div style="height:8px;background:#0f172a;border-radius:4px;overflow:hidden;border:1px solid #1e293b;">
-              <div id="emo-reward-bar" style="height:100%;width:50%;background:linear-gradient(90deg,#10b981,#34d399);border-radius:4px;transition:width 0.4s;"></div>
-            </div>
-          </div>
-          <div>
-            <div style="font-size:0.7rem;color:#94a3b8;margin-bottom:2px;">Surprise score</div>
-            <div style="height:8px;background:#0f172a;border-radius:4px;overflow:hidden;border:1px solid #1e293b;">
-              <div id="emo-surprise-bar" style="height:100%;width:20%;background:linear-gradient(90deg,#f59e0b,#f87171);border-radius:4px;transition:width 0.4s;"></div>
-            </div>
-          </div>
-          <div>
-            <div style="font-size:0.7rem;color:#94a3b8;margin-bottom:2px;">Mood label</div>
-            <div id="emo-mood-label" style="font-size:0.85rem;font-weight:700;color:#e2e8f0;padding-top:2px;">—</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Thought Trace -->
-      <div class="neuro-section" style="margin-bottom:8px;">
-        <div class="neuro-title">🧵 Thought Trace
-          <span class="section-hint">Snapshot of each cognitive cycle — what competed, what won, why</span>
-        </div>
-        <div id="thought-trace-list" style="display:flex;flex-direction:column;gap:4px;margin-top:4px;font-size:8px;"></div>
-      </div>
-
-      <!-- Live Events -->
-      <div class="neuro-section">
-        <div class="neuro-title" style="margin-bottom:6px;">Live Neural Events
-          <span class="section-hint">Real-time brain activity log</span>
-        </div>
-        <div id="activity-feed" style="display:flex;flex-direction:column;gap:4px;"></div>
-      </div>
-    </div>
-
-    <!-- TAB: Memory -->
-    <div id="tab-memory" class="tab-pane" style="overflow-y:auto;flex:1;display:none;padding:6px 8px;">
-      <div class="neuro-title" style="margin-bottom:6px;">Memory System
-        <span class="section-hint">What AXON has learned and retained</span>
-      </div>
-      <!-- Memory stats row -->
-      <div id="mem-stats" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;"></div>
-
-      <!-- ─ Hierarchical Memory Tiers ─ -->
-      <div class="neuro-section" style="margin-bottom:8px;">
-        <div class="neuro-title" style="display:flex;justify-content:space-between;align-items:center;">
-          <span>🗂 Memory Tiers</span>
-          <div style="display:flex;gap:4px;">
-            <button class="mem-tier-btn active" onclick="selectMemTier('episodic',this)">Episodic</button>
-            <button class="mem-tier-btn" onclick="selectMemTier('semantic',this)">Semantic</button>
-            <button class="mem-tier-btn" onclick="selectMemTier('value',this)">Value</button>
-            <button class="mem-tier-btn" onclick="selectMemTier('identity',this)">Identity</button>
-          </div>
-        </div>
-        <div id="mem-tier-stats" style="display:flex;gap:8px;margin:6px 0;font-size:0.7rem;color:#64748b;flex-wrap:wrap;"></div>
-        <div id="mem-tier-list" style="display:flex;flex-direction:column;gap:4px;max-height:220px;overflow-y:auto;font-size:0.75rem;"></div>
-      </div>
-
-      <!-- Semantic facts -->
-      <div class="neuro-section">
-        <div class="neuro-title">Known Facts</div>
-        <div id="mem-facts"></div>
-      </div>
-      <!-- Strongest pathways -->
-      <div class="neuro-section">
-        <div class="neuro-title">Strongest Neural Pathways
-          <span class="section-hint">Hebbian connections — fire together, wire together</span>
-        </div>
-        <div id="mem-pathways"></div>
-      </div>
-      <!-- Top topics -->
-      <div class="neuro-section">
-        <div class="neuro-title">Topics Learned</div>
-        <div id="mem-topics"></div>
-      </div>
-    </div>
-
-    <!-- TAB: Personality Sliders -->
-    <div id="tab-personality" class="tab-pane" style="overflow-y:auto;flex:1;display:none;padding:6px 8px;">
-      <div class="neuro-section" style="margin-bottom:10px;">
-        <div class="neuro-title">🎭 Behavioral Personality
-          <span class="section-hint">Drag sliders to reshape how AXON thinks and acts</span>
-        </div>
-        <div id="personality-sliders" style="display:flex;flex-direction:column;gap:8px;margin-top:6px;"></div>
-        <div style="display:flex;gap:6px;margin-top:10px;">
-          <button onclick="savePersonality()" style="flex:1;background:#1e293b;border:1px solid #22c55e;color:#22c55e;font-size:8px;padding:4px 8px;border-radius:3px;cursor:pointer;font-family:var(--font);">💾 Apply</button>
-          <button onclick="resetPersonality()" style="flex:1;background:#1e293b;border:1px solid #475569;color:#64748b;font-size:8px;padding:4px 8px;border-radius:3px;cursor:pointer;font-family:var(--font);">↺ Reset</button>
-        </div>
-        <div id="personality-status" style="font-size:8px;color:#22c55e;margin-top:4px;"></div>
-      </div>
-
-      <div class="neuro-section" style="margin-bottom:10px;">
-        <div class="neuro-title">🧠 Big-5 Traits
-          <span class="section-hint">Learned from experience — not manually set</span>
-        </div>
-        <div id="big5-bars" style="display:flex;flex-direction:column;gap:4px;margin-top:4px;"></div>
-      </div>
-
-      <div class="neuro-section">
-        <div class="neuro-title">💾 Brain Snapshots
-          <span class="section-hint">Save and restore complete brain state</span>
-        </div>
-        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">
-          <button onclick="saveBrain()" style="background:#1e293b;border:1px solid #6366f1;color:#a5b4fc;font-size:8px;padding:4px 8px;border-radius:3px;cursor:pointer;font-family:var(--font);">💾 Save Brain</button>
-          <button onclick="loadBrain()" style="background:#1e293b;border:1px solid #f59e0b;color:#fcd34d;font-size:8px;padding:4px 8px;border-radius:3px;cursor:pointer;font-family:var(--font);">📂 Load Brain</button>
-          <button onclick="runAutonomous()" style="background:#1e293b;border:1px solid #8b5cf6;color:#c4b5fd;font-size:8px;padding:4px 8px;border-radius:3px;cursor:pointer;font-family:var(--font);">🤖 Autonomous (100 steps)</button>
-        </div>
-        <div id="snapshot-list" style="margin-top:6px;font-size:8px;color:#64748b;"></div>
-      </div>
-    </div>
-
-    <!-- TAB: Explain Last Decision -->
-    <div id="tab-explain" class="tab-pane" style="overflow-y:auto;flex:1;display:none;padding:6px 8px;">
-      <div class="neuro-section">
-        <div class="neuro-title">🔍 Why did I do that?
-          <span class="section-hint">Explanation of the most recent cognitive decision</span>
-        </div>
-        <div id="explain-refresh-btn" style="margin-top:4px;">
-          <button onclick="requestExplanation()" style="background:#1e293b;border:1px solid #6366f1;color:#a5b4fc;font-size:8px;padding:3px 8px;border-radius:3px;cursor:pointer;font-family:var(--font);">⟳ Refresh</button>
-        </div>
-        <div id="explain-summary" style="margin-top:8px;font-size:9px;color:#c4b5fd;line-height:1.6;padding:6px;background:#0f0a1f;border:1px solid #2d1b69;border-radius:4px;"></div>
-        <div style="margin-top:8px;display:flex;gap:8px;">
-          <div style="flex:1;">
-            <div style="font-size:8px;color:#22c55e;font-weight:600;margin-bottom:4px;">▲ WINNING CLUSTERS</div>
-            <div id="explain-winners" style="font-size:8px;display:flex;flex-direction:column;gap:2px;"></div>
-          </div>
-          <div style="flex:1;">
-            <div style="font-size:8px;color:#ef4444;font-weight:600;margin-bottom:4px;">▼ SUPPRESSED</div>
-            <div id="explain-losers" style="font-size:8px;display:flex;flex-direction:column;gap:2px;"></div>
-          </div>
-        </div>
-        <div style="margin-top:8px;">
-          <div style="font-size:8px;color:#94a3b8;margin-bottom:4px;">TOP FACTORS</div>
-          <div id="explain-factors" style="display:flex;flex-direction:column;gap:3px;"></div>
-        </div>
-        <div style="margin-top:8px;">
-          <div style="font-size:8px;color:#94a3b8;margin-bottom:4px;">MEMORY INFLUENCE</div>
-          <div id="explain-memory" style="font-size:8px;color:#64748b;display:flex;flex-direction:column;gap:2px;"></div>
-        </div>
-        <div style="margin-top:6px;display:flex;align-items:center;gap:6px;">
-          <span style="font-size:8px;color:#64748b;">Confidence</span>
-          <div style="flex:1;background:#0a0f1a;border-radius:3px;height:5px;overflow:hidden;">
-            <div id="explain-conf-bar" style="width:0%;height:100%;background:#22c55e;border-radius:3px;transition:width 0.4s;"></div>
-          </div>
-          <span id="explain-conf-val" style="font-size:8px;color:#22c55e;width:28px;"></span>
-        </div>
-      </div>
-
-      <div class="neuro-section" style="margin-top:8px;">
-        <div class="neuro-title">📚 Last Ingestion Opinion</div>
-        <div id="opinion-panel" style="font-size:8px;color:#94a3b8;margin-top:4px;"></div>
-      </div>
-    </div>
-
-    <!-- TAB: Timeline -->
-    <div id="tab-timeline" class="tab-pane" style="overflow-y:auto;flex:1;display:none;padding:6px 8px;">
-      <div class="neuro-section">
-        <div class="neuro-title">📅 Activity Timeline
-          <span class="section-hint">Decisions, reward spikes, belief changes over time</span>
-        </div>
-        <div style="display:flex;gap:4px;margin-top:4px;margin-bottom:6px;">
-          <button onclick="filterTimeline('all')"     class="tl-filter active" data-filter="all">All</button>
-          <button onclick="filterTimeline('reward')"  class="tl-filter" data-filter="reward">🏆 Reward</button>
-          <button onclick="filterTimeline('belief')"  class="tl-filter" data-filter="belief">💡 Belief</button>
-          <button onclick="filterTimeline('emotion')" class="tl-filter" data-filter="emotion">😶 Emotion</button>
-          <button onclick="filterTimeline('decision')"class="tl-filter" data-filter="decision">🧠 Decision</button>
-        </div>
-        <div id="timeline-feed" style="display:flex;flex-direction:column;gap:4px;"></div>
-      </div>
-    </div>
-
-    <!-- TAB: Know Me -->
-    <div id="tab-knowme" class="tab-pane" style="overflow-y:auto;flex:1;display:none;padding:6px 8px;">
-      <div class="neuro-title" style="margin-bottom:6px;">User Model
-        <span class="section-hint">What AXON has inferred about you  <span id="profile-turns" style="color:#6b7280;font-weight:400;"></span></span>
-      </div>
-      <div id="user-profile-panel" style="font-size:8.5px;color:#c4b5fd;line-height:1.7;"></div>
-    </div>
-
-    <!-- TAB: Identity (Beliefs, Personality, Preferences, Hobbies, Knowledge) -->
-    <div id="tab-identity" class="tab-pane" style="overflow-y:auto;flex:1;display:none;padding:6px 8px;">
-
-      <!-- Personality Trait Bars -->
-      <div class="neuro-section" style="margin-bottom:8px;">
-        <div class="neuro-title">🎭 Personality Traits
-          <span class="section-hint">Active biases shaping reward &amp; decisions</span>
-        </div>
-        <div id="identity-traits" style="display:flex;flex-direction:column;gap:4px;margin-top:4px;"></div>
-      </div>
-
-      <!-- Beliefs -->
-      <div class="neuro-section" style="margin-bottom:8px;">
-        <div class="neuro-title">💡 Beliefs
-          <span class="section-hint">Weighted assumptions — updated by experience &amp; knowledge</span>
-        </div>
-        <div id="identity-beliefs" style="display:flex;flex-direction:column;gap:3px;margin-top:4px;font-size:8px;"></div>
-        <!-- Dissonance indicator -->
-        <div style="margin-top:6px;display:flex;align-items:center;gap:8px;">
-          <span style="font-size:8px;color:#64748b;">Cognitive dissonance</span>
-          <div style="flex:1;background:#0a0f1a;border-radius:3px;height:5px;overflow:hidden;">
-            <div id="dissonance-bar" style="width:0%;height:100%;background:#f59e0b;border-radius:3px;transition:width 0.5s;"></div>
-          </div>
-          <span id="dissonance-val" style="font-size:8px;color:#f59e0b;width:28px;">0%</span>
-        </div>
-        <div id="dissonance-beliefs" style="margin-top:4px;font-size:7.5px;color:#fbbf24;max-height:50px;overflow-y:auto;"></div>
-      </div>
-
-      <!-- Self-Model -->
-      <div class="neuro-section" style="margin-bottom:8px;">
-        <div class="neuro-title">🪞 Self-Model
-          <span class="section-hint">AXON's structured understanding of itself — shapes decisions</span>
-        </div>
-        <div id="self-model-panel" style="font-size:8px;display:flex;flex-direction:column;gap:4px;margin-top:4px;"></div>
-        <div style="margin-top:4px;display:flex;align-items:center;gap:6px;">
-          <span style="font-size:7.5px;color:#64748b;">Identity alignment</span>
-          <div style="flex:1;background:#0a0f1a;border-radius:3px;height:4px;overflow:hidden;">
-            <div id="alignment-bar" style="width:50%;height:100%;background:#22c55e;border-radius:3px;"></div>
-          </div>
-          <span id="alignment-val" style="font-size:7.5px;color:#22c55e;">50%</span>
-        </div>
-      </div>
-
-      <!-- Preferences -->
-      <div class="neuro-section" style="margin-bottom:8px;">
-        <div class="neuro-title">❤️ Preferences
-          <span class="section-hint">Emergent likes &amp; dislikes from reinforcement history</span>
-        </div>
-        <div style="display:flex;gap:8px;margin-top:4px;">
-          <div style="flex:1;">
-            <div style="font-size:8px;color:#4ade80;margin-bottom:3px;font-weight:600;">LIKES</div>
-            <div id="identity-likes" style="font-size:8px;color:#d1fae5;display:flex;flex-direction:column;gap:2px;"></div>
-          </div>
-          <div style="flex:1;">
-            <div style="font-size:8px;color:#f87171;margin-bottom:3px;font-weight:600;">DISLIKES</div>
-            <div id="identity-dislikes" style="font-size:8px;color:#fee2e2;display:flex;flex-direction:column;gap:2px;"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Hobbies -->
-      <div class="neuro-section" style="margin-bottom:8px;">
-        <div class="neuro-title">🎯 Hobbies
-          <span class="section-hint">Repeated voluntary engagement during idle time</span>
-        </div>
-        <div id="identity-hobbies" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;font-size:8px;"></div>
-        <div style="font-size:7.5px;color:#4b5563;margin-top:4px;">Top voluntary activity →</div>
-        <div id="identity-voluntary" style="font-size:8px;color:#94a3b8;margin-top:2px;"></div>
-      </div>
-
-      <!-- Interests & Boredom -->
-      <div class="neuro-section" id="interests-section" style="margin-bottom:8px;">
-        <div class="neuro-title">🧭 Interests &amp; Autonomous Curiosity
-          <span class="section-hint">Topics AXON develops on its own — grows and decays over time</span>
-        </div>
-
-        <!-- Boredom Meter -->
-        <div style="margin-top:6px;display:flex;align-items:center;gap:8px;">
-          <span style="font-size:8px;color:#64748b;white-space:nowrap;">Boredom</span>
-          <div style="flex:1;background:#0a0f1a;border-radius:3px;height:7px;overflow:hidden;border:1px solid #1e2d40;">
-            <div id="boredom-bar" style="width:0%;height:100%;background:linear-gradient(90deg,#22c55e,#f59e0b,#ef4444);border-radius:3px;transition:width 0.8s ease;"></div>
-          </div>
-          <span id="boredom-phase" style="font-size:7.5px;color:#94a3b8;min-width:48px;">content</span>
-          <span id="boredom-val" style="font-size:8px;color:#7dd3fc;width:28px;text-align:right;">0%</span>
-        </div>
-        <div id="boredom-idle" style="font-size:7px;color:#374151;margin-top:2px;"></div>
-
-        <!-- Interest Cards -->
-        <div id="interests-list" style="display:flex;flex-direction:column;gap:3px;margin-top:8px;"></div>
-        <div style="font-size:7.5px;color:#374151;margin-top:4px;" id="interests-empty-msg"></div>
-
-        <!-- Seed interest manually -->
-        <div style="display:flex;gap:4px;margin-top:6px;">
-          <input id="new-interest-input" type="text" placeholder="Seed an interest topic…"
-            style="flex:1;background:#0a0f1a;border:1px solid #1e3a5f;color:#e2e8f0;
-                   font-size:8px;font-family:var(--font);border-radius:4px;padding:3px 6px;outline:none;">
-          <button onclick="seedInterest()" style="
-            background:#1a2a1a;border:1px solid #22c55e;color:#4ade80;
-            font-size:8px;font-family:var(--font);padding:3px 8px;
-            border-radius:4px;cursor:pointer;white-space:nowrap;">+ Seed</button>
-        </div>
-
-        <!-- Autonomous Search History -->
-        <div style="margin-top:8px;">
-          <div style="font-size:8px;color:#4b5563;font-weight:600;margin-bottom:3px;">Recent Autonomous Searches</div>
-          <div id="search-history-list" style="font-size:7.5px;color:#6b7280;display:flex;flex-direction:column;gap:2px;max-height:80px;overflow-y:auto;"></div>
-        </div>
-      </div>
-
-      <!-- Knowledge Ingestion -->
-      <div class="neuro-section">
-        <div class="neuro-title">📚 Feed Knowledge
-          <span class="section-hint">Text, books, articles — converted to internal experience</span>
-        </div>
-
-        <!-- File Upload -->
-        <div style="background:#0a0f1a;border:1px solid #1e3a5f;border-radius:6px;padding:8px 10px;margin-top:6px;margin-bottom:8px;">
-          <div style="font-size:8.5px;color:#64748b;margin-bottom:6px;">UPLOAD FILE (PDF, DOCX, TXT, MD, EPUB)</div>
-          <div style="display:flex;align-items:center;gap:6px;">
-            <label for="knowledge-file" style="
-              background:#0f172a;border:1px dashed #334155;color:#7dd3fc;
-              font-size:8px;padding:5px 10px;border-radius:4px;cursor:pointer;
-              font-family:var(--font);white-space:nowrap;
-            ">📁 Choose File</label>
-            <input type="file" id="knowledge-file" accept=".pdf,.doc,.docx,.txt,.md,.rst,.epub,.csv"
-              style="display:none" onchange="onKnowledgeFileSelected(this)">
-            <span id="knowledge-filename" style="font-size:8px;color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100px;">(none)</span>
-            <button id="upload-btn" onclick="uploadKnowledgeFile()" style="
-              margin-left:auto;background:#1e3a5f;border:1px solid #2563eb;
-              color:#7dd3fc;font-size:8px;font-family:var(--font);
-              padding:4px 10px;border-radius:4px;cursor:pointer;white-space:nowrap;
-            ">⬆ Upload</button>
-          </div>
-          <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
-            <span style="font-size:8px;color:#64748b;">Credibility</span>
-            <input type="range" id="file-credibility" min="1" max="10" value="6" style="flex:1;accent-color:#6366f1;"
-              oninput="document.getElementById('file-cred-val').textContent=(this.value/10).toFixed(1)">
-            <span id="file-cred-val" style="font-size:8px;color:#7dd3fc;width:20px;">0.6</span>
-          </div>
-        </div>
-
-        <!-- Paste Text -->
-        <div style="font-size:8.5px;color:#64748b;margin-bottom:4px;">OR PASTE TEXT</div>
-        <textarea id="knowledge-text" rows="5" placeholder="Paste article, book excerpt, or any text here…"
-          style="width:100%;box-sizing:border-box;background:#0a0f1a;border:1px solid #1e3a5f;
-                 color:#e2e8f0;font-size:8.5px;font-family:var(--font);border-radius:4px;
-                 padding:6px 8px;resize:vertical;outline:none;"></textarea>
-        <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
-          <span style="font-size:8px;color:#64748b;">Source label</span>
-          <input id="knowledge-source" type="text" value="manual" placeholder="e.g. book title"
-            style="flex:1;background:#0a0f1a;border:1px solid #1e3a5f;color:#e2e8f0;
-                   font-size:8px;font-family:var(--font);border-radius:4px;padding:3px 6px;outline:none;">
-          <span style="font-size:8px;color:#64748b;">Credibility</span>
-          <input type="range" id="text-credibility" min="1" max="10" value="6"
-            style="width:60px;accent-color:#6366f1;"
-            oninput="document.getElementById('text-cred-val').textContent=(this.value/10).toFixed(1)">
-          <span id="text-cred-val" style="font-size:8px;color:#7dd3fc;width:20px;">0.6</span>
-          <button onclick="ingestKnowledgeText()" style="
-            background:#1e1a3a;border:1px solid #6366f1;color:#a5b4fc;
-            font-size:8px;font-family:var(--font);padding:4px 10px;
-            border-radius:4px;cursor:pointer;white-space:nowrap;
-          ">🧠 Ingest</button>
-        </div>
-
-        <!-- Ingestion log -->
-        <div id="ingest-log" style="margin-top:8px;font-size:7.5px;color:#4b5563;max-height:80px;overflow-y:auto;"></div>
-      </div>
-    </div>
-
-    <!-- TAB: Voice Switcher -->
-    <div id="tab-voice" class="tab-pane" style="overflow-y:auto;flex:1;display:none;padding:8px;">
-      <div class="neuro-title" style="margin-bottom:8px;">🎙️ Voice Customizer</div>
-
-      <!-- Current voice info -->
-      <div style="background:#0a0f1a;border:1px solid #1e3a5f;border-radius:6px;padding:8px 10px;margin-bottom:10px;">
-        <div style="font-size:9px;color:#64748b;margin-bottom:4px;">CURRENT VOICE</div>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <span style="font-size:18px;">🎙️</span>
-          <div>
-            <div id="voice-current-label" style="font-size:11px;color:#e2e8f0;font-weight:600;">Aria</div>
-            <div id="voice-current-id"    style="font-size:8px;color:#64748b;">en-US-AriaNeural</div>
-          </div>
-          <button onclick="testCurrentVoice()" style="
-            margin-left:auto;background:#0f172a;border:1px solid #1e3a5f;
-            color:#7dd3fc;font-size:8px;font-family:var(--font);
-            padding:4px 8px;border-radius:4px;cursor:pointer;
-          ">▶ Test</button>
-        </div>
-      </div>
-
-      <!-- Rate + Pitch sliders -->
-      <div style="background:#0a0f1a;border:1px solid #1e3a5f;border-radius:6px;padding:8px 10px;margin-bottom:10px;">
-        <div style="font-size:9px;color:#64748b;margin-bottom:8px;">SPEED & PITCH</div>
-        <div style="display:flex;flex-direction:column;gap:8px;">
-          <div>
-            <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
-              <span style="font-size:9px;color:#94a3b8;">Speed</span>
-              <span id="rate-val" style="font-size:9px;color:#7dd3fc;">-5%</span>
-            </div>
-            <input type="range" id="rate-slider" min="-50" max="50" value="-5"
-              style="width:100%;accent-color:#6366f1;"
-              oninput="document.getElementById('rate-val').textContent=(this.value>0?'+':'')+this.value+'%';"
-              onchange="applyVoiceModulator()">
-          </div>
-          <div>
-            <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
-              <span style="font-size:9px;color:#94a3b8;">Pitch</span>
-              <span id="pitch-val" style="font-size:9px;color:#7dd3fc;">-3Hz</span>
-            </div>
-            <input type="range" id="pitch-slider" min="-20" max="20" value="-3"
-              style="width:100%;accent-color:#a855f7;"
-              oninput="document.getElementById('pitch-val').textContent=(this.value>0?'+':'')+this.value+'Hz';"
-              onchange="applyVoiceModulator()">
-          </div>
-        </div>
-      </div>
-
-      <!-- Voice list -->
-      <div style="font-size:9px;color:#64748b;margin-bottom:6px;">AVAILABLE VOICES</div>
-      <div id="voice-list" style="display:flex;flex-direction:column;gap:4px;"></div>
-    </div>
-
-    <!-- TAB: People / Face Identity -->
-    <div id="tab-people" class="tab-pane" style="overflow-y:auto;flex:1;display:none;padding:8px;">
-      <div class="neuro-title" style="margin-bottom:6px;">👥 People I Know
-        <span class="section-hint">Faces AXON has recognised</span>
-      </div>
-
-      <!-- Currently in frame -->
-      <div style="background:#0a0f1a;border:1px solid #1e3a5f;border-radius:6px;padding:8px;margin-bottom:8px;">
-        <div style="font-size:9px;color:#64748b;margin-bottom:4px;">NOW IN FRAME</div>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <span id="current-person-avatar" style="font-size:22px;">👤</span>
-          <div>
-            <div id="current-person-name" style="font-size:11px;color:#e2e8f0;font-weight:600;">No one</div>
-            <div id="current-person-meta" style="font-size:8px;color:#64748b;"></div>
-          </div>
-          <div id="new-face-banner" style="display:none;margin-left:auto;padding:4px 8px;
-            background:#7c3aed22;border:1px solid #7c3aed;border-radius:4px;
-            font-size:8px;color:#a78bfa;">❓ Unknown</div>
-        </div>
-      </div>
-
-      <!-- Audio emotion panel -->
-      <div style="background:#0a0f1a;border:1px solid #1e3a5f;border-radius:6px;padding:8px;margin-bottom:8px;">
-        <div style="font-size:9px;color:#64748b;margin-bottom:4px;">🎤 VOICE EMOTION</div>
-        <div style="display:flex;align-items:center;gap:10px;">
-          <span id="audio-emo-emoji" style="font-size:22px;">😐</span>
-          <div style="flex:1;">
-            <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
-              <span id="audio-emo-label" style="font-size:11px;color:#e2e8f0;font-weight:600;">neutral</span>
-              <span id="audio-emo-conf"  style="font-size:9px;color:#64748b;">not speaking</span>
-            </div>
-            <div style="display:flex;align-items:center;gap:4px;margin-bottom:2px;">
-              <span style="font-size:8px;color:#64748b;width:42px;">arousal</span>
-              <div style="flex:1;height:4px;background:#0f172a;border-radius:2px;">
-                <div id="audio-arousal-bar" style="width:0%;height:100%;background:#f59e0b;border-radius:2px;transition:width .4s;"></div>
-              </div>
-              <span id="audio-arousal-val" style="font-size:8px;color:#64748b;width:28px;text-align:right;">0%</span>
-            </div>
-            <div style="display:flex;align-items:center;gap:4px;">
-              <span style="font-size:8px;color:#64748b;width:42px;">valence</span>
-              <div style="flex:1;height:4px;background:#0f172a;border-radius:2px;position:relative;">
-                <div style="position:absolute;left:50%;top:0;width:1px;height:100%;background:#334155;"></div>
-                <div id="audio-valence-bar" style="height:100%;background:#22c55e;border-radius:2px;transition:all .4s;position:absolute;"></div>
-              </div>
-              <span id="audio-valence-val" style="font-size:8px;color:#64748b;width:28px;text-align:right;">0.0</span>
-            </div>
-          </div>
-        </div>
-        <div id="audio-emo-features" style="margin-top:4px;font-size:8px;color:#334155;"></div>
-      </div>
-
-      <!-- Known people list -->
-      <div style="font-size:9px;color:#64748b;margin-bottom:6px;">KNOWN PEOPLE (<span id="people-count">0</span>)</div>
-      <div id="people-list" style="display:flex;flex-direction:column;gap:5px;"></div>
-    </div>
-
-    <div id="tab-llm" class="tab-pane" style="overflow-y:auto;flex:1;display:none;padding:8px;">
-      <div class="neuro-title" style="margin-bottom:8px;">🤖 LLM Provider
-        <span class="section-hint">Configure which AI brain powers AXON</span>
-      </div>
-
-      <!-- Active provider selector -->
-      <div style="background:#0a0f1a;border:1px solid #1e3a5f;border-radius:6px;padding:8px;margin-bottom:8px;">
-        <div style="font-size:9px;color:#64748b;margin-bottom:6px;letter-spacing:1px;">ACTIVE PROVIDER</div>
-        <div style="display:flex;gap:4px;flex-wrap:wrap;" id="provider-btns">
-          <button class="provider-btn active" data-p="lmstudio" onclick="setActiveProvider('lmstudio')">🖥️ LM Studio</button>
-          <button class="provider-btn" data-p="openai"    onclick="setActiveProvider('openai')">⚡ OpenAI</button>
-          <button class="provider-btn" data-p="anthropic" onclick="setActiveProvider('anthropic')">🔮 Anthropic</button>
-          <button class="provider-btn" data-p="gemini"    onclick="setActiveProvider('gemini')">✨ Gemini</button>
-          <button class="provider-btn" data-p="groq"      onclick="setActiveProvider('groq')">⚡ Groq</button>
-        </div>
-        <div style="margin-top:6px;display:flex;align-items:center;gap:6px;">
-          <input type="checkbox" id="prefer-local-chk" onchange="setPreferLocal(this.checked)" style="accent-color:#6366f1;">
-          <label for="prefer-local-chk" style="font-size:9px;color:#94a3b8;cursor:pointer;">
-            Always use LM Studio when available (fallback to active provider)
-          </label>
-        </div>
-      </div>
-
-      <!-- LM Studio -->
-      <div class="provider-card" id="card-lmstudio">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-          <span style="font-size:9px;color:#64748b;letter-spacing:1px;">🖥️ LM STUDIO (LOCAL)</span>
-          <span id="lms-status-badge" style="font-size:8px;padding:2px 6px;border-radius:3px;background:#14532d22;color:#4ade80;border:1px solid #166534;">OFFLINE</span>
-        </div>
-        <div style="font-size:9px;color:#94a3b8;margin-bottom:4px;">Server URL</div>
-        <div style="display:flex;gap:4px;margin-bottom:6px;">
-          <input id="lms-url-in" type="text" placeholder="http://localhost:1234"
-            style="flex:1;background:#060610;border:1px solid #1e3a5f;color:#e2e8f0;
-                   padding:4px 6px;font-family:var(--font);font-size:10px;border-radius:3px;">
-          <button class="ctrl-btn" onclick="saveLMStudioUrl()" style="padding:4px 8px;font-size:9px;">Save</button>
-          <button class="ctrl-btn" onclick="reprobe()" style="padding:4px 8px;font-size:9px;">↻ Probe</button>
-        </div>
-        <div style="font-size:9px;color:#94a3b8;margin-bottom:2px;">Detected model: <span id="lms-model-detected" style="color:#6366f1;">none</span></div>
-        <div style="font-size:8px;color:#475569;margin-top:4px;">No API key needed. Start LM Studio and load a GGUF model.</div>
-      </div>
-
-      <!-- OpenAI -->
-      <div class="provider-card" id="card-openai">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-          <span style="font-size:9px;color:#64748b;letter-spacing:1px;">⚡ OPENAI</span>
-          <span id="openai-status-badge" style="font-size:8px;padding:2px 6px;border-radius:3px;background:#1e293b;color:#475569;border:1px solid #334155;">NOT SET</span>
-        </div>
-        <div style="font-size:9px;color:#94a3b8;margin-bottom:4px;">API Key</div>
-        <div style="display:flex;gap:4px;margin-bottom:6px;">
-          <input id="openai-key-in" type="password" placeholder="sk-..."
-            style="flex:1;background:#060610;border:1px solid #1e3a5f;color:#e2e8f0;
-                   padding:4px 6px;font-family:var(--font);font-size:10px;border-radius:3px;">
-          <button class="ctrl-btn" onclick="saveProviderKey('openai')" style="padding:4px 8px;font-size:9px;">Save</button>
-        </div>
-        <div style="font-size:9px;color:#94a3b8;margin-bottom:4px;">Model</div>
-        <select id="openai-model-sel" onchange="saveProviderModel('openai')"
-          style="width:100%;background:#060610;border:1px solid #1e3a5f;color:#e2e8f0;
-                 padding:4px 6px;font-family:var(--font);font-size:10px;border-radius:3px;">
-          <option value="gpt-4o">gpt-4o</option>
-          <option value="gpt-4o-mini">gpt-4o-mini</option>
-          <option value="gpt-4-turbo">gpt-4-turbo</option>
-          <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
-        </select>
-      </div>
-
-      <!-- Anthropic -->
-      <div class="provider-card" id="card-anthropic">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-          <span style="font-size:9px;color:#64748b;letter-spacing:1px;">🔮 ANTHROPIC CLAUDE</span>
-          <span id="anthropic-status-badge" style="font-size:8px;padding:2px 6px;border-radius:3px;background:#1e293b;color:#475569;border:1px solid #334155;">NOT SET</span>
-        </div>
-        <div style="font-size:9px;color:#94a3b8;margin-bottom:4px;">API Key</div>
-        <div style="display:flex;gap:4px;margin-bottom:6px;">
-          <input id="anthropic-key-in" type="password" placeholder="sk-ant-..."
-            style="flex:1;background:#060610;border:1px solid #1e3a5f;color:#e2e8f0;
-                   padding:4px 6px;font-family:var(--font);font-size:10px;border-radius:3px;">
-          <button class="ctrl-btn" onclick="saveProviderKey('anthropic')" style="padding:4px 8px;font-size:9px;">Save</button>
-        </div>
-        <div style="font-size:9px;color:#94a3b8;margin-bottom:4px;">Model</div>
-        <select id="anthropic-model-sel" onchange="saveProviderModel('anthropic')"
-          style="width:100%;background:#060610;border:1px solid #1e3a5f;color:#e2e8f0;
-                 padding:4px 6px;font-family:var(--font);font-size:10px;border-radius:3px;">
-          <option value="claude-opus-4-5">claude-opus-4-5</option>
-          <option value="claude-3-5-sonnet-20241022">claude-3-5-sonnet</option>
-          <option value="claude-3-haiku-20240307">claude-3-haiku</option>
-        </select>
-      </div>
-
-      <!-- Gemini -->
-      <div class="provider-card" id="card-gemini">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-          <span style="font-size:9px;color:#64748b;letter-spacing:1px;">✨ GOOGLE GEMINI</span>
-          <span id="gemini-status-badge" style="font-size:8px;padding:2px 6px;border-radius:3px;background:#1e293b;color:#475569;border:1px solid #334155;">NOT SET</span>
-        </div>
-        <div style="font-size:9px;color:#94a3b8;margin-bottom:4px;">API Key</div>
-        <div style="display:flex;gap:4px;margin-bottom:6px;">
-          <input id="gemini-key-in" type="password" placeholder="AIza..."
-            style="flex:1;background:#060610;border:1px solid #1e3a5f;color:#e2e8f0;
-                   padding:4px 6px;font-family:var(--font);font-size:10px;border-radius:3px;">
-          <button class="ctrl-btn" onclick="saveProviderKey('gemini')" style="padding:4px 8px;font-size:9px;">Save</button>
-        </div>
-        <div style="font-size:9px;color:#94a3b8;margin-bottom:4px;">Model</div>
-        <select id="gemini-model-sel" onchange="saveProviderModel('gemini')"
-          style="width:100%;background:#060610;border:1px solid #1e3a5f;color:#e2e8f0;
-                 padding:4px 6px;font-family:var(--font);font-size:10px;border-radius:3px;">
-          <option value="gemini-2.0-flash">gemini-2.0-flash</option>
-          <option value="gemini-1.5-pro">gemini-1.5-pro</option>
-          <option value="gemini-1.5-flash">gemini-1.5-flash</option>
-        </select>
-      </div>
-
-      <!-- Groq -->
-      <div class="provider-card" id="card-groq">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-          <span style="font-size:9px;color:#64748b;letter-spacing:1px;">⚡ GROQ (FAST INFERENCE)</span>
-          <span id="groq-status-badge" style="font-size:8px;padding:2px 6px;border-radius:3px;background:#1e293b;color:#475569;border:1px solid #334155;">NOT SET</span>
-        </div>
-        <div style="font-size:9px;color:#94a3b8;margin-bottom:4px;">API Key</div>
-        <div style="display:flex;gap:4px;margin-bottom:6px;">
-          <input id="groq-key-in" type="password" placeholder="gsk_..."
-            style="flex:1;background:#060610;border:1px solid #1e3a5f;color:#e2e8f0;
-                   padding:4px 6px;font-family:var(--font);font-size:10px;border-radius:3px;">
-          <button class="ctrl-btn" onclick="saveProviderKey('groq')" style="padding:4px 8px;font-size:9px;">Save</button>
-        </div>
-        <div style="font-size:9px;color:#94a3b8;margin-bottom:4px;">Model</div>
-        <select id="groq-model-sel" onchange="saveProviderModel('groq')"
-          style="width:100%;background:#060610;border:1px solid #1e3a5f;color:#e2e8f0;
-                 padding:4px 6px;font-family:var(--font);font-size:10px;border-radius:3px;">
-          <option value="llama3-70b-8192">llama3-70b-8192</option>
-          <option value="llama3-8b-8192">llama3-8b-8192</option>
-          <option value="mixtral-8x7b-32768">mixtral-8x7b-32768</option>
-          <option value="gemma2-9b-it">gemma2-9b-it</option>
-        </select>
-      </div>
-    </div>
-  </div>
+  
 
 </div>
 
@@ -1801,9 +1014,11 @@ function addConflictPair(r1, r2, intensity) {
 
 // Per-neuron neighbor list (cross-region via AXON_ROUTES + within-region)
 function initNeurons() {
-  // Use parent container dimensions if canvas reports 0 (layout not settled yet)
-  const W = nCanvas.offsetWidth  || nCanvas.parentElement.offsetWidth  || 700;
-  const H = nCanvas.offsetHeight || nCanvas.parentElement.offsetHeight || 440;
+  // RELIABLE sizing: getBoundingClientRect > offsetWidth > fallback
+  const parent = nCanvas.parentElement;
+  const rect = parent ? parent.getBoundingClientRect() : {width:0,height:0};
+  const W = Math.round(rect.width)  || parent.offsetWidth  || nCanvas.offsetWidth  || 800;
+  const H = Math.round(rect.height) || parent.offsetHeight || nCanvas.offsetHeight || 500;
   nCanvas.width  = W;
   nCanvas.height = H;
   neuronNodes = [];
@@ -1904,17 +1119,16 @@ function scheduleSpikeWave(regionName, intensity) {
 function drawNeural() {
   try {
 
-  // Self-heal: if canvas buffer is 0x0, re-sync from CSS layout
-  if (nCanvas.width === 0 || nCanvas.height === 0) {
-    const pw = nCanvas.offsetWidth  || nCanvas.parentElement.offsetWidth  || 700;
-    const ph = nCanvas.offsetHeight || nCanvas.parentElement.offsetHeight || 440;
-    if (pw > 0 && ph > 0) {
-      nCanvas.width  = pw;
-      nCanvas.height = ph;
+  // Self-heal: getBoundingClientRect gives REAL rendered pixels, not CSS dimensions
+  {
+    const par = nCanvas.parentElement;
+    const r   = par ? par.getBoundingClientRect() : {width:0,height:0};
+    const pw  = Math.round(r.width)  || par.offsetWidth  || nCanvas.offsetWidth  || 0;
+    const ph  = Math.round(r.height) || par.offsetHeight || nCanvas.offsetHeight || 0;
+    if (pw < 10 || ph < 10) { requestAnimationFrame(drawNeural); return; }
+    if (Math.abs(nCanvas.width - pw) > 2 || Math.abs(nCanvas.height - ph) > 2) {
+      nCanvas.width = pw; nCanvas.height = ph;
       if (neuronNodes.length === 0) { initNeurons(); buildLegend(); }
-    } else {
-      requestAnimationFrame(drawNeural);
-      return; // can't draw yet, wait for layout
     }
   }
   axonFrame++;
@@ -4214,13 +3428,27 @@ window.addEventListener('resize', () => {
 window.addEventListener('load', () => {
   buildPersonalitySliders();
   let _neuralStarted = false;
+
+  function _getCanvasSize() {
+    // Walk up: parentElement (panel-body) → grandparent (panel div) → getBCR
+    const parent = nCanvas.parentElement;              // panel-body (position:relative)
+    const panel  = parent ? parent.parentElement : null; // .panel (flex column, has real height)
+    // Try the panel first — it has explicit flex height from the grid
+    const r2 = panel  ? panel.getBoundingClientRect()  : null;
+    const r1 = parent ? parent.getBoundingClientRect() : null;
+    const pw = (r2 && r2.width  > 10 ? Math.round(r2.width)  : 0) ||
+               (r1 && r1.width  > 10 ? Math.round(r1.width)  : 0) ||
+               (parent ? parent.offsetWidth  : 0) || 0;
+    const ph = (r2 && r2.height > 10 ? Math.round(r2.height) : 0) ||
+               (r1 && r1.height > 10 ? Math.round(r1.height) : 0) ||
+               (parent ? parent.offsetHeight : 0) || 0;
+    return {pw, ph};
+  }
+
   function _startNeuralCanvas() {
     if (_neuralStarted) return;
-    const parent = nCanvas.parentElement;
-    const rect   = parent ? parent.getBoundingClientRect() : {width:0,height:0};
-    const pw = Math.round(rect.width)  || parent.offsetWidth  || 0;
-    const ph = Math.round(rect.height) || parent.offsetHeight || 0;
-    if (pw < 10 || ph < 10) return; // not laid out yet
+    const {pw, ph} = _getCanvasSize();
+    if (pw < 10 || ph < 10) return;
     _neuralStarted = true;
     nCanvas.width  = pw;
     nCanvas.height = ph;
@@ -4228,32 +3456,31 @@ window.addEventListener('load', () => {
     buildLegend();
     drawNeural();
   }
-  // ResizeObserver is the most reliable way to know when layout is ready
+
+  // Observe BOTH the panel-body AND the .panel wrapper
   if (window.ResizeObserver) {
-    const ro = new ResizeObserver(entries => {
-      for (const e of entries) {
-        const { width, height } = e.contentRect;
-        if (width > 10 && height > 10) {
-          _startNeuralCanvas();
-          // Also handle live resize: re-init if already started
-          if (_neuralStarted && (Math.abs(nCanvas.width - width) > 4 || Math.abs(nCanvas.height - height) > 4)) {
-            nCanvas.width  = Math.floor(width);
-            nCanvas.height = Math.floor(height);
-            initNeurons();
-          }
-        }
+    const ro = new ResizeObserver(() => {
+      const {pw, ph} = _getCanvasSize();
+      if (pw < 10 || ph < 10) return;
+      _startNeuralCanvas();
+      // Live resize
+      if (_neuralStarted && (Math.abs(nCanvas.width - pw) > 4 || Math.abs(nCanvas.height - ph) > 4)) {
+        nCanvas.width = pw; nCanvas.height = ph;
+        initNeurons();
       }
     });
-    ro.observe(nCanvas.parentElement);
+    const parent = nCanvas.parentElement;
+    const panel  = parent ? parent.parentElement : null;
+    if (parent) ro.observe(parent);
+    if (panel)  ro.observe(panel);
   }
-  // Fallback: also try via RAF in case ResizeObserver misses the initial paint
-  requestAnimationFrame(() => { _startNeuralCanvas(); });
-  setTimeout(_startNeuralCanvas, 200);
-  setTimeout(_startNeuralCanvas, 600);
 
-  // Draw brain radar with idle baseline immediately (don't wait for backend)
-  setTimeout(() => { drawBrainRadar({}); }, 100);
-  setTimeout(() => { drawBrainRadar({}); }, 500);
+  // Fallback retries
+  requestAnimationFrame(() => { _startNeuralCanvas(); });
+  [80, 200, 450, 900, 1800, 3500].forEach(t => setTimeout(_startNeuralCanvas, t));
+
+  // Draw brain radar with idle baseline immediately
+  [100, 500, 1500].forEach(t => setTimeout(() => { drawBrainRadar({}); }, t));
 });
 
 // ── Personality Sliders ─────────────────────────────────────────────────────
