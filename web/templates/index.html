@@ -1914,18 +1914,23 @@ function drawNeural() {
 
   // Guard: canvas must have real dimensions before drawing
   if (nCanvas.width < 20 || nCanvas.height < 20 || neuronNodes.length === 0) {
-    console.warn('[AXON] drawNeural stalled — canvas:', nCanvas.width, 'x', nCanvas.height, 'neurons:', neuronNodes.length, '— attempting recovery');
-    _neuralLoopStarted = false;
-    _bootNeuralCanvas();
+    requestAnimationFrame(drawNeural);
     return;
   }
-  if (axonFrame === 1) console.log('[AXON] drawNeural first paint — canvas:', nCanvas.width, 'x', nCanvas.height, 'neurons:', neuronNodes.length);
+  if (axonFrame === 1) {
+    console.log('[AXON] drawNeural first paint — canvas:', nCanvas.width, 'x', nCanvas.height, 'neurons:', neuronNodes.length);
+    // Paint a visible red flash on frame 1 to prove the canvas is reachable
+    nCtx.fillStyle = '#ff0000';
+    nCtx.fillRect(0, 0, nCanvas.width, nCanvas.height);
+    nCtx.fillStyle = '#ffffff';
+    nCtx.font = 'bold 32px monospace';
+    nCtx.fillText('AXON PAINT TEST', 50, 80);
+  }
   axonFrame++;
   const W = nCanvas.width, H = nCanvas.height;
 
-  // Trail fade — faster = tighter, more reactive visual
-  // At 60fps: 0.35 means ~5-6 frames persistence (sharp and clean)
-  nCtx.fillStyle = 'rgba(2,2,6,0.38)';  // gentle wipe so ghost clusters stay visible
+  // Trail fade
+  nCtx.fillStyle = 'rgba(2,2,6,0.38)';
   nCtx.fillRect(0, 0, W, H);
 
   // When backend isn't connected, use an idle baseline so neurons stay visible
