@@ -511,6 +511,10 @@ canvas.spark{display:block;}
             <span style="color:#94a3b8;">Urgency</span>
             <div class="bar-track" style="height:6px;"><div id="cog-urg-bar" class="bar-fill" style="width:10%;background:#ef4444;"></div></div>
             <span id="cog-urg-val" style="color:#ef4444;text-align:right;">10%</span>
+
+            <span style="color:#94a3b8;" title="How coherent recent thoughts are — high = on a train of thought, low = wandering">Coherence</span>
+            <div id="temporal-momentum" class="bar-track" style="height:6px;"><div id="temporal-momentum-bar" class="bar-fill" style="width:0%;background:#a78bfa;"></div></div>
+            <span id="temporal-momentum-val" style="color:#a78bfa;text-align:right;">—</span>
           </div>
 
           <!-- Row 3: Critic / Regret -->
@@ -520,6 +524,7 @@ canvas.spark{display:block;}
             <span>Reward <span id="temp-reward" style="color:#a855f7">—</span></span>
             <span>Regret <span id="cog-regret" style="color:#fb923c">—</span></span>
             <span>Hesitations <span id="cog-hesit" style="color:#c084fc">—</span></span>
+            <span>Mem Depth <span id="temporal-depth" style="color:#818cf8">—</span></span>
           </div>
 
           <!-- Row 4: Top routes -->

@@ -1300,7 +1300,8 @@ class NeuralFabric:
         for _ci, _cn in enumerate(self._cluster_names):
             _rmap[self.clusters[_cn].region].append(_ci)
         _BASELINE_INIT = {
-            "prefrontal": 0.22, "default_mode": 0.35, "thalamus": 0.28,
+            "planning_cortex": 0.24, "working_memory_cortex": 0.22, "inhibitory_cortex": 0.18,
+            "default_mode": 0.35, "thalamus": 0.28,
             "hippocampus": 0.18, "amygdala": 0.14, "visual": 0.12,
             "auditory": 0.12, "language": 0.20, "association": 0.22,
             "social": 0.16, "cerebellum": 0.18, "metacognition": 0.28,
@@ -1362,13 +1363,24 @@ class NeuralFabric:
     def _build_clusters(self):
         defs = [
             # (name, size_M, region, threshold)
-            # Prefrontal cortex
-            ("working_memory",        120_000_000, "prefrontal",    0.28),
-            ("executive_control",      80_000_000, "prefrontal",    0.30),
-            ("decision_making",        70_000_000, "prefrontal",    0.32),
-            ("planning",               60_000_000, "prefrontal",    0.30),
-            ("inhibitory_control",     50_000_000, "prefrontal",    0.35),
-            ("action_selection",       45_000_000, "prefrontal",    0.30),
+            # ── Planning Cortex (dorsolateral PFC) ──────────────────────────
+            ("goal_maintenance",      110_000_000, "planning_cortex",    0.28),
+            ("planning",               80_000_000, "planning_cortex",    0.30),
+            ("future_planning",        70_000_000, "planning_cortex",    0.30),
+            ("action_selection",       60_000_000, "planning_cortex",    0.30),
+            ("task_switching",         45_000_000, "planning_cortex",    0.32),
+            # ── Working Memory Cortex (ventrolateral PFC) ────────────────────
+            ("working_memory",        120_000_000, "working_memory_cortex", 0.28),
+            ("executive_control",      85_000_000, "working_memory_cortex", 0.28),
+            ("decision_making",        70_000_000, "working_memory_cortex", 0.30),
+            ("context_binding",        55_000_000, "working_memory_cortex", 0.28),
+            ("rule_representation",    50_000_000, "working_memory_cortex", 0.30),
+            # ── Inhibitory Cortex (orbitofrontal / inferior PFC) ─────────────
+            ("inhibitory_control",     60_000_000, "inhibitory_cortex",  0.32),
+            ("impulse_suppression",    50_000_000, "inhibitory_cortex",  0.35),
+            ("conflict_resolution",    45_000_000, "inhibitory_cortex",  0.33),
+            ("value_weighting",        40_000_000, "inhibitory_cortex",  0.30),
+            ("emotional_regulation",   35_000_000, "inhibitory_cortex",  0.32),
             # Hippocampus
             ("hippocampus_encode",     40_000_000, "hippocampus",   0.25),
             ("hippocampus_retrieve",   40_000_000, "hippocampus",   0.25),
@@ -1438,7 +1450,7 @@ class NeuralFabric:
             ("conflict_monitoring",    20_000_000, "metacognition", 0.28),
             ("error_detection",        20_000_000, "metacognition", 0.28),
             ("uncertainty_tracking",   18_000_000, "metacognition", 0.30),
-            ("working_memory",          1,         "metacognition", 0.30),  # placeholder skip dup
+            ("conflict_monitoring_aux",  1,         "metacognition", 0.30),  # placeholder (dedup guard)
         ]
         # Deduplicate by name
         seen = set()
@@ -1505,6 +1517,33 @@ class NeuralFabric:
             ("sequence_timing",       "cognitive_timing",       0.6),
             ("timing_prediction",     "motor_coordination",     0.6),
             ("error_correction",      "executive_control",      0.5),
+            # ── PFC sub-region cross-talk ──────────────────────────────────
+            # Planning → Working Memory (goals feed context)
+            ("goal_maintenance",      "working_memory",         0.7),
+            ("planning",              "goal_maintenance",       0.6),
+            ("future_planning",       "goal_maintenance",       0.6),
+            ("task_switching",        "executive_control",      0.5),
+            ("action_selection",      "decision_making",        0.6),
+            # Working Memory → Inhibitory (context shapes suppression)
+            ("working_memory",        "inhibitory_control",     0.5),
+            ("executive_control",     "conflict_resolution",    0.6),
+            ("decision_making",       "value_weighting",        0.5),
+            ("context_binding",       "working_memory",         0.6),
+            ("rule_representation",   "executive_control",      0.5),
+            # Inhibitory → Planning (suppression refines goals)
+            ("inhibitory_control",    "goal_maintenance",       0.4),
+            ("conflict_resolution",   "decision_making",        0.5),
+            ("emotional_regulation",  "amygdala_fear",          0.5),
+            ("value_weighting",       "reward_anticipation",    0.5),
+            ("impulse_suppression",   "action_selection",       0.6),
+            # Thalamus → PFC sub-regions (gating)
+            ("consciousness_gate",    "goal_maintenance",       0.6),
+            ("attention_spotlight",   "context_binding",        0.6),
+            ("attention_filter",      "working_memory",         0.5),
+            # Metacognition monitors PFC
+            ("conflict_monitoring",   "conflict_resolution",    0.6),
+            ("error_detection",       "inhibitory_control",     0.5),
+            ("uncertainty_tracking",  "value_weighting",        0.5),
         ]
         idx = self._name_to_idx
         with torch.no_grad():
@@ -1672,6 +1711,26 @@ class NeuralFabric:
             self.emotions.current, cog_snap, surprise
         ).to(DEVICE)
 
+        # ── 2b. Temporal context injection ───────────────────────────────────
+        # Build a recency-weighted mean of recent activations and inject it
+        # as a soft prior — the brain "remembers" what it was just thinking.
+        if self._temporal_filled > 0:
+            n_valid  = min(self._temporal_filled, self.TEMPORAL_WIN)
+            # Recency weights: most recent tick = weight 1.0, oldest = weight ~0.15
+            weights  = torch.tensor(
+                [0.85 ** (n_valid - 1 - i) for i in range(n_valid)],
+                dtype=torch.float32
+            )
+            weights  = weights / weights.sum()
+            # Pull the valid slots in chronological order
+            indices  = [(self._temporal_ptr - n_valid + i) % self.TEMPORAL_WIN
+                        for i in range(n_valid)]
+            stacked  = self._temporal_buf[indices]          # [n_valid, N]
+            temporal_ctx = (stacked * weights.unsqueeze(1)).sum(dim=0).to(DEVICE)  # [N]
+            # Inject as a soft activation nudge (10% weight so it guides, not overrides)
+            act = act * 0.90 + temporal_ctx * 0.10
+        # else: first few ticks, no history yet — skip
+
         # ── 3. Cluster fatigue: heavy use → temporary weakening ───────────────
         # Track per-cluster use count (CPU, updated from spike later)
         # Apply wear-down: clusters that have fired a lot get an activation penalty
@@ -1754,6 +1813,11 @@ class NeuralFabric:
             if len(self._act_sequence_buf) > 30:
                 self._act_sequence_buf.pop(0)
 
+        # ── Store into temporal context buffer (circular) ───────────────────
+        self._temporal_buf[self._temporal_ptr] = new_act.detach().cpu()
+        self._temporal_ptr   = (self._temporal_ptr + 1) % self.TEMPORAL_WIN
+        self._temporal_filled = min(self._temporal_filled + 1, self.TEMPORAL_WIN)
+
         with self._lock:
             self.activation = new_act
 
@@ -1812,18 +1876,22 @@ class NeuralFabric:
     # A living brain is NEVER dark — even deep sleep shows 40-80% baseline metabolic activity.
     # These floors ensure every region is visibly lit at rest.
     _BASELINE = {
-        "prefrontal":    0.22,   # planning, working memory — always planning something
-        "default_mode":  0.35,   # DMN: mind-wandering, self-reflection — highest at rest
-        "thalamus":      0.28,   # relay hub — gating ALL sensory traffic constantly
-        "hippocampus":   0.18,   # memory replay and consolidation during idle
-        "amygdala":      0.14,   # vigilance — always scanning for threat
-        "visual":        0.12,   # baseline visual processing even eyes open/closed
-        "auditory":      0.12,   # monitoring ambient sound always
-        "language":      0.20,   # inner monologue — humans think in words constantly
-        "association":   0.22,   # cross-modal binding — always integrating context
-        "social":        0.16,   # social awareness, simulating others
-        "cerebellum":    0.18,   # motor timing and prediction — always active
-        "metacognition": 0.28,   # self-monitoring — always watching itself
+        # PFC sub-regions
+        "planning_cortex":       0.24,   # always goal-directed, never truly off
+        "working_memory_cortex": 0.22,   # holding context even at idle
+        "inhibitory_cortex":     0.18,   # tonic suppression of impulses
+        # Rest
+        "default_mode":          0.35,   # DMN: highest at rest — self-referential thought
+        "thalamus":              0.28,   # relay hub — never stops gating
+        "hippocampus":           0.18,   # idle replay and consolidation
+        "amygdala":              0.14,   # vigilance — always on watch
+        "visual":                0.12,   # baseline visual processing
+        "auditory":              0.12,   # ambient sound monitoring
+        "language":              0.20,   # inner monologue — constant
+        "association":           0.22,   # cross-modal binding
+        "social":                0.16,   # social simulation
+        "cerebellum":            0.18,   # motor timing prediction
+        "metacognition":         0.28,   # self-monitoring — always watching
     }
 
     def _ambient_fire(self):
@@ -2091,6 +2159,20 @@ class NeuralFabric:
         region_act: Dict[str, list] = defaultdict(list)
         for name, cluster in self.clusters.items():
             region_act[cluster.region].append(act_by_name.get(name, 0.0))
+        # Temporal momentum: how much recent activity is "pulling" current thought
+        # High = brain is on a roll with a topic; low = fresh/wandering state
+        if self._temporal_filled > 1:
+            n_valid = min(self._temporal_filled, self.TEMPORAL_WIN)
+            prev_idx = (self._temporal_ptr - 2) % self.TEMPORAL_WIN
+            curr_idx = (self._temporal_ptr - 1) % self.TEMPORAL_WIN
+            prev = self._temporal_buf[prev_idx]
+            curr = self._temporal_buf[curr_idx]
+            temporal_momentum = float(torch.cosine_similarity(
+                prev.unsqueeze(0), curr.unsqueeze(0)
+            ).item())
+        else:
+            temporal_momentum = 0.0
+
         regions = {r: round(min(1.0, sum(v)/max(len(v),1)), 4)
                    for r, v in region_act.items()}
         # Drain the new synapse buffer
@@ -2102,6 +2184,8 @@ class NeuralFabric:
                                "region": self.clusters[n].region if n in self.clusters else ""}
                               for n, v in top],
             "regions":       regions,
+                "temporal_momentum": round(temporal_momentum, 4),
+                "temporal_depth":    self._temporal_filled,
             "emotion":       self.emotions.to_dict(),
             "personality":   self.personality.to_dict(),
             "neuromod":      self.neuromod.to_dict(),
