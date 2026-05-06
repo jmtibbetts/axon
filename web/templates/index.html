@@ -289,6 +289,7 @@ canvas.spark{display:block;}
         <div class="settings-row" style="margin-top:6px;">
           <button class="ctrl-btn active" id="btn-activate" onclick="startAxon()">▶ ACTIVATE</button>
           <button class="ctrl-btn"        onclick="reprobe()" style="flex:.6;font-size:9px;" title="Re-probe LM Studio">⟳ Reprobe</button>
+          <button class="ctrl-btn" onclick="resetOnboarding()" style="flex:.6;font-size:9px;background:#1e1228;border-color:#7c3aed;" title="Re-run the setup wizard">🔄 Redo Setup</button>
           <button class="ctrl-btn danger" onclick="stopAxon()" style="flex:.6;font-size:9px;" title="Stop engine">■ Stop</button>
         </div>
         <div class="settings-row" style="margin-top:4px;">
@@ -3465,6 +3466,12 @@ function startAxon() {
 }
 function stopAxon()  { socket.emit('stop_engine'); }
 function reprobe()   { socket.emit('reprobe_lm'); sysLog('Re-probing LM Studio...'); }
+function resetOnboarding() {
+  if (!confirm("Re-run the setup wizard? You\'ll need to reload after.")) return;
+  fetch("/api/onboarding/reset", {method:"POST"})
+    .then(r => r.json())
+    .then(d => { sysLog("🔄 " + d.msg); setTimeout(() => location.reload(), 800); });
+}
 
 // -- Socket events ---------------------------------------------
 socket.on('connect', () => {

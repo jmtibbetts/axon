@@ -23,6 +23,45 @@ CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 _engine: AxonEngine = None
 
+def _apply_deferred_onboarding(brain):
+    """After engine starts, apply any onboarding choices that were saved pre-engine."""
+    import json as _json
+    from pathlib import Path as _Path
+    ob_path = _Path("data/onboarding.json")
+    if not ob_path.exists():
+        return
+    try:
+        state = _json.loads(ob_path.read_text())
+    except Exception:
+        return
+    if not state.get("completed"):
+        return
+    # Apply personality preset if engine doesn't already have it
+    preset = state.get("preset", "")
+    if preset:
+        try:
+            brain.onboarding_set_preset(preset)
+            print(f"  [Onboarding] Applied deferred preset: {preset}")
+        except Exception as e:
+            print(f"  [Onboarding] Could not apply preset: {e}")
+    # Ingest deferred sample
+    sample_id = state.get("sample_id", "")
+    if sample_id:
+        try:
+            brain.onboarding_ingest_sample(sample_id)
+            print(f"  [Onboarding] Ingested deferred sample: {sample_id}")
+        except Exception as e:
+            print(f"  [Onboarding] Could not ingest sample: {e}")
+    # Ingest deferred custom text
+    custom_text = state.get("custom_text", "")
+    if custom_text:
+        try:
+            brain.onboarding_ingest_text(custom_text)
+            print(f"  [Onboarding] Ingested deferred custom text ({len(custom_text)} chars)")
+        except Exception as e:
+            print(f"  [Onboarding] Could not ingest custom text: {e}")
+
+
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -157,34 +196,45 @@ def on_start(config):
         if _brain:
             emit("onboarding_state", _sanitize(_brain.get_onboarding_state()))
         return
-    api_key      = config.get("api_key")    or os.getenv("ANTHROPIC_API_KEY", "")
-    lm_url       = config.get("lm_url",       "http://localhost:1234")
-    lm_model     = config.get("lm_model",     None) or None
-    prefer_local = config.get("prefer_local", True)
+    try:
+        api_key      = config.get("api_key")    or os.getenv("ANTHROPIC_API_KEY", "")
+        lm_url       = config.get("lm_url",       "http://localhost:1234")
+        lm_model     = config.get("lm_model",     None) or None
+        prefer_local = config.get("prefer_local", True)
 
-    _engine = AxonEngine(
-        socketio=socketio,
-        api_key=api_key,
-        lm_studio_url=lm_url,
-        lm_studio_model=lm_model,
-        prefer_local=prefer_local,
-    )
-    if not config.get("voice", True):
-        _engine.voice.enabled = False
+        _engine = AxonEngine(
+            socketio=socketio,
+            api_key=api_key,
+            lm_studio_url=lm_url,
+            lm_studio_model=lm_model,
+            prefer_local=prefer_local,
+        )
+        if not config.get("voice", True):
+            _engine.voice.enabled = False
 
-    _engine.start(
-        enable_camera=config.get("camera",       True),
-        enable_mic=config.get("mic",             True),
-        camera_index=config.get("camera_index",  -1),
-        mic_index=config.get("mic_index", None),
-    )
-    # Wire public API layer
-    _brain = AxonBrain(engine=_engine)
-    # Allow fabric to emit log events
-    _engine.fabric._socket_emit = lambda ev, d: socketio.emit(ev, _sanitize(d))
-    # Push onboarding state to client so it can show the overlay
-    # (the DOMContentLoaded fetch fires before the engine is ready)
-    emit("onboarding_state", _sanitize(_brain.get_onboarding_state()))
+        _engine.start(
+            enable_camera=config.get("camera",       True),
+            enable_mic=config.get("mic",             True),
+            camera_index=config.get("camera_index",  -1),
+            mic_index=config.get("mic_index", None),
+        )
+        # Wire public API layer
+        _brain = AxonBrain(engine=_engine)
+        # Allow fabric to emit log events
+        _engine.fabric._socket_emit = lambda ev, d: socketio.emit(ev, _sanitize(d))
+        # Apply any deferred onboarding data (preset personality, sample ingestion)
+        _apply_deferred_onboarding(_brain)
+        # Push onboarding state to client so it can show the overlay
+        # (the DOMContentLoaded fetch fires before the engine is ready)
+        emit("onboarding_state", _sanitize(_brain.get_onboarding_state()))
+    except Exception as _start_exc:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[AXON] Engine startup FAILED:\n{tb}")
+        _engine = None
+        _brain  = None
+        emit("log", {"msg": f"❌ Engine startup failed: {_start_exc}"})
+        emit("log", {"msg": "Check the terminal for the full traceback."})
 
 @socketio.on("stop_engine")
 def on_stop():
@@ -652,37 +702,85 @@ def api_onboarding_state():
 
 @app.route("/api/onboarding/name", methods=["POST"])
 def api_onboarding_name():
-    if not _brain:
-        return jsonify({"ok": False})
     data = request.json or {}
-    return jsonify(_sanitize(_brain.onboarding_set_name(data.get("name",""))))
+    name = data.get("name", "")
+    if _brain:
+        return jsonify(_sanitize(_brain.onboarding_set_name(name)))
+    # Pre-engine: persist directly to disk
+    import json as _json; from pathlib import Path as _Path
+    ob_path = _Path("data/onboarding.json")
+    ob_path.parent.mkdir(exist_ok=True)
+    state = _json.loads(ob_path.read_text()) if ob_path.exists() else {}
+    state["ai_name"] = name; state.setdefault("step", 1)
+    ob_path.write_text(_json.dumps(state))
+    return jsonify({"ok": True, "ai_name": name})
 
 @app.route("/api/onboarding/preset", methods=["POST"])
 def api_onboarding_preset():
-    if not _brain:
-        return jsonify({"ok": False})
     data = request.json or {}
-    return jsonify(_sanitize(_brain.onboarding_set_preset(data.get("preset",""))))
+    preset = data.get("preset", "")
+    if _brain:
+        return jsonify(_sanitize(_brain.onboarding_set_preset(preset)))
+    # Pre-engine: persist directly to disk
+    import json as _json; from pathlib import Path as _Path
+    from axon.cognition.onboarding import PRESETS
+    ob_path = _Path("data/onboarding.json")
+    ob_path.parent.mkdir(exist_ok=True)
+    state = _json.loads(ob_path.read_text()) if ob_path.exists() else {}
+    state["preset"] = preset; state["step"] = 2
+    ob_path.write_text(_json.dumps(state))
+    preset_data = PRESETS.get(preset, {})
+    return jsonify({"ok": True, "preset": preset, "traits": preset_data.get("traits", {})})
 
 @app.route("/api/onboarding/ingest_sample", methods=["POST"])
 def api_onboarding_ingest_sample():
-    if not _brain:
-        return jsonify({"ok": False})
     data = request.json or {}
-    return jsonify(_sanitize(_brain.onboarding_ingest_sample(data.get("sample_id",""))))
+    if _brain:
+        return jsonify(_sanitize(_brain.onboarding_ingest_sample(data.get("sample_id",""))))
+    # Pre-engine: save sample selection for post-start ingestion
+    import json as _json; from pathlib import Path as _Path
+    ob_path = _Path("data/onboarding.json")
+    ob_path.parent.mkdir(exist_ok=True)
+    state = _json.loads(ob_path.read_text()) if ob_path.exists() else {}
+    state["sample_id"] = data.get("sample_id",""); state["step"] = 3
+    ob_path.write_text(_json.dumps(state))
+    return jsonify({"ok": True, "deferred": True})
 
 @app.route("/api/onboarding/ingest_text", methods=["POST"])
 def api_onboarding_ingest_text():
-    if not _brain:
-        return jsonify({"ok": False})
     data = request.json or {}
-    return jsonify(_sanitize(_brain.onboarding_ingest_text(data.get("text",""))))
+    if _brain:
+        return jsonify(_sanitize(_brain.onboarding_ingest_text(data.get("text",""))))
+    # Pre-engine: save custom text for post-start ingestion
+    import json as _json; from pathlib import Path as _Path
+    ob_path = _Path("data/onboarding.json")
+    ob_path.parent.mkdir(exist_ok=True)
+    state = _json.loads(ob_path.read_text()) if ob_path.exists() else {}
+    state["custom_text"] = data.get("text","")[:4000]; state["step"] = 3
+    ob_path.write_text(_json.dumps(state))
+    return jsonify({"ok": True, "deferred": True})
 
 @app.route("/api/onboarding/complete", methods=["POST"])
 def api_onboarding_complete():
-    if not _brain:
-        return jsonify({"ok": False})
-    return jsonify(_sanitize(_brain.onboarding_complete()))
+    if _brain:
+        return jsonify(_sanitize(_brain.onboarding_complete()))
+    # Pre-engine: mark completed on disk so auto-start fires on next page load
+    import json as _json; from pathlib import Path as _Path
+    ob_path = _Path("data/onboarding.json")
+    ob_path.parent.mkdir(exist_ok=True)
+    state = _json.loads(ob_path.read_text()) if ob_path.exists() else {}
+    state["completed"] = True; state["step"] = 5
+    ob_path.write_text(_json.dumps(state))
+    return jsonify({"ok": True})
+
+@app.route("/api/onboarding/reset", methods=["POST"])
+def api_onboarding_reset():
+    """Wipe onboarding state — wizard re-appears on next page load."""
+    from pathlib import Path
+    ob_path = Path("data/onboarding.json")
+    if ob_path.exists():
+        ob_path.unlink()
+    return jsonify({"ok": True, "msg": "Onboarding reset — reload the page to run setup again."})
 
 @app.route("/api/first_opinion", methods=["POST"])
 def api_first_opinion():
