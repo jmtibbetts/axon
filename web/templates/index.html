@@ -4210,51 +4210,52 @@ window.addEventListener('resize', () => {
   // Debounce resize
   clearTimeout(window._resizeTimer);
   window._resizeTimer = setTimeout(() => {
-    initNeurons();
+    // Use syncCanvasToParent so the animation loop is never killed by a resize
+    const p = document.getElementById('neural-panel-body');
+    if (p && p.offsetWidth > 20 && p.offsetHeight > 20) {
+      if (typeof _syncCanvasToParent === 'function') _syncCanvasToParent(p.offsetWidth, p.offsetHeight);
+      else initNeurons(p.offsetWidth, p.offsetHeight);
+    }
     const vc = document.getElementById('vision-canvas');
-    if (vc.offsetWidth > 0) {
+    if (vc && vc.offsetWidth > 0) {
       vc.width  = vc.offsetWidth;
       vc.height = vc.offsetHeight;
     }
-    // Redraw radar if brain tab is active
     if (window.neuralState) drawBrainRadar(window.neuralState.regions || {});
   }, 150);
 });
+// ── Neural Canvas Boot — module scope so resize handler can reach it ──────────
+let _neuralBooted = false;
+
+function _syncCanvasToParent(w, h) {
+  if (!nCanvas || !nCtx) return;
+  if (w < 20 || h < 20) return;
+  const changed = Math.abs(nCanvas.width - w) > 4 || Math.abs(nCanvas.height - h) > 4;
+  nCanvas.width  = w;
+  nCanvas.height = h;
+  if (changed || neuronNodes.length === 0) {
+    initNeurons(w, h);
+    buildLegend();
+  }
+  if (!_neuralBooted) {
+    _neuralBooted = true;
+    drawNeural();
+    console.log('[AXON] neural canvas live:', w, 'x', h);
+  }
+}
+
 window.addEventListener('load', () => {
   buildPersonalitySliders();
 
-  // ── Neural Canvas Boot ────────────────────────────────────────────────────
-  // Strategy: boot immediately with fallback 800x500, then let ResizeObserver
-  // snap to real dimensions once layout settles. This guarantees neurons are
-  // always created regardless of timing quirks.
-  let _neuralBooted = false;
-
-  function _syncCanvasToParent(w, h) {
-    if (w < 20 || h < 20) return;
-    const changed = Math.abs(nCanvas.width - w) > 4 || Math.abs(nCanvas.height - h) > 4;
-    nCanvas.width  = w;
-    nCanvas.height = h;
-    if (changed || neuronNodes.length === 0) {
-      initNeurons(w, h);
-      buildLegend();
-    }
-    if (!_neuralBooted) {
-      _neuralBooted = true;
-      drawNeural();
-      console.log('[AXON] neural canvas live:', w, 'x', h);
-    }
-  }
-
-  // Step 1: Boot immediately with the canvas's own pixel size (800x500 default)
-  // This guarantees neurons exist and the loop starts — even if layout isn't done.
-  console.log('[AXON] boot: nCanvas=', nCanvas, 'nCtx=', nCtx);
+  // Boot immediately with canvas default size (guarantees loop starts)
+  console.log('[AXON] boot: nCanvas=', nCanvas, 'nCtx=', nCtx ? 'OK' : 'NULL');
   if (nCanvas && nCtx) {
     _syncCanvasToParent(nCanvas.width || 800, nCanvas.height || 500);
   } else {
-    console.error('[AXON] BOOT FAILED: canvas or context is null at DOMContentLoaded');
+    console.error('[AXON] BOOT FAILED: canvas or context is null');
   }
 
-  // Step 2: ResizeObserver snaps to real parent dimensions once layout settles
+  // ResizeObserver snaps to real parent dimensions once layout settles
   const _canvasParent = document.getElementById('neural-panel-body');
   if (_canvasParent && window.ResizeObserver) {
     const _ro = new ResizeObserver(entries => {
@@ -4267,13 +4268,13 @@ window.addEventListener('load', () => {
     _ro.observe(_canvasParent);
   }
 
-  // Step 3: Belt-and-suspenders — also snap after layout has had time to settle
+  // Belt-and-suspenders — snap after layout has settled
   [100, 400, 900].forEach(t => setTimeout(() => {
     const p = document.getElementById('neural-panel-body');
     if (p && p.offsetWidth > 20 && p.offsetHeight > 20) _syncCanvasToParent(p.offsetWidth, p.offsetHeight);
   }, t));
 
-  // Brain radar idle baseline (doesn't depend on canvas boot)
+  // Brain radar idle baseline
   [200, 600, 1500].forEach(t => setTimeout(() => { if (typeof drawBrainRadar === 'function') drawBrainRadar({}); }, t));
 });
 
