@@ -1187,47 +1187,51 @@ class AxonEngine:
         state["last_reward"]   = float(getattr(self, "_last_reward", 0.0))
         state["last_surprise"] = float(getattr(self.fabric, "_last_surprise", 0.0))
 
-        # Fire neural_state in a separate thread so we never block the fabric tick
-        import threading as _thr, time as _t2
-        _state_copy = state  # state is a fresh dict each snapshot — safe to hand off
-        def _do_emit():
-            self._emit("neural_state", _state_copy)
-            # Synapse count (throttled to every 5s)
-            if not hasattr(self, '_last_synapse_emit') or (_t2.time() - self._last_synapse_emit) >= 5.0:
-                self._last_synapse_emit = _t2.time()
-                self._emit("synapse_count", {
-                    "connections": _state_copy.get("total_connections", 0),
-                    "neurons":     _state_copy.get("total_neurons", 0),
-                })
-            thoughts = _state_copy.get("thoughts", [])
-            if thoughts:
-                self._emit("thought", {"text": thoughts[-1]})
-        _thr.Thread(target=_do_emit, daemon=True).start()
+        # Emit directly — fabric callback already runs in fabric's own thread.
+        # Spawning a new thread per emit was causing a ~10/s thread storm that
+        # deadlocked the SocketIO threading lock, freezing all neural_state updates.
+        import time as _t2
+        self._emit("neural_state", state)
+        # Synapse count (throttled to every 5s)
+        if not hasattr(self, '_last_synapse_emit') or (_t2.time() - self._last_synapse_emit) >= 5.0:
+            self._last_synapse_emit = _t2.time()
+            self._emit("synapse_count", {
+                "connections": state.get("total_connections", 0),
+                "neurons":     state.get("total_neurons", 0),
+            })
+        thoughts = state.get("thoughts", [])
+        if thoughts:
+            self._emit("thought", {"text": thoughts[-1]})
 
     # ── Helpers ───────────────────────────────────────────────
 
     def _emit(self, event: str, data: dict):
-        if self.socketio:
+        if not self.socketio:
+            return
+        import numpy as _np
+        def _san(o):
+            if isinstance(o, dict):  return {k: _san(v) for k,v in o.items()}
+            if isinstance(o, (list, tuple)): return [_san(v) for v in o]
+            if isinstance(o, _np.integer):   return int(o)
+            if isinstance(o, (_np.floating, _np.float32, _np.float64)): return float(o)
+            if isinstance(o, _np.ndarray):   return o.tolist()
             try:
-                import numpy as _np
-                def _san(o):
-                    if isinstance(o, dict):  return {k: _san(v) for k,v in o.items()}
-                    if isinstance(o, (list, tuple)): return [_san(v) for v in o]
-                    if isinstance(o, _np.integer):   return int(o)
-                    if isinstance(o, (_np.floating, _np.float32, _np.float64)): return float(o)
-                    if isinstance(o, _np.ndarray):   return o.tolist()
-                    try:
-                        import torch as _t
-                        if isinstance(o, _t.Tensor): return o.item() if o.numel()==1 else o.tolist()
-                    except ImportError: pass
-                    return o
-                safe_data = _san(data)
-                self.socketio.emit(event, safe_data, broadcast=True)
-            except Exception as e:
+                import torch as _t
+                if isinstance(o, _t.Tensor): return o.item() if o.numel()==1 else o.tolist()
+            except ImportError: pass
+            return o
+        try:
+            safe_data = _san(data)
+            # Use start_background_task so SocketIO's own event loop handles the emit,
+            # avoiding lock contention when called from background threads (fabric, LLM, etc.)
+            def _do():
                 try:
-                    self.socketio.emit(event, data, namespace="/")
+                    self.socketio.emit(event, safe_data, broadcast=True)
                 except Exception:
                     pass
+            self.socketio.start_background_task(_do)
+        except Exception:
+            pass
 
     def get_status(self) -> dict:
         fabric_state = self.fabric.get_state_snapshot()
