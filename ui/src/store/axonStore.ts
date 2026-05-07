@@ -90,6 +90,10 @@ interface AxonStore {
   surpriseEvents: any[];
   reflections: any[];
   autonomousMode: boolean;
+  voiceSpeaking: boolean;
+  audioEmotion: { emotion?: string; energy?: number; valence?: number } | null;
+  micVolume: number;
+  userProfile: any;
   // historical series for charts
   rewardHistory: number[];
   surpriseHistory: number[];
@@ -118,6 +122,10 @@ export const useAxonStore = create<AxonStore>((set) => ({
   surpriseEvents: [],
   reflections: [],
   autonomousMode: false,
+  voiceSpeaking: false,
+  audioEmotion: null,
+  micVolume: 0,
+  userProfile: null,
   rewardHistory: [],
   surpriseHistory: [],
   regionHistory: {},

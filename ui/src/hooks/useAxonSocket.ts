@@ -134,7 +134,7 @@ export function useAxonSocket() {
     });
 
     socket.on('thinking', (d) => {
-      set({ thinking: d?.active ?? true });
+      set({ thinking: d?.state ?? d?.active ?? true });
     });
 
     socket.on('transcript', (d) => {
@@ -219,6 +219,46 @@ export function useAxonSocket() {
     socket.on('prediction_error', (d) => {
       set((state) => ({
         surpriseEvents: [{ type: 'prediction_error', ...d, ts: Date.now() }, ...state.surpriseEvents].slice(0, 30),
+      }));
+    });
+
+    socket.on('voice_speaking', (d) => {
+      set({ voiceSpeaking: d?.speaking ?? false });
+    });
+
+    socket.on('audio_emotion', (d) => {
+      set({ audioEmotion: d ?? null });
+    });
+
+    socket.on('mic_volume', (d) => {
+      set({ micVolume: d?.db ?? 0 });
+    });
+
+    socket.on('profile_update', (d) => {
+      set({ userProfile: d });
+    });
+
+    socket.on('new_hobby', (d) => {
+      set((state) => ({
+        logs: [{ msg: `🎮 New hobby cluster: ${d?.cluster ?? ''}`, ts: Date.now() }, ...state.logs].slice(0, 200),
+      }));
+    });
+
+    socket.on('person_named', (d) => {
+      set((state) => ({
+        logs: [{ msg: `👤 Face named: ${d?.name ?? d?.person_id ?? '?'}`, ts: Date.now() }, ...state.logs].slice(0, 200),
+      }));
+    });
+
+    socket.on('new_face', (_d) => {
+      set((state) => ({
+        logs: [{ msg: `👤 New face detected`, ts: Date.now() }, ...state.logs].slice(0, 200),
+      }));
+    });
+
+    socket.on('open_diagnostic', () => {
+      set((state) => ({
+        logs: [{ msg: `🔬 Diagnostic mode triggered`, ts: Date.now() }, ...state.logs].slice(0, 200),
       }));
     });
 

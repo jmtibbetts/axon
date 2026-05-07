@@ -108,35 +108,57 @@ export default function App() {
 
 // ── Vision feed ────────────────────────────────────────────────────────────
 function VisionPanel() {
-  const frame    = useAxonStore((s) => s.visionFrame);
-  const faceData = useAxonStore((s) => s.faceData);
+  const frame        = useAxonStore((s) => s.visionFrame);
+  const faceData     = useAxonStore((s) => s.faceData);
+  const audioEmotion = useAxonStore((s) => s.audioEmotion);
+  const micVolume    = useAxonStore((s) => s.micVolume);
+  const voiceSpeaking = useAxonStore((s) => s.voiceSpeaking);
+
+  // mic volume bar: dB typically -60..0
+  const micPct = Math.max(0, Math.min(100, ((micVolume + 60) / 60) * 100));
 
   return (
     <div style={{
       flex: 1, background: '#030712', border: '1px solid #1e1b4e',
-      borderRadius: 8, overflow: 'hidden', position: 'relative',
+      borderRadius: 8, overflow: 'hidden', position: 'relative', display: 'flex', flexDirection: 'column',
     }}>
-      <div style={{ padding: '4px 8px', borderBottom: '1px solid #1e1b4e', fontSize: 9, color: '#4b5563', fontFamily: 'monospace' }}>
-        👁 Vision Feed
+      {/* Header */}
+      <div style={{ padding: '4px 8px', borderBottom: '1px solid #1e1b4e', fontSize: 9, color: '#4b5563', fontFamily: 'monospace', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+        <span>👁 Vision</span>
+        <div style={{ flex: 1 }} />
+        {voiceSpeaking && <span style={{ color: '#6366f1', fontSize: 8, animation: 'blink 0.8s infinite' }}>🔊 speaking</span>}
+        {audioEmotion?.emotion && <span style={{ color: '#fbbf24', fontSize: 8 }}>🎙 {audioEmotion.emotion}</span>}
       </div>
+
+      {/* Mic volume bar */}
+      <div style={{ height: 4, background: '#0d1117', flexShrink: 0 }}>
+        <div style={{ width: `${micPct}%`, height: '100%', background: micPct > 70 ? '#f43f5e' : '#22d3ee', transition: 'width 0.1s' }} />
+      </div>
+
+      {/* Frame */}
       {frame ? (
         <img
           src={`data:image/jpeg;base64,${frame}`}
-          style={{ width: '100%', height: 'calc(100% - 26px)', objectFit: 'cover' }}
+          style={{ flex: 1, width: '100%', objectFit: 'cover', minHeight: 0 }}
           alt="vision"
         />
       ) : (
-        <div style={{ height: 'calc(100% - 26px)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#374151', fontSize: 10 }}>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#374151', fontSize: 10 }}>
           no camera feed
         </div>
       )}
-      {faceData?.name && (
+
+      {/* Face overlay */}
+      {(faceData?.name || faceData?.emotion) && (
         <div style={{
           position: 'absolute', bottom: 6, left: 6, right: 6,
-          background: 'rgba(0,0,0,0.7)', borderRadius: 4, padding: '3px 6px',
+          background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)',
+          borderRadius: 4, padding: '4px 8px',
           fontSize: 9, color: '#22d3ee', fontFamily: 'monospace',
+          border: '1px solid #22d3ee33',
         }}>
-          👤 {faceData.name} {faceData.emotion ? `| ${faceData.emotion}` : ''}
+          👤 {faceData.name ?? 'unknown'} {faceData.emotion ? `· ${faceData.emotion}` : ''}
+          {faceData.confidence ? ` (${Math.round(faceData.confidence * 100)}%)` : ''}
         </div>
       )}
     </div>
@@ -160,7 +182,7 @@ function LogPanel() {
             <span style={{ color: l.level === 'error' ? '#ef4444' : l.level === 'warn' ? '#f59e0b' : '#1e293b' }}>
               [{l.level ?? 'log'}]
             </span>{' '}
-            {l.message ?? l.text ?? JSON.stringify(l).slice(0, 100)}
+            {l.msg ?? l.message ?? l.text ?? JSON.stringify(l).slice(0, 100)}
           </div>
         ))}
       </div>
