@@ -24,9 +24,10 @@ let _handlersSet = false;
 function getSocket(): Socket {
   if (!_socket) {
     _socket = io(SERVER, {
-      transports: ['websocket'],
+      transports: ['polling', 'websocket'],   // polling first → upgrade to ws
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
+      path: '/socket.io',
     });
   }
   return _socket;

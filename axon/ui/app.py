@@ -21,7 +21,7 @@ _brain: AxonBrain = None
 app      = Flask(__name__,
                   template_folder="../../web/templates")
 CORS(app)
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading", logger=False, engineio_logger=False, ping_timeout=60, ping_interval=25)
 
 # Thread-safe emit queue — all background threads push here, one drainer thread
 # pulls and emits inside a proper Flask app context. This is the only reliable
