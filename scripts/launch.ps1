@@ -399,12 +399,26 @@ Write-Host "  |  Dashboard : http://localhost:7777   |" -ForegroundColor Cyan
 Write-Host "  |  Press Ctrl+C to stop                |" -ForegroundColor Cyan
 Write-Host "  +--------------------------------------+" -ForegroundColor Cyan
 Write-Host ""
-Start-Sleep -Milliseconds 800
-Start-Process "http://localhost:7777"
-
 $proc = Start-Process -FilePath $venvPy `
     -ArgumentList "-m", "axon.ui.app" `
     -NoNewWindow -PassThru
+
+# Wait for Flask to be ready before opening browser
+Write-Host "  Waiting for server..." -ForegroundColor DarkGray
+$ready = $false
+for ($i = 0; $i -lt 30; $i++) {
+    Start-Sleep -Milliseconds 500
+    try {
+        $r = Invoke-WebRequest -Uri "http://localhost:7777/api/ready" -UseBasicParsing -TimeoutSec 1 -ErrorAction Stop
+        if ($r.StatusCode -eq 200) { $ready = $true; break }
+    } catch {}
+}
+if ($ready) {
+    Write-Host "  [OK] Server ready -- opening browser" -ForegroundColor Green
+} else {
+    Write-Host "  [WARN] Server did not respond in 15s -- opening anyway" -ForegroundColor Yellow
+}
+Start-Process "http://localhost:7777"
 
 try {
     $proc.WaitForExit()
