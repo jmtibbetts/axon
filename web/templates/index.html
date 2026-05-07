@@ -2022,9 +2022,8 @@ function drawNeural() {
     auditory:0.05,    language:0.08,    default_mode:0.20, thalamus:0.14,
     cerebellum:0.06,  association:0.08, social:0.06,      metacognition:0.10
   };
-  const regionMap = (neuralState && neuralState.regions && Object.keys(neuralState.regions).length > 0)
-    ? neuralState.regions
-    : _IDLE_BASELINE;
+  const _hasBackend = !!(neuralState && neuralState.regions && Object.keys(neuralState.regions).length > 0);
+  const regionMap   = _hasBackend ? neuralState.regions : _IDLE_BASELINE;
 
   // ── Region contrast stretch ─────────────────────────────────────────────────
   // GOAL: idle brain = visibly lit at 20-40% (DMN hot, all regions glowing).
@@ -2048,6 +2047,22 @@ function drawNeural() {
 
   const sharpenedRegion = {};
   for (const [k, v] of Object.entries(regionMap)) {
+
+    if (!_hasBackend) {
+      // ── OFFLINE mode: use pre-baked visual levels so canvas looks alive ──
+      // These are display values, not biological values — just enough to show
+      // the brain map is running and regions are in their correct positions.
+      const _OFFLINE_DISPLAY = {
+        default_mode: 0.35, thalamus: 0.28, metacognition: 0.22,
+        prefrontal:   0.18, language: 0.16, hippocampus:   0.15,
+        association:  0.14, cerebellum: 0.12, social:      0.10,
+        amygdala:     0.08, visual:    0.07, auditory:     0.07,
+      };
+      sharpenedRegion[k] = _OFFLINE_DISPLAY[k] ?? 0.10;
+      continue;
+    }
+
+    // ── LIVE mode: excess-above-baseline contrast stretch ──────────────────
     const floor   = _REGION_FLOOR[k] || 0.07;
     // Excess: how much above the biological floor is this region?
     // floor   → excess = 0   → nearly dark (dim ember only for DMN/thalamus)
@@ -2060,26 +2075,20 @@ function drawNeural() {
 
     let out;
     // dim ember: the floor itself is not zero — gives a barely-perceptible glow
-    // that proves the region exists without looking "on"
     const ember = floor * 0.30;   // DMN ember = 0.06, thalamus = 0.042, visual = 0.015
 
     if (norm < 0.05) {
-      // At or just above floor — ember only
       out = ember + norm * 0.10;
     } else if (norm < 0.25) {
-      // Low activation — faint glow above the ember
       const t = (norm - 0.05) / 0.20;
       out = ember + 0.005 + Math.pow(t, 0.8) * 0.15;
     } else if (norm < 0.55) {
-      // Moderate — clearly visible, distinct from idle
       const t = (norm - 0.25) / 0.30;
       out = ember + 0.155 + Math.pow(t, 0.75) * 0.30;
     } else if (norm < 0.80) {
-      // Active — bright
       const t = (norm - 0.55) / 0.25;
       out = ember + 0.455 + Math.pow(t, 0.85) * 0.30;
     } else {
-      // Peak — full glow
       const t = (norm - 0.80) / 0.20;
       out = ember + 0.755 + Math.pow(t, 0.7) * (1.0 - ember - 0.755);
     }
@@ -2265,13 +2274,12 @@ function drawNeural() {
     // Each neuron has its own sensitivity multiplier (set once)
     if (!n.personalMult) n.personalMult = 0.5 + Math.random() * 1.0;
 
-    if (regionAct < 0.05) {
+    if (regionAct < 0.04) {
       // Region is quiet — neuron decays hard toward zero
       // Only a tiny fraction spontaneously fire (biological noise)
-      n.activation *= 0.88;
+      n.activation *= 0.92;
       if (Math.random() < 0.0008) {
-        // Rare spontaneous spike — dims quickly
-        n.activation = Math.min(0.18, n.activation + 0.12);
+        n.activation = Math.min(0.12, n.activation + 0.08);
       }
     } else {
       // Region is active — drive neuron toward target activation
@@ -2710,8 +2718,8 @@ function drawNeural() {
     const fatigue   = fatigueMap[n.region] || 0;
     const dominance = winnerSmooth[n.region] || 0;
 
-    // Skip truly dark neurons — no point drawing them
-    if (act < 0.015) return;
+    // Skip truly invisible neurons (but allow very dim ones — proves canvas is running)
+    if (act < 0.005) return;
 
     const fatigueDim = 1.0 - fatigue * 0.45;
     const sizeMult   = isWinner ? (1.0 + dominance * 0.6) : 1.0;
@@ -3431,13 +3439,9 @@ function updateNeuralPanel(state) {
     nmContainer.innerHTML = nmHtml;
   }
 
-  // Traits
+  // Traits — render as dot-matrix segments
   window._unp_step = 4;
-  let traits = '';
-  for (const [k,v] of Object.entries(state.personality||{})) {
-    traits += makeBar(k.replace('_',' '), v, 'trait-bar');
-  }
-  const _tb = document.getElementById('trait-bars'); if (_tb) _tb.innerHTML = traits;
+  renderTraitDots(state.personality || {});
 
   // Top clusters with descriptions
   const CLUSTER_DESC = {
@@ -5375,6 +5379,63 @@ function appendIngestLog(msg) {
   el.prepend(line);
   while (el.children.length > 10) el.removeChild(el.lastChild);
 }
+
+// ── Personality Traits — Dot Matrix Renderer ────────────────────────────────
+const _TRAIT_META = {
+  openness:          { label: 'Openness',          icon: '◈', color: '#a78bfa' },
+  conscientiousness: { label: 'Conscientious',     icon: '◎', color: '#34d399' },
+  extraversion:      { label: 'Extraversion',      icon: '◉', color: '#fbbf24' },
+  agreeableness:     { label: 'Agreeableness',     icon: '◍', color: '#60a5fa' },
+  neuroticism:       { label: 'Neuroticism',       icon: '◬', color: '#f87171' },
+  curiosity:         { label: 'Curiosity',         icon: '⬡', color: '#22c55e' },
+  risk:              { label: 'Risk',              icon: '◤', color: '#f59e0b' },
+  empathy:           { label: 'Empathy',           icon: '♡', color: '#ec4899' },
+  dominance:         { label: 'Dominance',         icon: '▲', color: '#ef4444' },
+  creativity:        { label: 'Creativity',        icon: '✦', color: '#8b5cf6' },
+  stability:         { label: 'Stability',         icon: '▣', color: '#0ea5e9' },
+};
+const _TRAIT_DOTS = 20;  // total dots per trait
+
+function renderTraitDots(traits) {
+  const el = document.getElementById('trait-bars');
+  if (!el) return;
+  const entries = Object.entries(traits);
+  if (!entries.length) return;
+
+  el.innerHTML = entries.map(([k, v]) => {
+    const meta  = _TRAIT_META[k] || { label: k, icon: '●', color: '#94a3b8' };
+    const pct   = Math.round((v || 0) * 100);
+    const filled = Math.round((v || 0) * _TRAIT_DOTS);
+    const col    = meta.color;
+
+    // Build dot row: filled dots glow in the trait color, empty ones are dark
+    let dots = '';
+    for (let i = 0; i < _TRAIT_DOTS; i++) {
+      if (i < filled) {
+        // Active dot — full color with subtle size variation for texture
+        const opacity = 0.55 + (i / _TRAIT_DOTS) * 0.45;  // ramp brighter toward right
+        dots += `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;
+          background:${col};opacity:${opacity.toFixed(2)};margin:0 1px;
+          box-shadow:0 0 3px ${col}88;vertical-align:middle;"></span>`;
+      } else {
+        // Empty dot — dark, barely visible
+        dots += `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;
+          background:#1a2030;opacity:0.5;margin:0 1px;vertical-align:middle;border:1px solid #1e293b;"></span>`;
+      }
+    }
+
+    return `<div style="margin-bottom:6px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
+        <span style="font-size:8px;color:${col};font-weight:700;letter-spacing:0.04em;">
+          <span style="opacity:0.7;margin-right:3px;">${meta.icon}</span>${meta.label.toUpperCase()}
+        </span>
+        <span style="font-size:8px;font-family:monospace;color:${col};opacity:0.7;">${pct}</span>
+      </div>
+      <div style="line-height:1;">${dots}</div>
+    </div>`;
+  }).join('');
+}
+
 
 // ── Personality Trait Bars ────────────────────────────────────────────────
 const TRAIT_COLORS = {
