@@ -1096,27 +1096,16 @@ if __name__ == "__main__":
     print("  Commercial use requires a license: jon@jontibbetts.com\n")
     print("  Press Ctrl+C to exit\n")
 
-    # Open browser only after socketio.run() has bound the port.
-    # We pass a threading.Event into the server thread; socketio runs in
-    # a daemon thread and signals the event once the port is bound by
-    # checking /api/ready from WITHIN the same process launch.
-    _port_bound = _th.Event()
-
+    # Open browser after a flat 2-second delay — socketio.run() binds in ~1s.
+    # NO polling: polling hits /api/ready which Flask answers instantly at
+    # import time, causing the browser to open before the menu.
     def _open_browser():
-        import time as _t, webbrowser as _wb, urllib.request as _ur
-        # Wait for socketio to bind — poll /api/ready, max 15s
-        for _ in range(75):
-            _t.sleep(0.2)
-            try:
-                _ur.urlopen("http://localhost:7777/api/ready", timeout=1)
-                _port_bound.set()
-                _t.sleep(0.15)
-                _wb.open_new_tab("http://localhost:7777")
-                return
-            except Exception:
-                pass
+        import time as _t, webbrowser as _wb
+        _t.sleep(2.0)          # give socketio.run() time to bind
+        _wb.open_new_tab("http://localhost:7777")
 
-    # Thread starts NOW — after menu — so it can't fire before menu completes
+    # Thread starts HERE — after menu has already returned — so it is
+    # physically impossible for the browser to open before the user picks.
     _th.Thread(target=_open_browser, daemon=True).start()
 
     try:
