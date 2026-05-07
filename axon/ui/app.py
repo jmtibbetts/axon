@@ -295,7 +295,13 @@ def on_start(config):
         # Wire public API layer
         _brain = AxonBrain(engine=_engine)
         # Allow fabric to emit log events
-        _engine.fabric._socket_emit = lambda ev, d: socketio.emit(ev, _sanitize(d))
+        def _fabric_emit(ev, d):
+            safe = _sanitize(d)
+            def _do(_ev=ev, _d=safe):
+                try: socketio.emit(_ev, _d, broadcast=True)
+                except Exception: pass
+            socketio.start_background_task(_do)
+        _engine.fabric._socket_emit = _fabric_emit
         # Apply any deferred onboarding data (preset personality, sample ingestion)
         _apply_deferred_onboarding(_brain)
         # Push onboarding state to client so it can show the overlay

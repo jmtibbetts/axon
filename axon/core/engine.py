@@ -1204,7 +1204,13 @@ class AxonEngine:
                 except ImportError: pass
                 return o
             try:
-                self.socketio.emit("neural_state", _san2(state), broadcast=True)
+                _safe_state = _san2(state)
+                def _do_emit(_s=_safe_state):
+                    try:
+                        self.socketio.emit("neural_state", _s, broadcast=True)
+                    except Exception:
+                        pass
+                self.socketio.start_background_task(_do_emit)
             except Exception as _ee:
                 pass  # Don't let emit errors kill the fabric callback
         # Synapse count (throttled to every 5s)
