@@ -1,9 +1,6 @@
 """
 AXON — Flask + SocketIO UI server
 """
-import eventlet
-import eventlet.tpool as _tpool
-eventlet.monkey_patch()
 import os, sys, threading
 try:
     import torch as _torch
@@ -11,7 +8,7 @@ try:
 except ImportError:
     _CUDA_NAME = None
 from pathlib import Path
-from flask import Flask, render_template, jsonify, request, send_from_directory
+from flask import Flask, render_template, jsonify, request
 import os, tempfile
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
@@ -21,167 +18,23 @@ from axon.core.engine   import AxonEngine
 from axon.core.brain_api import AxonBrain
 _brain: AxonBrain = None
 
-app      = Flask(__name__,
-                  template_folder="../../web/templates")
+app      = Flask(__name__, template_folder="../../web/templates")
 CORS(app)
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet", logger=False, engineio_logger=False, ping_timeout=120, ping_interval=30, max_http_buffer_size=10_000_000)
-
-# ── Thread-safe emit via a queue drainer ────────────────────────────────────
-# Thread-safe emit via eventlet.queue.LightQueue.
-# LightQueue works correctly when producers are OS threads (tpool, threading.Thread)
-# and the consumer is a greenlet — unlike stdlib queue.Queue which deadlocks.
-import eventlet.queue as _eq
-_emit_queue = _eq.LightQueue()
-_drainer_started = False
-
-def _safe_emit(event: str, data: dict):
-    """Put emit on queue — safe from any OS thread or greenlet."""
-    try:
-        _emit_queue.put_nowait((event, data))
-    except Exception:
-        pass
-
-def _start_drainer():
-    """Start the single drain greenlet (idempotent)."""
-    global _drainer_started
-    if _drainer_started:
-        return
-    _drainer_started = True
-    def _drain():
-        while True:
-            try:
-                event, data = _emit_queue.get()
-                try:
-                    socketio.emit(event, data, broadcast=True)
-                except Exception:
-                    pass
-            except Exception:
-                eventlet.sleep(0.01)
-    socketio.start_background_task(_drain)
-
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 _engine: AxonEngine = None
-_engine_lock     = threading.Lock()  # prevents double-init race
-_engine_starting = False               # True while start_engine is in progress
-_last_start_error: str = None          # last startup traceback for diagnostics
-
-def _sanitize(obj):
-    """Recursively convert numpy/torch scalar types to native Python for JSON."""
-    import numpy as np
-    if isinstance(obj, dict):
-        return {k: _sanitize(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
-        return [_sanitize(v) for v in obj]
-    if isinstance(obj, np.integer):
-        return int(obj)
-    if isinstance(obj, (np.floating, np.float32, np.float64)):
-        return float(obj)
-    if isinstance(obj, np.ndarray):
-        return obj.tolist()
-    try:
-        import torch
-        if isinstance(obj, torch.Tensor):
-            return obj.item() if obj.numel() == 1 else obj.tolist()
-    except ImportError:
-        pass
-    return obj
-
-
-def _apply_deferred_onboarding(brain):
-    """After engine starts, apply any onboarding choices that were saved pre-engine."""
-    import json as _json
-    from pathlib import Path as _Path
-    ob_path = _Path("data/onboarding.json")
-    if not ob_path.exists():
-        return
-    try:
-        state = (_json.loads(ob_path.read_text()) if ob_path.read_text().strip() else {})
-    except Exception:
-        return
-    if not state.get("completed"):
-        return
-    # Apply personality preset if engine doesn't already have it
-    preset = state.get("preset", "")
-    if preset:
-        try:
-            brain.onboarding_set_preset(preset)
-            print(f"  [Onboarding] Applied deferred preset: {preset}")
-        except Exception as e:
-            print(f"  [Onboarding] Could not apply preset: {e}")
-    # Ingest deferred sample
-    sample_id = state.get("sample_id", "")
-    if sample_id:
-        try:
-            brain.onboarding_ingest_sample(sample_id)
-            print(f"  [Onboarding] Ingested deferred sample: {sample_id}")
-        except Exception as e:
-            print(f"  [Onboarding] Could not ingest sample: {e}")
-    # Ingest deferred custom text
-    custom_text = state.get("custom_text", "")
-    if custom_text:
-        try:
-            brain.onboarding_ingest_text(custom_text)
-            print(f"  [Onboarding] Ingested deferred custom text ({len(custom_text)} chars)")
-        except Exception as e:
-            print(f"  [Onboarding] Could not ingest custom text: {e}")
-
-
-import os as _os
-_UI_BUILD_DIR = _os.path.normpath(_os.path.join(_os.path.dirname(__file__), "../../web/static/ui"))
-
-def _react_exists():
-    return _os.path.exists(_os.path.join(_UI_BUILD_DIR, "index.html"))
 
 @app.route("/")
-@app.route("/react")
-@app.route("/react/<path:path>")
-def index(path=None):
-    # Serve the React/Vite build
-    if _react_exists():
-        return send_from_directory(_UI_BUILD_DIR, "index.html")
-    return render_template("monitor.html")
-
-@app.route("/assets/<path:filename>")
-def react_assets(filename):
-    return send_from_directory(_os.path.join(_UI_BUILD_DIR, "assets"), filename)
-
-@app.route("/favicon.svg")
-@app.route("/icons.svg")
-def react_static(filename=None):
-    name = _os.path.basename(request.path)
-    return send_from_directory(_UI_BUILD_DIR, name)
-
-@app.route("/dashboard")
-@app.route("/dashboard/<path:path>")
-def dashboard(path=None):
-    return render_template("monitor.html")
-
-@app.route("/legacy")
-def legacy():
+def index():
     return render_template("index.html")
-
-@app.route("/monitor")
-def monitor():
-    return render_template("monitor.html")
-
-@app.route("/api/ready")
-def ready():
-    """Lightweight liveness probe — returns 200 as soon as the server is up."""
-    return jsonify({"ready": True})
-
-@app.route("/api/start_error")
-def start_error():
-    """Return the last engine startup traceback for debugging."""
-    return jsonify({"error": _last_start_error, "has_engine": bool(_engine), "starting": _engine_starting})
 
 @app.route("/api/status")
 def status():
-    if not _engine:
-        return jsonify({"running": False})
-    try:
-        return jsonify(_sanitize(_engine.get_status()))
-    except Exception as e:
-        # Fallback — just confirm the engine is alive without the full state
-        return jsonify({"running": bool(_engine and _engine.running), "error": str(e)})
+    return jsonify(_engine.get_status() if _engine else {"running": False})
+
+@app.route("/api/ready")
+def api_ready():
+    return jsonify({"status": "ok"})
+
 
 @app.route("/api/audio_diag")
 def audio_diag():
@@ -239,25 +92,9 @@ def memory_summary():
 
 @socketio.on("connect")
 def on_connect():
-    _start_drainer()   # idempotent — only spawns once, inside the hub
     emit("log", {"msg": "Connected to AXON."})
-    if _engine and _engine.running:
+    if _engine:
         emit("lm_status", _engine.language.get_status())
-        # Tell monitor.html the engine is already online (handles page refresh)
-        emit("log", {"msg": "AXON online — engine running."})
-        # Push a full state snapshot directly to the connecting client
-        try:
-            snap = _sanitize(_engine.fabric.get_state_snapshot())
-            emit("neural_state", snap)
-        except Exception:
-            pass
-        # Push current vision frame if available
-        try:
-            vf = getattr(_engine, "_last_visual_ctx", None)
-            if vf and vf.get("frame_b64"):
-                emit("frame", _sanitize(vf))
-        except Exception:
-            pass
 
 @socketio.on("disconnect")
 def on_disconnect():
@@ -266,26 +103,15 @@ def on_disconnect():
 
 @socketio.on("chat")
 def on_chat(data):
-    txt = data.get("text", "")
-    print(f"[AXON] >>> chat received: {txt[:80]!r}  engine={_engine is not None}")
     if _engine:
-        # Echo back so UI knows message was received
-        _safe_emit("user_input_echo", {"text": txt})
-        try:
-            _tpool.execute(_engine.chat, txt)
-        except Exception as _chat_err:
-            print(f"[AXON] chat tpool error: {_chat_err} — falling back to spawn")
-            eventlet.spawn(_engine.chat, txt)
+        _engine.chat(data.get("text", ""))
     else:
-        emit("log", {"msg": "Engine not started — AXON is starting up, please wait."})
+        emit("log", {"msg": "Engine not started — hit ACTIVATE first."})
 
 @socketio.on("user_text")
 def on_user_text(data):
     if _engine:
-        try:
-            _tpool.execute(_engine.chat, data.get("text", ""))
-        except Exception:
-            eventlet.spawn(_engine.chat, data.get("text", ""))
+        _engine.chat(data.get("text", ""))
 
 @socketio.on("reprobe_lm")
 def on_reprobe():
@@ -324,87 +150,41 @@ def on_update_provider(data):
 
 @socketio.on("start_engine")
 def on_start(config):
-    global _engine, _brain, _engine_starting
-    with _engine_lock:
-        if (_engine and _engine.running) or _engine_starting:
-            emit("log", {"msg": "Already running."})
-            # Still push onboarding state so page refreshes get the correct overlay state
-            if _brain:
-                emit("onboarding_state", _sanitize(_brain.get_onboarding_state()))
-            return
-        _engine_starting = True
-    try:
-        api_key      = config.get("api_key")    or os.getenv("ANTHROPIC_API_KEY", "")
-        lm_url       = config.get("lm_url",       "http://localhost:1234")
-        lm_model     = config.get("lm_model",     None) or None
-        prefer_local = config.get("prefer_local", True)
+    global _engine, _brain
+    if _engine and _engine.running:
+        emit("log", {"msg": "Already running."})
+        # Still push onboarding state so page refreshes get the correct overlay state
+        if _brain:
+            emit("onboarding_state", _sanitize(_brain.get_onboarding_state()))
+        return
+    api_key      = config.get("api_key")    or os.getenv("ANTHROPIC_API_KEY", "")
+    lm_url       = config.get("lm_url",       "http://localhost:1234")
+    lm_model     = config.get("lm_model",     None) or None
+    prefer_local = config.get("prefer_local", True)
 
-        _engine = AxonEngine(
-            socketio=socketio,
-            api_key=api_key,
-            lm_studio_url=lm_url,
-            lm_studio_model=lm_model,
-            prefer_local=prefer_local,
-        )
-        if not config.get("voice", True):
-            _engine.voice.enabled = False
+    _engine = AxonEngine(
+        socketio=socketio,
+        api_key=api_key,
+        lm_studio_url=lm_url,
+        lm_studio_model=lm_model,
+        prefer_local=prefer_local,
+    )
+    if not config.get("voice", True):
+        _engine.voice.enabled = False
 
-        # Override engine's _emit to use the thread-safe queue
-        def _engine_emit(event: str, data: dict):
-            import numpy as _np
-            def _san(o):
-                if isinstance(o, dict):  return {k: _san(v) for k,v in o.items()}
-                if isinstance(o, (list, tuple)): return [_san(v) for v in o]
-                if isinstance(o, _np.integer):   return int(o)
-                if isinstance(o, (_np.floating, _np.float32, _np.float64)): return float(o)
-                if isinstance(o, _np.ndarray):   return o.tolist()
-                try:
-                    import torch as _t
-                    if isinstance(o, _t.Tensor): return o.item() if o.numel()==1 else o.tolist()
-                except ImportError: pass
-                return o
-            _safe_emit(event, _san(data))
-        _engine._emit = _engine_emit
-        _engine.fabric._socket_emit = lambda ev, d: _safe_emit(ev, _sanitize(d))
-
-        # Run engine start in a greenlet so we don't block the eventlet hub
-        # during the long GPU/model init sequence.
-        sid = request.sid
-
-        def _do_start():
-            global _engine, _brain, _engine_starting, _last_start_error
-            try:
-                _engine.start(
-                    enable_camera=config.get("camera",       True),
-                    enable_mic=config.get("mic",             True),
-                    camera_index=config.get("camera_index",  -1),
-                    mic_index=config.get("mic_index", None),
-                )
-                # Wire public API layer
-                _brain = AxonBrain(engine=_engine)
-                _engine.fabric._socket_emit = lambda ev, d: _safe_emit(ev, _sanitize(d))
-                _apply_deferred_onboarding(_brain)
-                _safe_emit("onboarding_state", _sanitize(_brain.get_onboarding_state()))
-                _safe_emit("log", {"msg": "✅ AXON online — engine running."})
-            except Exception as _start_exc:
-                import traceback
-                tb = traceback.format_exc()
-                _last_start_error = tb
-                print(f"[AXON] Engine startup FAILED:\n{tb}")
-                _engine = None
-                _brain  = None
-                _safe_emit("log", {"msg": f"❌ Engine startup failed: {_start_exc}"})
-                for line in tb.splitlines():
-                    _safe_emit("log", {"msg": line})
-            finally:
-                _engine_starting = False
-
-        eventlet.spawn(_do_start)
-        emit("log", {"msg": "⏳ Engine initializing…"})
-        return  # handler returns immediately; _do_start runs in background
-    except Exception as _outer_exc:
-        print(f"[AXON] Unexpected outer error in start handler: {_outer_exc}")
-        _engine_starting = False
+    _engine.start(
+        enable_camera=config.get("camera",       True),
+        enable_mic=config.get("mic",             True),
+        camera_index=config.get("camera_index",  -1),
+        mic_index=config.get("mic_index", None),
+    )
+    # Wire public API layer
+    _brain = AxonBrain(engine=_engine)
+    # Allow fabric to emit log events
+    _engine.fabric._socket_emit = lambda ev, d: socketio.emit(ev, _sanitize(d))
+    # Push onboarding state to client so it can show the overlay
+    # (the DOMContentLoaded fetch fires before the engine is ready)
+    emit("onboarding_state", _sanitize(_brain.get_onboarding_state()))
 
 @socketio.on("stop_engine")
 def on_stop():
@@ -486,6 +266,27 @@ def on_load_brain(data=None):
     result = _brain.load_brain(slot)
     emit("log", {"msg": f"📂 Brain restored from '{slot}'"})
     emit("brain_loaded", _sanitize(result))
+
+def _sanitize(obj):
+    """Recursively convert numpy/torch scalar types to native Python for JSON."""
+    import numpy as np
+    if isinstance(obj, dict):
+        return {k: _sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize(v) for v in obj]
+    if isinstance(obj, np.integer):
+        return int(obj)
+    if isinstance(obj, (np.floating, np.float32, np.float64)):
+        return float(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    try:
+        import torch
+        if isinstance(obj, torch.Tensor):
+            return obj.item() if obj.numel() == 1 else obj.tolist()
+    except ImportError:
+        pass
+    return obj
 
 
 @socketio.on("diagnostic")
@@ -818,7 +619,7 @@ def api_onboarding_check():
     ob_path = _Path("data/onboarding.json")
     if ob_path.exists():
         try:
-            state = (_json.loads(ob_path.read_text()) if ob_path.read_text().strip() else {})
+            state = _json.loads(ob_path.read_text())
             return jsonify({"completed": bool(state.get("completed", False))})
         except Exception:
             pass
@@ -835,7 +636,7 @@ def api_onboarding_state():
         state = {}
         if ob_path.exists():
             try:
-                state = (_json.loads(ob_path.read_text()) if ob_path.read_text().strip() else {})
+                state = _json.loads(ob_path.read_text())
             except Exception:
                 pass
         return jsonify({
@@ -851,85 +652,37 @@ def api_onboarding_state():
 
 @app.route("/api/onboarding/name", methods=["POST"])
 def api_onboarding_name():
+    if not _brain:
+        return jsonify({"ok": False})
     data = request.json or {}
-    name = data.get("name", "")
-    if _brain:
-        return jsonify(_sanitize(_brain.onboarding_set_name(name)))
-    # Pre-engine: persist directly to disk
-    import json as _json; from pathlib import Path as _Path
-    ob_path = _Path("data/onboarding.json")
-    ob_path.parent.mkdir(exist_ok=True)
-    state = (_json.loads(ob_path.read_text()) if ob_path.read_text().strip() else {}) if ob_path.exists() else {}
-    state["ai_name"] = name; state.setdefault("step", 1)
-    ob_path.write_text(_json.dumps(state))
-    return jsonify({"ok": True, "ai_name": name})
+    return jsonify(_sanitize(_brain.onboarding_set_name(data.get("name",""))))
 
 @app.route("/api/onboarding/preset", methods=["POST"])
 def api_onboarding_preset():
+    if not _brain:
+        return jsonify({"ok": False})
     data = request.json or {}
-    preset = data.get("preset", "")
-    if _brain:
-        return jsonify(_sanitize(_brain.onboarding_set_preset(preset)))
-    # Pre-engine: persist directly to disk
-    import json as _json; from pathlib import Path as _Path
-    from axon.cognition.onboarding import PRESETS
-    ob_path = _Path("data/onboarding.json")
-    ob_path.parent.mkdir(exist_ok=True)
-    state = (_json.loads(ob_path.read_text()) if ob_path.read_text().strip() else {}) if ob_path.exists() else {}
-    state["preset"] = preset; state["step"] = 2
-    ob_path.write_text(_json.dumps(state))
-    preset_data = PRESETS.get(preset, {})
-    return jsonify({"ok": True, "preset": preset, "traits": preset_data.get("traits", {})})
+    return jsonify(_sanitize(_brain.onboarding_set_preset(data.get("preset",""))))
 
 @app.route("/api/onboarding/ingest_sample", methods=["POST"])
 def api_onboarding_ingest_sample():
+    if not _brain:
+        return jsonify({"ok": False})
     data = request.json or {}
-    if _brain:
-        return jsonify(_sanitize(_brain.onboarding_ingest_sample(data.get("sample_id",""))))
-    # Pre-engine: save sample selection for post-start ingestion
-    import json as _json; from pathlib import Path as _Path
-    ob_path = _Path("data/onboarding.json")
-    ob_path.parent.mkdir(exist_ok=True)
-    state = (_json.loads(ob_path.read_text()) if ob_path.read_text().strip() else {}) if ob_path.exists() else {}
-    state["sample_id"] = data.get("sample_id",""); state["step"] = 3
-    ob_path.write_text(_json.dumps(state))
-    return jsonify({"ok": True, "deferred": True})
+    return jsonify(_sanitize(_brain.onboarding_ingest_sample(data.get("sample_id",""))))
 
 @app.route("/api/onboarding/ingest_text", methods=["POST"])
 def api_onboarding_ingest_text():
+    if not _brain:
+        return jsonify({"ok": False})
     data = request.json or {}
-    if _brain:
-        return jsonify(_sanitize(_brain.onboarding_ingest_text(data.get("text",""))))
-    # Pre-engine: save custom text for post-start ingestion
-    import json as _json; from pathlib import Path as _Path
-    ob_path = _Path("data/onboarding.json")
-    ob_path.parent.mkdir(exist_ok=True)
-    state = (_json.loads(ob_path.read_text()) if ob_path.read_text().strip() else {}) if ob_path.exists() else {}
-    state["custom_text"] = data.get("text","")[:4000]; state["step"] = 3
-    ob_path.write_text(_json.dumps(state))
-    return jsonify({"ok": True, "deferred": True})
+    return jsonify(_sanitize(_brain.onboarding_ingest_text(data.get("text",""))))
 
 @app.route("/api/onboarding/complete", methods=["POST"])
 def api_onboarding_complete():
-    if _brain:
-        return jsonify(_sanitize(_brain.onboarding_complete()))
-    # Pre-engine: mark completed on disk so auto-start fires on next page load
-    import json as _json; from pathlib import Path as _Path
-    ob_path = _Path("data/onboarding.json")
-    ob_path.parent.mkdir(exist_ok=True)
-    state = (_json.loads(ob_path.read_text()) if ob_path.read_text().strip() else {}) if ob_path.exists() else {}
-    state["completed"] = True; state["step"] = 5
-    ob_path.write_text(_json.dumps(state))
-    return jsonify({"ok": True})
-
-@app.route("/api/onboarding/reset", methods=["POST"])
-def api_onboarding_reset():
-    """Wipe onboarding state — wizard re-appears on next page load."""
-    from pathlib import Path
-    ob_path = Path("data/onboarding.json")
-    if ob_path.exists():
-        ob_path.unlink()
-    return jsonify({"ok": True, "msg": "Onboarding reset — reload the page to run setup again."})
+    if not _brain:
+        return jsonify({"ok": False})
+    return jsonify(_sanitize(_brain.onboarding_complete()))
 
 @app.route("/api/first_opinion", methods=["POST"])
 def api_first_opinion():
@@ -1083,23 +836,6 @@ def api_brain_thought_competition():
     return jsonify({"competitions": _sanitize(_engine.thought_gen.recent_competitions(n))})
 
 
-@app.route("/api/brain/memory", methods=["GET"])
-def api_brain_memory():
-    """Return top Hebbian pathways for the neural canvas visualizer."""
-    if not _engine or not hasattr(_engine, "memory"):
-        return jsonify({"pathways": []})
-    try:
-        n = int(request.args.get("n", 30))
-        connections = _engine.memory.top_connections(n=n)
-        pathways = [
-            {"src": c["a"], "dst": c["b"], "weight": c["weight"]}
-            for c in connections
-        ]
-        return jsonify({"pathways": pathways})
-    except Exception as ex:
-        return jsonify({"pathways": [], "error": str(ex)})
-
-
 @app.route("/api/brain/memory_hierarchy", methods=["GET"])
 def api_brain_memory_hierarchy():
     if not _engine or not hasattr(_engine, "mem_hierarchy"):
@@ -1134,72 +870,16 @@ def api_brain_memory_hierarchy_store():
     )
     return jsonify({"ok": True, "id": row_id, "tier": tier})
 
-
-@app.route("/api/brain/interests", methods=["GET"])
-def api_brain_interests():
-    """Return all interests, boredom state, and search history."""
-    if not _engine:
-        return jsonify({"ok": False, "error": "Engine not running"})
-    result = {"ok": True}
-    if hasattr(_engine, "interests") and _engine.interests:
-        result["interests"] = _engine.interests.all_interests()
-    if hasattr(_engine, "boredom") and _engine.boredom:
-        result["boredom"] = _engine.boredom.to_dict()
-    if hasattr(_engine, "explorer") and _engine.explorer:
-        result["search_history"] = _engine.explorer.search_history()
-    return jsonify(result)
-
-@app.route("/api/brain/interests/add", methods=["POST"])
-def api_brain_interests_add():
-    """Manually seed an interest."""
-    if not _engine or not hasattr(_engine, "interests"):
-        return jsonify({"ok": False, "error": "Engine not running"})
-    data = request.json or {}
-    name = data.get("name", "").strip()
-    if not name:
-        return jsonify({"ok": False, "error": "name required"})
-    interest = _engine.interests.add_or_strengthen(
-        name,
-        reward=float(data.get("strength", 0.3)),
-        novelty=0.5,
-        source="manual",
-    )
-    if interest:
-        _engine._emit("new_interest", {"name": name, "source": "manual", "strength": interest.strength})
-    return jsonify({"ok": True, "name": name})
-
-@app.route("/api/brain/interests/remove", methods=["POST"])
-def api_brain_interests_remove():
-    """Force-remove an interest."""
-    if not _engine or not hasattr(_engine, "interests"):
-        return jsonify({"ok": False, "error": "Engine not running"})
-    data = request.json or {}
-    name = (data.get("name", "")).strip().lower()
-    with _engine.interests._lock:
-        if name in _engine.interests._items:
-            del _engine.interests._items[name]
-            _engine.interests._delete(name)
-    return jsonify({"ok": True, "removed": name})
-
-@app.route("/api/brain/boredom", methods=["GET"])
-def api_brain_boredom():
-    if not _engine or not hasattr(_engine, "boredom"):
-        return jsonify({"ok": False, "error": "Engine not running"})
-    return jsonify({"ok": True, **_engine.boredom.to_dict()})
-
 if __name__ == "__main__":
-    import signal, sys, threading as _th
+    import signal, sys
 
-    # ── Pre-launch menu — runs SYNCHRONOUSLY before anything else ──────
-    # The web server has NOT started yet at this point.
+    # ── Pre-launch menu (skip if running as subprocess / non-interactive) ──
     if sys.stdin.isatty():
         try:
             from axon.launch_menu import run as _launch_menu
             _launch_menu()
         except Exception as _lm_err:
             pass  # never block startup
-
-    # Menu is done. NOW set up the server + browser open.
 
     def _shutdown(sig=None, frame=None):
         print("\n  [AXON] Shutting down…")
@@ -1210,6 +890,7 @@ if __name__ == "__main__":
             except Exception:
                 pass
             _engine = None
+        # Give threads a moment then hard-exit
         import threading
         t = threading.Thread(target=lambda: (__import__("time").sleep(1.5), os._exit(0)), daemon=True)
         t.start()
@@ -1218,31 +899,12 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT,  _shutdown)
     signal.signal(signal.SIGTERM, _shutdown)
 
-    print("\n  AXON — Emerging Intelligence")
-    print("  Main UI:      http://localhost:7777")
-    print("  Neural Monitor: http://localhost:7777/monitor\n")
+    print("\n  AXON — Emerging Intelligence\n  Open: http://localhost:7777\n")
     print("  Axon Non-Commercial License | Copyright (c) 2026 Jon Tibbetts")
     print("  Commercial use requires a license: jon@jontibbetts.com\n")
     print("  Press Ctrl+C to exit\n")
-
-    # Open browser after a flat 2-second delay — socketio.run() binds in ~1s.
-    # NO polling: polling hits /api/ready which Flask answers instantly at
-    # import time, causing the browser to open before the menu.
-    def _open_browser():
-        import time as _t, webbrowser as _wb
-        _t.sleep(2.0)          # give socketio.run() time to bind
-        _wb.open_new_tab("http://localhost:7777")
-
-    # Thread starts HERE — after menu has already returned — so it is
-    # physically impossible for the browser to open before the user picks.
-    _th.Thread(target=_open_browser, daemon=True).start()
-
     try:
-        socketio.run(app, host="0.0.0.0", port=7777, debug=False)
+        socketio.run(app, host="0.0.0.0", port=7777, debug=False,
+                     allow_unsafe_werkzeug=True)
     except KeyboardInterrupt:
-        _shutdown()
-    except Exception as _server_exc:
-        import traceback
-        print(f"\n  [AXON] Server crashed: {_server_exc}")
-        traceback.print_exc()
         _shutdown()

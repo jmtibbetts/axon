@@ -426,7 +426,7 @@ if ($ready) {
 } else {
     Write-Host "  [WARN] Server did not respond in 15s -- opening anyway" -ForegroundColor Yellow
 }
-Start-Process "http://localhost:7777/dashboard"
+Start-Process "http://localhost:7777/"
 
 try {
     $proc.WaitForExit()
