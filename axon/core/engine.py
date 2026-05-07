@@ -909,10 +909,9 @@ class AxonEngine:
                 self._emit("log",      {"msg": f"⚠ Think error: {e}"})
                 self._emit("thinking", {"state": False})
 
-        if self.socketio:
-            self.socketio.start_background_task(_run)
-        else:
-            threading.Thread(target=_run, daemon=True).start()
+        # Always use a plain OS thread — _safe_emit uses stdlib queue.Queue
+        # which is safe from any thread context (no eventlet greenlet required).
+        threading.Thread(target=_run, daemon=True).start()
 
     # ── Diagnostic / self-description keyword detection ─────────────────────
     _DIAG_KEYWORDS = {
