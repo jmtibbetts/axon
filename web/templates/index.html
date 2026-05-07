@@ -382,10 +382,10 @@ canvas.spark{display:block;}
   </div>
 
   <!-- COL 2: Neural Canvas (top) + Chat (bottom) -->
-  <div class="panel" style="grid-column:2;min-height:0;height:100%;display:flex;flex-direction:column;">
+  <div class="panel" style="grid-column:2;min-height:400px;height:100%;display:flex;flex-direction:column;">
     <div class="panel-title">🧠 Neural Activity -- <span id="neuron-count">0</span> neurons | <span id="conn-count" style="color:#00ff88;transition:color 0.3s;">0</span> synaptic connections</div>
-    <div class="panel-body" id="neural-panel-body" style="padding:0;background:#020205;position:relative;overflow:hidden;flex:1;min-height:0;height:100%;">
-      <canvas id="neural-canvas" style="position:absolute;inset:0;width:100%;height:100%;display:block;"></canvas>
+    <div class="panel-body" id="neural-panel-body" style="padding:0;background:#020205;position:relative;overflow:hidden;flex:1;min-height:200px;">
+      <canvas id="neural-canvas" style="position:absolute;inset:0;width:100%;height:100%;display:block;min-height:200px;"></canvas>
       <div id="region-legend" style="
         position:absolute;top:8px;right:8px;
         display:flex;flex-direction:column;gap:3px;
@@ -1621,7 +1621,7 @@ socket.on('diagnostic_result', function(d) {
 
 // -- Neural canvas ---------------------------------------------
 const nCanvas = document.getElementById('neural-canvas') || (() => { console.error('[AXON] neural-canvas NOT FOUND — check HTML ID'); return document.createElement('canvas'); })();
-const nCtx    = nCanvas.getContext('2d');
+let nCtx    = nCanvas.getContext('2d');
 let neuronNodes  = [];
 let neuralState  = null;
 let axonFrame    = 0;
@@ -2002,11 +2002,18 @@ function drawNeural() {
   // rAF is ALWAYS the last line — loop NEVER dies
   try {
 
+  // Guard: re-acquire context if null (can happen on hidden/minimized tabs)
+  if (!nCtx) {
+    nCtx = nCanvas.getContext('2d');
+    if (!nCtx) { requestAnimationFrame(drawNeural); return; }
+  }
+
   // Guard: only proceed if canvas has real pixel dimensions
   if (nCanvas.width < 20 || nCanvas.height < 20) {
     requestAnimationFrame(drawNeural); return;
   }
   axonFrame++;
+  if (axonFrame === 1) console.log('[AXON] drawNeural STARTED — canvas:', nCanvas.width+'x'+nCanvas.height, 'neurons:', neuronNodes.length);
   const W = nCanvas.width, H = nCanvas.height;
 
   // Trail fade — faster = tighter, more reactive visual
@@ -4551,6 +4558,17 @@ window.addEventListener('load', () => {
   initNeurons(800, 500);
   buildLegend();
   drawNeural();   // start the rAF loop immediately
+
+  // ── Watchdog: restart rAF loop if it ever dies ─────────────────────────
+  // Checks every 3 seconds that axonFrame is incrementing
+  let _wdLastFrame = 0;
+  setInterval(() => {
+    if (axonFrame === _wdLastFrame && neuronNodes.length > 0) {
+      console.warn('[AXON] rAF watchdog: loop stalled at frame', axonFrame, '— restarting');
+      drawNeural();
+    }
+    _wdLastFrame = axonFrame;
+  }, 3000);
 
   function _resizeCanvas() {
     const par = nCanvas.parentElement;
