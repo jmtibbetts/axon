@@ -1791,7 +1791,7 @@ class NeuralFabric:
         new_act = torch.clamp(act * decay + delta + noise, min=0.001, max=1.0)
         # Resting potential: biological cortex never goes silent.
         # Serotonin further elevates tone (calm wakefulness = higher baseline).
-        resting = torch.full_like(new_act, 0.12 + 0.08 * ser)   # 12-20% floor, serotonin-modulated
+        resting = torch.full_like(new_act, 0.04 + 0.04 * ser)   # 4-8% floor, serotonin-modulated
         new_act = torch.max(new_act, resting)
 
         # ── 9. Surprise-driven learning rate ─────────────────────────────────
@@ -1882,25 +1882,29 @@ class NeuralFabric:
     # ── Ambient background firing ─────────────────────────────────────────────
 
     # Minimum resting activation per region.
-    # A living brain is NEVER dark — even deep sleep shows 40-80% baseline metabolic activity.
-    # These floors ensure every region is visibly lit at rest.
+    # These are TRUE biological floors — metabolic minimums to keep the region
+    # alive. They are intentionally low so the UI can show CONTRAST between
+    # a resting brain and an active one.
+    #
+    # Only DMN and thalamus are meaningfully warm at idle — that's the visual
+    # we want. Other regions should be near-dark until actually stimulated.
     _BASELINE = {
-        # PFC sub-regions
-        "planning_cortex":       0.24,   # always goal-directed, never truly off
-        "working_memory_cortex": 0.22,   # holding context even at idle
-        "inhibitory_cortex":     0.18,   # tonic suppression of impulses
-        # Rest
-        "default_mode":          0.35,   # DMN: highest at rest — self-referential thought
-        "thalamus":              0.28,   # relay hub — never stops gating
-        "hippocampus":           0.18,   # idle replay and consolidation
-        "amygdala":              0.14,   # vigilance — always on watch
-        "visual":                0.12,   # baseline visual processing
-        "auditory":              0.12,   # ambient sound monitoring
-        "language":              0.20,   # inner monologue — constant
-        "association":           0.22,   # cross-modal binding
-        "social":                0.16,   # social simulation
-        "cerebellum":            0.18,   # motor timing prediction
-        "metacognition":         0.28,   # self-monitoring — always watching
+        # PFC sub-regions — quiet when not planning/working
+        "planning_cortex":       0.08,
+        "working_memory_cortex": 0.08,
+        "inhibitory_cortex":     0.06,
+        # Subcortical hubs
+        "default_mode":          0.20,   # DMN: genuinely hot at idle (daydreaming)
+        "thalamus":              0.14,   # relay: always gating but not blazing
+        "hippocampus":           0.08,   # idle consolidation — low but present
+        "amygdala":              0.06,   # vigilance baseline — low unless event
+        "visual":                0.05,   # very quiet if eyes closed / no input
+        "auditory":              0.05,   # quiet without audio
+        "language":              0.08,   # inner monologue — soft at rest
+        "association":           0.08,   # quiet without cross-modal input
+        "social":                0.06,
+        "cerebellum":            0.06,
+        "metacognition":         0.10,   # self-monitoring — mildly warm
     }
 
     def _ambient_fire(self):
@@ -1941,20 +1945,19 @@ class NeuralFabric:
                 wave = torch.sin(torch.rand(len(dmn_idxs), device=DEVICE) * 3.14) * 0.06
                 self.activation[t] = torch.clamp(self.activation[t] + wave, 0.0, 1.0)
 
-            # ── 3. Spontaneous multi-cluster burst (alpha rhythm ~10 Hz) ──────
-            # Fire 2-4 random clusters per tick to simulate resting-state fluctuations
-            n_bursts = random.randint(2, 4)
-            for _ in range(n_bursts):
-                if random.random() < 0.65:
-                    lucky = random.randint(0, len(self._cluster_names) - 1)
-                    burst = random.uniform(0.04, 0.12)
-                    self.activation[lucky] = torch.clamp(
-                        self.activation[lucky] + burst, 0.0, 1.0
-                    )
+            # ── 3. Rare spontaneous micro-burst (biological noise floor) ──────
+            # Only fire occasionally — this is noise, not signal.
+            # Real activity comes from cognitive_cycle events, not random bursts.
+            if random.random() < 0.08:   # ~8% chance per tick, was 65% × 2-4 clusters
+                lucky = random.randint(0, len(self._cluster_names) - 1)
+                burst = random.uniform(0.02, 0.06)  # much smaller burst
+                self.activation[lucky] = torch.clamp(
+                    self.activation[lucky] + burst, 0.0, 1.0
+                )
 
             # ── 4. Propagating ripple: active cluster excites its neighbours ──
             # Simulates cortico-cortical propagation — activity spreads naturally
-            if random.random() < 0.50:
+            if random.random() < 0.18:   # was 0.50 — propagation is rare, not constant
                 src = random.randint(0, len(self._cluster_names) - 1)
                 src_act = float(self.activation[src].item() if self.activation[src].dim() == 0
                                 else self.activation[src].mean().item())

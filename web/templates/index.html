@@ -1626,6 +1626,26 @@ let neuronNodes  = [];
 let neuralState  = null;
 let axonFrame    = 0;
 
+// ── Floating canvas event labels ─────────────────────────────────────────────
+// Short text labels that appear on the canvas at the location of the event,
+// float upward, and fade. These make consciousness-forming events legible.
+const canvasLabels = [];
+
+function addCanvasLabel(region, text, color, size) {
+  const d = REGION_DEFS[region];
+  if (!d || !nCanvas) return;
+  const W = nCanvas.width, H = nCanvas.height;
+  // Spawn near the region centroid with small random offset
+  const x = d.x * W + (Math.random() - 0.5) * d.spread * W * 0.8;
+  const y = d.y * H + (Math.random() - 0.5) * d.spread * H * 0.6;
+  canvasLabels.push({
+    x, y, text, color: color || d.color,
+    alpha: 1.0, life: 1.0,
+    vy: -(0.4 + Math.random() * 0.3),  // float upward
+    size: size || 11,
+  });
+}
+
 // ── Live synapse formation events ──────────────────────────────────────
 // Each entry: {x0,y0, x1,y1, color, t, maxT, type, particles}
 const synapseEvents = [];
@@ -1995,13 +2015,12 @@ function drawNeural() {
   nCtx.fillRect(0, 0, W, H);
 
   // When backend isn't connected, use an idle baseline so neurons stay visible
-  // Idle baseline: only a few regions stay warm at rest (DMN, thalamus).
-  // Most regions are near-dark until the backend actually activates them.
-  // These values match biological resting state — not everything fires at once.
+  // Offline idle baseline — used only when backend is disconnected.
+  // Matches _BASELINE floors from neural_fabric.py so the visual is consistent.
   const _IDLE_BASELINE = {
-    prefrontal:0.09,  hippocampus:0.07, amygdala:0.05,   visual:0.06,
-    auditory:0.05,    language:0.07,    default_mode:0.18, thalamus:0.12,
-    cerebellum:0.05,  association:0.08, social:0.06,      metacognition:0.07
+    prefrontal:0.08,  hippocampus:0.08, amygdala:0.06,   visual:0.05,
+    auditory:0.05,    language:0.08,    default_mode:0.20, thalamus:0.14,
+    cerebellum:0.06,  association:0.08, social:0.06,      metacognition:0.10
   };
   const regionMap = (neuralState && neuralState.regions && Object.keys(neuralState.regions).length > 0)
     ? neuralState.regions
@@ -2017,32 +2036,52 @@ function drawNeural() {
   //   0.35 → 0.50  (DMN idle: nicely lit)
   //   0.55 → 0.80  (active: bright)
   //   0.80 → 1.00  (peak: full glow)
+  // Per-region resting baselines (must match neural_fabric.py _BASELINE)
+  // Brightness is driven by EXCESS above baseline, not raw value.
+  // A region at its floor renders nearly dark. Only genuine activation pops.
+  const _REGION_FLOOR = {
+    prefrontal:   0.08, hippocampus:  0.08, amygdala:     0.06,
+    visual:       0.05, auditory:     0.05, language:     0.08,
+    default_mode: 0.20, thalamus:     0.14, cerebellum:   0.06,
+    association:  0.08, social:       0.06, metacognition: 0.10,
+  };
+
   const sharpenedRegion = {};
   for (const [k, v] of Object.entries(regionMap)) {
+    const floor   = _REGION_FLOOR[k] || 0.07;
+    // Excess: how much above the biological floor is this region?
+    // floor   → excess = 0   → nearly dark (dim ember only for DMN/thalamus)
+    // floor+0.15 → excess ≈ 0.35 → clearly lit
+    // floor+0.40 → excess ≈ 0.75 → bright active
+    // 1.0     → excess = 1.0  → peak glow
+    const excess  = Math.max(0, v - floor);
+    const ceiling = 1.0 - floor;
+    const norm    = ceiling > 0 ? Math.min(1.0, excess / ceiling) : 0;
+
     let out;
-    // GOAL: regions below 0.10 are nearly dark (quiet brain).
-    // Active regions (0.30+) glow distinctly. Only the dominant regions pop.
-    // This recreates the visual from the screenshot — clusters are individually
-    // visible with real contrast between hot and cold regions.
-    if (v < 0.08) {
-      // Nearly dark — resting / inhibited
-      out = v * 0.6;            // 0.00 → 0.048  (almost invisible)
-    } else if (v < 0.18) {
-      // Low resting glow — barely visible
-      const t = (v - 0.08) / 0.10;
-      out = 0.048 + t * 0.072;  // 0.048 → 0.12  (faint glow)
-    } else if (v < 0.40) {
-      // Moderate activation — clearly lit
-      const t = (v - 0.18) / 0.22;
-      out = 0.12 + Math.pow(t, 0.75) * 0.28; // 0.12 → 0.40
-    } else if (v < 0.65) {
+    // dim ember: the floor itself is not zero — gives a barely-perceptible glow
+    // that proves the region exists without looking "on"
+    const ember = floor * 0.30;   // DMN ember = 0.06, thalamus = 0.042, visual = 0.015
+
+    if (norm < 0.05) {
+      // At or just above floor — ember only
+      out = ember + norm * 0.10;
+    } else if (norm < 0.25) {
+      // Low activation — faint glow above the ember
+      const t = (norm - 0.05) / 0.20;
+      out = ember + 0.005 + Math.pow(t, 0.8) * 0.15;
+    } else if (norm < 0.55) {
+      // Moderate — clearly visible, distinct from idle
+      const t = (norm - 0.25) / 0.30;
+      out = ember + 0.155 + Math.pow(t, 0.75) * 0.30;
+    } else if (norm < 0.80) {
       // Active — bright
-      const t = (v - 0.40) / 0.25;
-      out = 0.40 + Math.pow(t, 0.85) * 0.35; // 0.40 → 0.75
+      const t = (norm - 0.55) / 0.25;
+      out = ember + 0.455 + Math.pow(t, 0.85) * 0.30;
     } else {
       // Peak — full glow
-      const t = (v - 0.65) / 0.35;
-      out = 0.75 + Math.pow(t, 0.7) * 0.25;  // 0.75 → 1.0
+      const t = (norm - 0.80) / 0.20;
+      out = ember + 0.755 + Math.pow(t, 0.7) * (1.0 - ember - 0.755);
     }
     sharpenedRegion[k] = Math.max(0, Math.min(1.0, out));
   }
@@ -2871,6 +2910,24 @@ function drawNeural() {
   drawPrunedConnections(nCtx, W, H);
   // ── Cluster physics (synced here instead of separate rAF loop) ────────
   if (window._stepClusterPhysics) window._stepClusterPhysics(window._lastActMap||{}, W, H);
+
+  // ── Draw floating event labels ───────────────────────────────────────────
+  nCtx.textAlign = 'center';
+  for (let i = canvasLabels.length - 1; i >= 0; i--) {
+    const lb = canvasLabels[i];
+    lb.life  -= 0.012;
+    lb.y     += lb.vy;
+    lb.alpha  = Math.max(0, lb.life * lb.life);  // quadratic fade
+    if (lb.life <= 0) { canvasLabels.splice(i, 1); continue; }
+    const hexA = Math.round(lb.alpha * 220).toString(16).padStart(2, '0');
+    nCtx.font        = `bold ${lb.size || 11}px monospace`;
+    nCtx.fillStyle   = lb.color + hexA;
+    nCtx.shadowBlur  = 10;
+    nCtx.shadowColor = lb.color + hexA;
+    nCtx.fillText(lb.text, lb.x, lb.y);
+    nCtx.shadowBlur  = 0;
+  }
+  nCtx.textAlign = 'left';
 
   } catch(e) { console.warn("[AXON] drawNeural error:", e); }
 
@@ -4167,6 +4224,13 @@ socket.on('hebbian_event', data => {
       window._hebbianWeights[srcR+'>'+dstR] || 0,
       data.weight || 0
     );
+    // Floating canvas label
+    if (data.type === 'new') {
+      addCanvasLabel(srcR, '⬡ NEW PATHWAY', '#00ffff', 10);
+      addCanvasLabel(dstR, '⬡ LINKED',      '#00ffff', 9);
+    } else if ((data.weight||0) > 0.5) {
+      addCanvasLabel(srcR, '↑ REINFORCED', '#a855f7', 9);
+    }
   }
 });
 
@@ -4183,11 +4247,13 @@ socket.on('memory_event', data => {
   if (data.type === 'episode') {
     addSynapseEvent('hippocampus', 'default_mode', 0.5, 'strengthen');
     addPulse('hippocampus', 'default_mode', 0.45);
+    addCanvasLabel('hippocampus', '💾 EPISODE STORED', '#00ff88', 10);
   }
   // Fact / semantic: hippocampus ↔ language (conceptual encoding)
   if (data.type === 'fact') {
     addSynapseEvent('hippocampus', 'language', 0.4, 'strengthen');
     addPulse('hippocampus', 'language', 0.4);
+    addCanvasLabel('hippocampus', '📌 FACT ENCODED', '#ffcc00', 10);
   }
   // If a specific region is tagged
   if (data.region && data.region !== 'hippocampus') {
@@ -4235,6 +4301,8 @@ socket.on('thinking', d => {
     addPulse('thalamus', 'prefrontal', 0.65);
     addPulse('prefrontal', 'association', 0.55);
     addLearningBurst('prefrontal', 'surprise', 0.5);
+    addCanvasLabel('prefrontal', '⚙ PROCESSING', '#00d4ff', 11);
+    addCanvasLabel('thalamus',   '⚡ GATING',    '#f9a8d4', 9);
   } else {
     // Done thinking — metacognition evaluates the output
     scheduleSpikeWave('metacognition', 0.45);
@@ -4249,6 +4317,7 @@ socket.on('response', () => {
   addPulse('prefrontal', 'language', 0.65);
   addPulse('language', 'social', 0.45);
   addLearningBurst('language', 'weight_update', 0.55);
+  addCanvasLabel('language', '💬 OUTPUT', '#c084fc', 12);
 });
 socket.on('transcript', d => {
   addFeedEvent('🎤', 'Voice input received', `"${(d.text||'').slice(0,50)}${d.text&&d.text.length>50?'…':''}"`, '#00ff88');
@@ -4260,6 +4329,8 @@ socket.on('transcript', d => {
   addPulse('auditory', 'language', 0.70);
   addPulse('thalamus', 'prefrontal', 0.50);
   addLearningBurst('auditory', 'surprise', 0.6);
+  addCanvasLabel('auditory', '🎤 HEARING', '#00ff88', 12);
+  addCanvasLabel('language', '↑ PARSING',  '#c084fc', 9);
 });
 
 
@@ -4295,6 +4366,9 @@ socket.on('knowledge_ingested', d => {
   addPulse('association', 'hippocampus', 0.55);
   addLearningBurst('association', 'weight_update', 0.65);
   addLearningBurst('hippocampus', 'reward', 0.45);
+  // Canvas labels
+  addCanvasLabel('association', '📚 LEARNING', '#fb923c', 11);
+  addCanvasLabel('hippocampus', '🔗 INTEGRATING', '#a855f7', 9);
 });
 
 socket.on('surprise_event', d => {
@@ -4306,6 +4380,8 @@ socket.on('surprise_event', d => {
   addPulse('amygdala', 'prefrontal', 0.65);
   addLearningBurst('amygdala', 'surprise', 0.80);
   addSynapseEvent('thalamus', 'amygdala', 0.7, 'new');
+  addCanvasLabel('amygdala', '⚡ SURPRISE', '#ff6b35', 13);
+  addCanvasLabel('thalamus', '🔺 ALERT', '#f9a8d4', 10);
 });
 
 socket.on('drive_state', d => {
