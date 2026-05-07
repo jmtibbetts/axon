@@ -368,7 +368,7 @@ canvas.spark{display:block;}
     <div  id="emo-prob-bars" style="display:none;"></div>
 
     <!-- Active State Readout — sits between camera and system log, always visible -->
-    <div class="panel" style="flex:0 0 auto;">
+    <div class="panel" style="flex:0 0 auto;max-height:160px;overflow:hidden;">
       <div class="panel-title">⚡ Active State</div>
       <div class="panel-body" style="padding:5px 7px;">
         <div id="active-state-readout" style="font-size:8px;line-height:1.7;color:#475569;"></div>
@@ -2848,6 +2848,8 @@ function drawNeural() {
   // drawThoughtBubbles disabled
   // ── Pruned connection fades ────────────────────────────────────────────
   drawPrunedConnections(nCtx, W, H);
+  // ── Cluster physics (synced here instead of separate rAF loop) ────────
+  if (window._stepClusterPhysics) window._stepClusterPhysics(window._lastActMap||{}, W, H);
 
   } catch(e) { console.warn("[AXON] drawNeural error:", e); }
 
@@ -6644,13 +6646,8 @@ function loadMemTier(tier) {
   window._updateClusterActs   = function(actMap) { _lastActMap = actMap; };
 
   // Run physics loop
-  function physicsLoop() {
-    const canvas = document.getElementById("neural-canvas");
-    if (!canvas) { setTimeout(physicsLoop, 500); return; }
-    stepClusterPhysics(_lastActMap, canvas.width, canvas.height);
-    requestAnimationFrame(physicsLoop);
-  }
-  setTimeout(physicsLoop, 1500);
+  // physicsLoop removed — stepClusterPhysics is called from drawNeural instead
+  // to avoid two competing rAF loops fighting over the canvas
   setTimeout(enhanceNeuralCanvas, 2000);
 })();
 
