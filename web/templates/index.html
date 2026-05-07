@@ -1888,7 +1888,7 @@ function initNeurons(forceW, forceH) {
         region,
         color:      props.color,
         activation: Math.random() * 0.04,
-        baseR:      2.2 + Math.random() * 1.8,
+        baseR:      1.0 + Math.random() * 1.2,
         phase:      Math.random() * Math.PI * 2,
         speed:      0.015 + Math.random() * 0.035,
         neighbors:  [],       // filled below
@@ -1980,7 +1980,7 @@ function drawNeural() {
 
   // Trail fade — faster = tighter, more reactive visual
   // At 60fps: 0.35 means ~5-6 frames persistence (sharp and clean)
-  nCtx.fillStyle = 'rgba(2,2,6,0.18)';  // lighter wipe — idle neurons survive long enough to see
+  nCtx.fillStyle = 'rgba(2,2,6,0.38)';  // gentle wipe so ghost clusters stay visible
   nCtx.fillRect(0, 0, W, H);
 
   // When backend isn't connected, use an idle baseline so neurons stay visible
@@ -2656,13 +2656,13 @@ function drawNeural() {
     const sizeMult   = isWinner ? (1.0 + dominance * 0.6) : 1.0;
 
     // Radius: small at rest, much larger when firing
-    const r = (n.baseR * 0.8 + act * 4.5) * sizeMult;
+    const r = (n.baseR * 0.5 + act * 2.8) * sizeMult;
 
     // Alpha: dimly lit at rest, vivid when firing
     // act=0.15 (idle) → alpha≈70, act=0.30 → ≈110, act=0.55 → ≈160, act=1.0 → 220
     const alphaMult = isWinner ? 1.0 : 0.82;
     const alphaVal  = Math.round(Math.pow(act, 0.55) * 220 * alphaMult * fatigueDim);
-    const alpha     = Math.min(220, Math.max(55, alphaVal)).toString(16).padStart(2,'0');
+    const alpha     = Math.min(220, Math.max(20, alphaVal)).toString(16).padStart(2,'0');
 
     // Core dot
     nCtx.beginPath();
@@ -2671,7 +2671,7 @@ function drawNeural() {
     nCtx.fill();
 
     // Glow halo — idle brain glows softly, active brain blazes
-    if (act > 0.10) {
+    if (act > 0.22) {
       const glowR   = r * (isWinner ? (2.2 + dominance * 1.2) : 1.6) + act * 2.5;
       const glowAlp = Math.round((act - 0.18) * (isWinner ? 0.75 : 0.40) * fatigueDim * 110).toString(16).padStart(2,'0');
       const grd = nCtx.createRadialGradient(n.x, n.y, r, n.x, n.y, glowR);
