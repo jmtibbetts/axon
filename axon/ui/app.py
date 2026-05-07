@@ -19,9 +19,7 @@ from axon.core.brain_api import AxonBrain
 _brain: AxonBrain = None
 
 app      = Flask(__name__,
-                  template_folder="../../web/templates",
-                  static_folder="../../web/static/ui",
-                  static_url_path="/ui")
+                  template_folder="../../web/templates")
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 _engine: AxonEngine = None
@@ -67,19 +65,29 @@ def _apply_deferred_onboarding(brain):
             print(f"  [Onboarding] Could not ingest custom text: {e}")
 
 
+import os as _os
+_UI_BUILD_DIR = _os.path.normpath(_os.path.join(_os.path.dirname(__file__), "../../web/static/ui"))
+
+def _react_exists():
+    return _os.path.exists(_os.path.join(_UI_BUILD_DIR, "index.html"))
+
 @app.route("/")
 @app.route("/react")
 @app.route("/react/<path:path>")
 def index(path=None):
-    # Serve the React build if it exists, otherwise fall back to old Jinja UI
-    import os as _os
-    react_index = _os.path.join(_os.path.dirname(__file__), "../../web/static/ui/index.html")
-    if _os.path.exists(react_index):
-        return send_from_directory(
-            _os.path.join(_os.path.dirname(__file__), "../../web/static/ui"),
-            "index.html"
-        )
+    if _react_exists():
+        return send_from_directory(_UI_BUILD_DIR, "index.html")
     return render_template("index.html")
+
+@app.route("/assets/<path:filename>")
+def react_assets(filename):
+    return send_from_directory(_os.path.join(_UI_BUILD_DIR, "assets"), filename)
+
+@app.route("/favicon.svg")
+@app.route("/icons.svg")
+def react_static(filename=None):
+    name = _os.path.basename(request.path)
+    return send_from_directory(_UI_BUILD_DIR, name)
 
 @app.route("/legacy")
 def legacy():
