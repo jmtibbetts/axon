@@ -27,6 +27,28 @@ _engine_lock     = threading.Lock()  # prevents double-init race
 _engine_starting = False               # True while start_engine is in progress
 _last_start_error: str = None          # last startup traceback for diagnostics
 
+def _sanitize(obj):
+    """Recursively convert numpy/torch scalar types to native Python for JSON."""
+    import numpy as np
+    if isinstance(obj, dict):
+        return {k: _sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize(v) for v in obj]
+    if isinstance(obj, np.integer):
+        return int(obj)
+    if isinstance(obj, (np.floating, np.float32, np.float64)):
+        return float(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    try:
+        import torch
+        if isinstance(obj, torch.Tensor):
+            return obj.item() if obj.numel() == 1 else obj.tolist()
+    except ImportError:
+        pass
+    return obj
+
+
 def _apply_deferred_onboarding(brain):
     """After engine starts, apply any onboarding choices that were saved pre-engine."""
     import json as _json
@@ -122,8 +144,8 @@ def status():
     try:
         return jsonify(_sanitize(_engine.get_status()))
     except Exception as e:
-        import traceback
-        return jsonify({"running": bool(_engine and _engine.running), "error": str(e), "tb": traceback.format_exc()})
+        # Fallback — just confirm the engine is alive without the full state
+        return jsonify({"running": bool(_engine and _engine.running), "error": str(e)})
 
 @app.route("/api/audio_diag")
 def audio_diag():
@@ -373,27 +395,6 @@ def on_load_brain(data=None):
     result = _brain.load_brain(slot)
     emit("log", {"msg": f"📂 Brain restored from '{slot}'"})
     emit("brain_loaded", _sanitize(result))
-
-def _sanitize(obj):
-    """Recursively convert numpy/torch scalar types to native Python for JSON."""
-    import numpy as np
-    if isinstance(obj, dict):
-        return {k: _sanitize(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
-        return [_sanitize(v) for v in obj]
-    if isinstance(obj, np.integer):
-        return int(obj)
-    if isinstance(obj, (np.floating, np.float32, np.float64)):
-        return float(obj)
-    if isinstance(obj, np.ndarray):
-        return obj.tolist()
-    try:
-        import torch
-        if isinstance(obj, torch.Tensor):
-            return obj.item() if obj.numel() == 1 else obj.tolist()
-    except ImportError:
-        pass
-    return obj
 
 
 @socketio.on("diagnostic")
