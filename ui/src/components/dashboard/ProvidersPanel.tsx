@@ -78,10 +78,10 @@ export default function ProvidersPanel() {
     setApplying(true);
     setResult(null);
     const prov = PROVIDERS.find((p) => p.id === selected)!;
-    const payload: any = { provider: selected };
+    const payload: any = { provider: selected, set_active: true };
     if (selectedModel) payload.model = selectedModel;
-    if (prov.needsKey && apiKey) payload.api_key = apiKey;
-    if (!prov.needsKey) payload.base_url = baseUrl;
+    if (prov.needsKey && apiKey) payload.key = apiKey;
+    if (!prov.needsKey) payload.lmstudio_url = baseUrl;
     try {
       const res = await fetch('/api/status'); // check if engine up
       const st = await res.json();
