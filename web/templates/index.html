@@ -4477,24 +4477,22 @@ socket.on('active_pathways', d => {
 socket.on('neural_state', d => {
   neuralState = d;
   window.neuralState = d;  // expose for tab-switch redraws
-  // ── DIRECT DRAW TEST (fires every 60 ticks ~6s) ───────────────────────
-  if ((d.tick || 0) % 60 === 0) {
-    try {
-      const _tc = document.getElementById('neural-canvas');
-      const _tx = _tc ? _tc.getContext('2d') : null;
-      if (_tx) {
-        _tx.save();
-        _tx.fillStyle = 'rgba(0,212,255,0.12)';
-        _tx.fillRect(0, 0, _tc.width || 100, _tc.height || 100);
-        _tx.fillStyle = '#00d4ff';
-        _tx.font = '10px monospace';
-        _tx.fillText('TICK:' + (d.tick||'?') + ' w:' + _tc.width + ' h:' + _tc.height, 6, 16);
-        _tx.restore();
-        console.log('[AXON] direct-draw test: canvas', _tc.width+'x'+_tc.height, 'ctx:', !!_tx, 'offsetW:', _tc.offsetWidth, 'offsetH:', _tc.offsetHeight);
-      } else {
-        console.warn('[AXON] direct-draw test: NO CTX — canvas:', _tc ? 'found' : 'NULL');
+  // ── Sync canvas buffer size to CSS layout size on every neural_state ──────
+  // This is the definitive fix: if canvas buffer != CSS display size, correct it.
+  {
+    const _tc = nCanvas;
+    const _par = _tc.parentElement;
+    if (_par) {
+      const _tw = _par.offsetWidth  || 800;
+      const _th = _par.offsetHeight || 500;
+      if (_tw > 20 && _th > 20 && (Math.abs(_tc.width - _tw) > 10 || Math.abs(_tc.height - _th) > 10)) {
+        console.log('[AXON] neural_state sync: resizing canvas', _tc.width+'x'+_tc.height, '→', _tw+'x'+_th);
+        _tc.width  = _tw;
+        _tc.height = _th;
+        initNeurons(_tw, _th);
+        buildLegend();
       }
-    } catch(_e) { console.warn('[AXON] direct-draw test CRASHED:', _e); }
+    }
   }
   // ── DEBUG: visible NS ticker ─────────────────────────────────────────────
   if (!window._nsTicker) {
@@ -4593,38 +4591,80 @@ window.addEventListener('resize', () => {
 });
 window.addEventListener('load', () => {
   buildPersonalitySliders();
+});
 
-  // ── Neural Canvas Boot ────────────────────────────────────────────────────
-  // Strategy: set canvas to 800x500 immediately so drawNeural can start.
-  // Then poll for real parent size and resize+reinit once layout is stable.
-  nCanvas.width  = 800;
-  nCanvas.height = 500;
-  initNeurons(800, 500);
-  buildLegend();
-  drawNeural();   // start the rAF loop immediately
+// ── Neural Canvas Boot — runs immediately, no load event needed ────────────
+// Use offsetWidth/offsetHeight: always reflect CSS layout size correctly.
+// getBoundingClientRect returns 0 before first paint; offsetW/H do not.
+(function _bootCanvas() {
+  function _getCanvasDims() {
+    const par = nCanvas.parentElement;
+    if (!par) return [800, 500];
+    // offsetWidth/offsetHeight are always correct; use as primary source
+    const w = par.offsetWidth  || par.getBoundingClientRect().width  || 800;
+    const h = par.offsetHeight || par.getBoundingClientRect().height || 500;
+    return [Math.round(w), Math.round(h)];
+  }
 
-  // ── Watchdog: restart rAF loop if it ever dies ─────────────────────────
-  // Checks every 3 seconds that axonFrame is incrementing
-  let _wdLastFrame = 0;
+  function _boot() {
+    const [w, h] = _getCanvasDims();
+    console.log('[AXON] canvas boot — offsetDims:', w+'x'+h);
+    nCanvas.width  = w;
+    nCanvas.height = h;
+    initNeurons(w, h);
+    buildLegend();
+    if (axonFrame === 0) drawNeural();  // only start loop once
+  }
+
+  // Try immediately — offsetWidth may already be valid if script runs after layout
+  const [iw, ih] = _getCanvasDims();
+  if (iw > 20 && ih > 20) {
+    _boot();
+  } else {
+    // Layout not ready yet — poll until we get real dims
+    console.log('[AXON] canvas boot deferred — dims not ready yet:', iw+'x'+ih);
+    const _poll = setInterval(() => {
+      const [pw, ph] = _getCanvasDims();
+      if (pw > 20 && ph > 20) {
+        clearInterval(_poll);
+        _boot();
+      }
+    }, 50);
+    // Hard fallback at 2s: use 800x500 if layout never resolves
+    setTimeout(() => {
+      if (axonFrame === 0) {
+        console.warn('[AXON] canvas boot hard fallback — using 800x500');
+        nCanvas.width = 800; nCanvas.height = 500;
+        initNeurons(800, 500); buildLegend(); drawNeural();
+      }
+    }, 2000);
+  }
+
+  // ── Watchdog: every 3s ensure canvas has neurons & correct size ─────────
   setInterval(() => {
-    // Watchdog: if canvas still has no neurons after 6s, force re-init
-    if (neuronNodes.length === 0) {
-      const _p = nCanvas.parentElement;
-      const _w = (_p ? _p.offsetWidth : 0) || 800;
-      const _h = (_p ? _p.offsetHeight : 0) || 400;
-      console.warn('[AXON] watchdog: no neurons — forcing initNeurons', _w+'x'+_h);
-      nCanvas.width = _w; nCanvas.height = _h;
-      initNeurons(_w, _h);
+    const par = nCanvas.parentElement;
+    if (!par) return;
+    const w = par.offsetWidth  || 800;
+    const h = par.offsetHeight || 500;
+    // Re-init if canvas size drifted from actual layout size by >10px
+    if (Math.abs(nCanvas.width - w) > 10 || Math.abs(nCanvas.height - h) > 10) {
+      console.log('[AXON] watchdog resizing canvas:', nCanvas.width+'x'+nCanvas.height, '→', w+'x'+h);
+      nCanvas.width = w; nCanvas.height = h;
+      initNeurons(w, h); buildLegend();
     }
-    _wdLastFrame = axonFrame;
+    // Re-init neurons if empty
+    if (neuronNodes.length === 0 && nCanvas.width > 20) {
+      console.warn('[AXON] watchdog: neurons empty — re-init');
+      initNeurons(nCanvas.width, nCanvas.height);
+    }
   }, 3000);
 
   function _resizeCanvas() {
     const par = nCanvas.parentElement;
     if (!par) return;
-    const r  = par.getBoundingClientRect();
-    const w  = Math.round(r.width)  || par.offsetWidth  || 0;
-    const h  = Math.round(r.height) || par.offsetHeight || 0;
+    // offsetWidth/offsetHeight are reliable; getBoundingClientRect can return 0 pre-paint
+    const w = par.offsetWidth  || Math.round(par.getBoundingClientRect().width)  || 0;
+    const h = par.offsetHeight || Math.round(par.getBoundingClientRect().height) || 0;
     if (w < 20 || h < 20) return;
     if (Math.abs(nCanvas.width - w) > 8 || Math.abs(nCanvas.height - h) > 8) {
       nCanvas.width  = w;
@@ -4635,15 +4675,15 @@ window.addEventListener('load', () => {
     }
   }
 
-  // Poll at increasing intervals so real layout dimensions are captured
-  [100, 300, 700, 1500, 3000].forEach(t => setTimeout(_resizeCanvas, t));
+  // Fire resize checks — offsetWidth is valid after DOMContentLoaded
+  [50, 200, 500, 1000, 2000].forEach(t => setTimeout(_resizeCanvas, t));
 
-  // Also watch for window resize
+  // ResizeObserver for live layout changes
   const _canvasParent = nCanvas.parentElement;
   if (window.ResizeObserver && _canvasParent) {
     new ResizeObserver(() => {
       clearTimeout(window._canvasResizeTimer);
-      window._canvasResizeTimer = setTimeout(_resizeCanvas, 100);
+      window._canvasResizeTimer = setTimeout(_resizeCanvas, 50);
     }).observe(_canvasParent);
   }
 
