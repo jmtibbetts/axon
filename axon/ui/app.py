@@ -22,6 +22,34 @@ app      = Flask(__name__,
                   template_folder="../../web/templates")
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+
+# Thread-safe emit queue — all background threads push here, one drainer thread
+# pulls and emits inside a proper Flask app context. This is the only reliable
+# way to broadcast from non-request threads with async_mode="threading".
+import queue as _queue
+_emit_queue: _queue.Queue = _queue.Queue(maxsize=512)
+
+def _emit_drainer():
+    while True:
+        try:
+            event, data = _emit_queue.get(timeout=0.05)
+            try:
+                socketio.emit(event, data, broadcast=True)
+            except Exception:
+                pass
+        except _queue.Empty:
+            pass
+
+_drainer_thread = threading.Thread(target=_emit_drainer, daemon=True)
+_drainer_thread.start()
+
+def _safe_emit(event: str, data: dict):
+    """Push an event onto the emit queue from any thread."""
+    try:
+        _emit_queue.put_nowait((event, data))
+    except _queue.Full:
+        pass  # Drop if queue is full — prevents backpressure
+
 _engine: AxonEngine = None
 _engine_lock     = threading.Lock()  # prevents double-init race
 _engine_starting = False               # True while start_engine is in progress
@@ -206,6 +234,19 @@ def on_connect():
     emit("log", {"msg": "Connected to AXON."})
     if _engine:
         emit("lm_status", _engine.language.get_status())
+        # Push a full state snapshot directly to the connecting client
+        try:
+            snap = _sanitize(_engine.fabric.get_state_snapshot())
+            emit("neural_state", snap)
+        except Exception:
+            pass
+        # Push current vision frame if available
+        try:
+            vf = getattr(_engine, "_last_visual_ctx", None)
+            if vf and vf.get("frame_b64"):
+                emit("frame", _sanitize(vf))
+        except Exception:
+            pass
 
 @socketio.on("disconnect")
 def on_disconnect():
@@ -286,6 +327,24 @@ def on_start(config):
         if not config.get("voice", True):
             _engine.voice.enabled = False
 
+        # Override engine's _emit to use the thread-safe queue
+        def _engine_emit(event: str, data: dict):
+            import numpy as _np
+            def _san(o):
+                if isinstance(o, dict):  return {k: _san(v) for k,v in o.items()}
+                if isinstance(o, (list, tuple)): return [_san(v) for v in o]
+                if isinstance(o, _np.integer):   return int(o)
+                if isinstance(o, (_np.floating, _np.float32, _np.float64)): return float(o)
+                if isinstance(o, _np.ndarray):   return o.tolist()
+                try:
+                    import torch as _t
+                    if isinstance(o, _t.Tensor): return o.item() if o.numel()==1 else o.tolist()
+                except ImportError: pass
+                return o
+            _safe_emit(event, _san(data))
+        _engine._emit = _engine_emit
+        _engine.fabric._socket_emit = lambda ev, d: _safe_emit(ev, _sanitize(d))
+
         _engine.start(
             enable_camera=config.get("camera",       True),
             enable_mic=config.get("mic",             True),
@@ -295,13 +354,7 @@ def on_start(config):
         # Wire public API layer
         _brain = AxonBrain(engine=_engine)
         # Allow fabric to emit log events
-        def _fabric_emit(ev, d):
-            safe = _sanitize(d)
-            def _do(_ev=ev, _d=safe):
-                try: socketio.emit(_ev, _d, broadcast=True)
-                except Exception: pass
-            socketio.start_background_task(_do)
-        _engine.fabric._socket_emit = _fabric_emit
+        _engine.fabric._socket_emit = lambda ev, d: _safe_emit(ev, _sanitize(d))
         # Apply any deferred onboarding data (preset personality, sample ingestion)
         _apply_deferred_onboarding(_brain)
         # Push onboarding state to client so it can show the overlay
