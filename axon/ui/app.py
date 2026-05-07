@@ -112,9 +112,8 @@ def _react_exists():
 @app.route("/react")
 @app.route("/react/<path:path>")
 def index(path=None):
-    if _react_exists():
-        return send_from_directory(_UI_BUILD_DIR, "index.html")
-    return render_template("index.html")
+    # Always serve monitor.html — the React build at web/static/ui is stale/blank
+    return render_template("monitor.html")
 
 @app.route("/assets/<path:filename>")
 def react_assets(filename):
