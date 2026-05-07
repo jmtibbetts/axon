@@ -27,22 +27,37 @@ CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet", logger=False, engineio_logger=False, ping_timeout=120, ping_interval=30, max_http_buffer_size=10_000_000)
 
 # ── Thread-safe emit via a queue drainer ────────────────────────────────────
-# Thread-safe emit: schedule on the eventlet hub via start_background_task.
-# This works from ANY context — OS threads, greenlets, tpool threads.
-# flask-socketio's start_background_task is re-entrant and hub-safe.
+# Thread-safe emit via eventlet.queue.LightQueue.
+# LightQueue works correctly when producers are OS threads (tpool, threading.Thread)
+# and the consumer is a greenlet — unlike stdlib queue.Queue which deadlocks.
+import eventlet.queue as _eq
+_emit_queue = _eq.LightQueue()
+_drainer_started = False
 
 def _safe_emit(event: str, data: dict):
-    """Schedule a socketio emit on the eventlet hub — safe from any thread."""
-    def _do():
-        try:
-            socketio.emit(event, data, broadcast=True)
-        except Exception:
-            pass
-    socketio.start_background_task(_do)
+    """Put emit on queue — safe from any OS thread or greenlet."""
+    try:
+        _emit_queue.put_nowait((event, data))
+    except Exception:
+        pass
 
 def _start_drainer():
-    """No-op — drainer replaced by start_background_task pattern."""
-    pass
+    """Start the single drain greenlet (idempotent)."""
+    global _drainer_started
+    if _drainer_started:
+        return
+    _drainer_started = True
+    def _drain():
+        while True:
+            try:
+                event, data = _emit_queue.get()
+                try:
+                    socketio.emit(event, data, broadcast=True)
+                except Exception:
+                    pass
+            except Exception:
+                eventlet.sleep(0.01)
+    socketio.start_background_task(_drain)
 
 _engine: AxonEngine = None
 _engine_lock     = threading.Lock()  # prevents double-init race
