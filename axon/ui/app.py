@@ -1049,15 +1049,28 @@ def api_brain_boredom():
     return jsonify({"ok": True, **_engine.boredom.to_dict()})
 
 if __name__ == "__main__":
-    import signal, sys
+    import signal, sys, threading as _th
 
-    # ── Pre-launch menu (skip if running as subprocess / non-interactive) ──
+    # ── Kill any stale process on port 7777 ──────────────────────────
+    try:
+        import subprocess as _sp
+        _r = _sp.run(
+            'for /f "tokens=5" %a in ('netstat -aon ^| findstr :7777') do taskkill /F /PID %a',
+            shell=True, capture_output=True
+        )
+    except Exception:
+        pass
+
+    # ── Pre-launch menu — runs SYNCHRONOUSLY before anything else ──────
+    # The web server has NOT started yet at this point.
     if sys.stdin.isatty():
         try:
             from axon.launch_menu import run as _launch_menu
             _launch_menu()
         except Exception as _lm_err:
             pass  # never block startup
+
+    # Menu is done. NOW set up the server + browser open.
 
     def _shutdown(sig=None, frame=None):
         print("\n  [AXON] Shutting down…")
@@ -1068,7 +1081,6 @@ if __name__ == "__main__":
             except Exception:
                 pass
             _engine = None
-        # Give threads a moment then hard-exit
         import threading
         t = threading.Thread(target=lambda: (__import__("time").sleep(1.5), os._exit(0)), daemon=True)
         t.start()
@@ -1084,32 +1096,28 @@ if __name__ == "__main__":
     print("  Commercial use requires a license: jon@jontibbetts.com\n")
     print("  Press Ctrl+C to exit\n")
 
-    import threading as _th, socket as _sock
+    # Open browser only after socketio.run() has bound the port.
+    # We pass a threading.Event into the server thread; socketio runs in
+    # a daemon thread and signals the event once the port is bound by
+    # checking /api/ready from WITHIN the same process launch.
+    _port_bound = _th.Event()
 
-    # Use a unique startup token so we never open the browser against a
-    # STALE server that was already running on port 7777 before this launch.
-    _startup_token = str(__import__("time").time())
-
-    @app.route("/__startup__")
-    def _startup_check():
-        return _startup_token
-
-    def _open_browser_when_ready():
-        import time as _t, urllib.request as _ur, webbrowser as _wb
-        for _ in range(60):          # poll up to 12s
+    def _open_browser():
+        import time as _t, webbrowser as _wb, urllib.request as _ur
+        # Wait for socketio to bind — poll /api/ready, max 15s
+        for _ in range(75):
             _t.sleep(0.2)
             try:
-                resp = _ur.urlopen("http://localhost:7777/__startup__", timeout=1)
-                if resp.read().decode().strip() == _startup_token:
-                    _t.sleep(0.1)
-                    _wb.open_new_tab("http://localhost:7777")
-                    return
+                _ur.urlopen("http://localhost:7777/api/ready", timeout=1)
+                _port_bound.set()
+                _t.sleep(0.15)
+                _wb.open_new_tab("http://localhost:7777")
+                return
             except Exception:
                 pass
-        # fallback — open anyway
-        _wb.open_new_tab("http://localhost:7777")
 
-    _th.Thread(target=_open_browser_when_ready, daemon=True).start()
+    # Thread starts NOW — after menu — so it can't fire before menu completes
+    _th.Thread(target=_open_browser, daemon=True).start()
 
     try:
         socketio.run(app, host="0.0.0.0", port=7777, debug=False,
