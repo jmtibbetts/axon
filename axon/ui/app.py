@@ -1080,33 +1080,36 @@ if __name__ == "__main__":
     print("\n  AXON — Emerging Intelligence")
     print("  Main UI:      http://localhost:7777")
     print("  Neural Monitor: http://localhost:7777/monitor\n")
-    # Open browser AFTER server is ready.
-    # We ping /api/status (only registered after socketio.run starts) so we
-    # never accidentally open when a stale server already holds the port.
-    import threading as _th
-    _server_ready = _th.Event()   # set below, AFTER socketio.run() has bound
-    def _open_browser():
-        import time as _t, webbrowser as _wb
-        _server_ready.wait(timeout=20)   # wait for OUR server to signal ready
-        if _server_ready.is_set():
-            _t.sleep(0.2)
-            _wb.open_new_tab("http://localhost:7777")
-    _th.Thread(target=_open_browser, daemon=True).start()
     print("  Axon Non-Commercial License | Copyright (c) 2026 Jon Tibbetts")
     print("  Commercial use requires a license: jon@jontibbetts.com\n")
     print("  Press Ctrl+C to exit\n")
-    def _wait_then_signal():
-        import time as _t, urllib.request as _ur
-        for _ in range(40):           # wait up to 8s for port 7777 to respond
+
+    import threading as _th, socket as _sock
+
+    # Use a unique startup token so we never open the browser against a
+    # STALE server that was already running on port 7777 before this launch.
+    _startup_token = str(__import__("time").time())
+
+    @app.route("/__startup__")
+    def _startup_check():
+        return _startup_token
+
+    def _open_browser_when_ready():
+        import time as _t, urllib.request as _ur, webbrowser as _wb
+        for _ in range(60):          # poll up to 12s
             _t.sleep(0.2)
             try:
-                _ur.urlopen("http://localhost:7777/api/ready", timeout=1)
-                _server_ready.set()   # server is actually up and responding
-                return
+                resp = _ur.urlopen("http://localhost:7777/__startup__", timeout=1)
+                if resp.read().decode().strip() == _startup_token:
+                    _t.sleep(0.1)
+                    _wb.open_new_tab("http://localhost:7777")
+                    return
             except Exception:
                 pass
-        _server_ready.set()           # fallback: open anyway after 8s
-    _th.Thread(target=_wait_then_signal, daemon=True).start()
+        # fallback — open anyway
+        _wb.open_new_tab("http://localhost:7777")
+
+    _th.Thread(target=_open_browser_when_ready, daemon=True).start()
 
     try:
         socketio.run(app, host="0.0.0.0", port=7777, debug=False,
