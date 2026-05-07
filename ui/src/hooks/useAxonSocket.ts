@@ -97,11 +97,27 @@ export function useAxonSocket() {
     });
 
     socket.on('neural_state', (d) => {
-      set((state) => ({
-        neuralState: { ...state.neuralState, ...d },
-        lastTick: Date.now(),
-        engineRunning: true,
-      }));
+      set((state) => {
+        const rHistory = { ...state.regionHistory };
+        Object.entries(d.regions ?? {}).forEach(([k, v]) => {
+          rHistory[k] = [...(rHistory[k] ?? []).slice(-49), v as number];
+        });
+        const nmHistory = { ...state.nmHistory };
+        Object.entries(d.neuromod ?? {}).forEach(([k, v]) => {
+          nmHistory[k] = [...(nmHistory[k] ?? []).slice(-49), v as number];
+        });
+        const reward   = d.temporal_reward?.mean ?? 0;
+        const surprise = d.prediction_surprise ?? 0;
+        return {
+          neuralState: { ...state.neuralState, ...d },
+          lastTick: Date.now(),
+          engineRunning: true,
+          regionHistory: rHistory,
+          nmHistory: nmHistory,
+          rewardHistory:  [...state.rewardHistory.slice(-99), reward],
+          surpriseHistory:[...state.surpriseHistory.slice(-99), surprise],
+        };
+      });
     });
 
     socket.on('response', (d) => {
@@ -132,7 +148,7 @@ export function useAxonSocket() {
     });
 
     socket.on('frame', (d) => {
-      set({ visionFrame: d.image ?? null });
+      set({ visionFrame: d.frame_b64 ?? d.image ?? null });
     });
 
     socket.on('face', (d) => {
