@@ -367,13 +367,6 @@ canvas.spark{display:block;}
     <span id="emo-big-conf"  style="display:none;"></span>
     <div  id="emo-prob-bars" style="display:none;"></div>
 
-    <!-- Active State Readout — sits between camera and system log, always visible -->
-    <div class="panel" style="flex:0 0 auto;max-height:160px;overflow:hidden;">
-      <div class="panel-title">⚡ Active State</div>
-      <div class="panel-body" style="padding:5px 7px;">
-        <div id="active-state-readout" style="font-size:8px;line-height:1.7;color:#475569;"></div>
-      </div>
-    </div>
 
     <div class="panel" style="flex:1 1 0;min-height:200px;display:flex;flex-direction:column;">
       <div class="panel-title">📋 System Log</div>
@@ -383,10 +376,10 @@ canvas.spark{display:block;}
   </div>
 
   <!-- COL 2: Neural Canvas (top) + Chat (bottom) -->
-  <div class="panel" style="grid-column:2;min-height:0;height:100%;display:flex;flex-direction:column;">
+  <div class="panel" style="grid-row:1/3;grid-column:2;min-height:0;display:flex;flex-direction:column;">
     <div class="panel-title">🧠 Neural Activity -- <span id="neuron-count">0</span> neurons | <span id="conn-count" style="color:#00ff88;transition:color 0.3s;">0</span> synaptic connections</div>
     <div class="panel-body" id="neural-panel-body" style="padding:0;background:#020205;position:relative;overflow:hidden;flex:1;min-height:0;height:100%;">
-      <canvas id="neural-canvas" width="800" height="500" style="width:100%;height:100%;display:block;"></canvas>
+      <canvas id="neural-canvas" style="position:absolute;inset:0;width:100%;height:100%;display:block;"></canvas>
       <div id="region-legend" style="
         position:absolute;top:8px;right:8px;
         display:flex;flex-direction:column;gap:3px;
@@ -473,6 +466,12 @@ canvas.spark{display:block;}
 
     <!-- TAB: Brain State -->
     <div id="tab-brain" class="tab-pane active" style="overflow-y:auto;flex:1;padding:6px 8px;">
+
+      <!-- Active State Readout -->
+      <div class="neuro-section" style="padding:5px 7px;">
+        <div class="neuro-title">⚡ Active State</div>
+        <div id="active-state-readout" style="font-size:8px;line-height:1.7;color:#94a3b8;"></div>
+      </div>
 
       <!-- Emotion -->
       <div class="neuro-section">
@@ -1854,15 +1853,14 @@ function addConflictPair(r1, r2, intensity) {
 
 // Per-neuron neighbor list (cross-region via AXON_ROUTES + within-region)
 function initNeurons(forceW, forceH) {
-  // MOST RELIABLE: read the canvas element's own rendered rect
-  const p = document.getElementById('neural-panel-body');
-  const r = nCanvas.getBoundingClientRect();
-  const pr = p ? p.getBoundingClientRect() : r;
-  const W = forceW || Math.round(pr.width  || r.width)  || 800;
-  const H = forceH || Math.round(pr.height || r.height) || 500;
+  // RELIABLE sizing: getBoundingClientRect > offsetWidth > fallback
+  const parent = nCanvas.parentElement;
+  const rect = parent ? parent.getBoundingClientRect() : {width:0,height:0};
+  const W = forceW || Math.round(rect.width)  || parent.offsetWidth  || nCanvas.offsetWidth  || 800;
+  const H = forceH || Math.round(rect.height) || parent.offsetHeight || nCanvas.offsetHeight || 500;
   if (W < 20 || H < 20) {
     console.warn('[AXON] initNeurons skipped — bad dims:', W, H);
-    return;   // NOT wiping neuronNodes — caller will retry
+    return;
   }
   nCanvas.width  = W;
   nCanvas.height = H;
@@ -1964,17 +1962,17 @@ function scheduleSpikeWave(regionName, intensity) {
 function drawNeural() {
   try {
 
-  // Guard: canvas must have real dimensions before drawing
-  if (nCanvas.width < 20 || nCanvas.height < 20) {
-    requestAnimationFrame(drawNeural);
-    return;
-  }
-  // Debug: if neurons never initialised, show visible warning and retry init
-  if (neuronNodes.length === 0 && axonFrame % 60 === 0) {
-    const p = document.getElementById('neural-panel-body');
-    const pw = p ? p.offsetWidth : 0, ph = p ? p.offsetHeight : 0;
-    console.warn('[AXON] drawNeural: no neurons! canvas:', nCanvas.width+'x'+nCanvas.height, 'parent:', pw+'x'+ph);
-    if (pw > 20 && ph > 20) initNeurons(pw, ph);
+  // Self-heal: getBoundingClientRect gives REAL rendered pixels
+  {
+    const par = nCanvas.parentElement;
+    const r   = par ? par.getBoundingClientRect() : {width:0,height:0};
+    const pw  = Math.round(r.width)  || par.offsetWidth  || nCanvas.offsetWidth  || 0;
+    const ph  = Math.round(r.height) || par.offsetHeight || nCanvas.offsetHeight || 0;
+    if (pw < 10 || ph < 10) { requestAnimationFrame(drawNeural); return; }
+    if (Math.abs(nCanvas.width - pw) > 2 || Math.abs(nCanvas.height - ph) > 2) {
+      nCanvas.width = pw; nCanvas.height = ph;
+      if (neuronNodes.length === 0) { initNeurons(); buildLegend(); }
+    }
   }
   axonFrame++;
   const W = nCanvas.width, H = nCanvas.height;
@@ -4436,23 +4434,24 @@ window.addEventListener('load', () => {
     }
   }
 
-  const _canvasParent = document.getElementById('neural-panel-body');
+  const _canvasParent = nCanvas.parentElement;
 
-  // Boot immediately with safe fallback size
+  // Boot immediately
   _syncCanvasToParent(800, 500);
 
   // Then snap to real rendered size as layout settles
   function _bootPoll() {
-    const p = document.getElementById('neural-panel-body');
-    if (!p) return;
-    const w = p.offsetWidth  || p.getBoundingClientRect().width;
-    const h = p.offsetHeight || p.getBoundingClientRect().height;
+    const par = nCanvas.parentElement;
+    if (!par) return;
+    const r = par.getBoundingClientRect();
+    const w = Math.round(r.width)  || par.offsetWidth  || 0;
+    const h = Math.round(r.height) || par.offsetHeight || 0;
     console.log('[AXON] bootPoll dims:', w, 'x', h);
     if (w > 20 && h > 20) _syncCanvasToParent(w, h);
   }
   [50, 150, 400, 800, 1600, 3000].forEach(t => setTimeout(_bootPoll, t));
 
-  // ResizeObserver for live resize support
+  // ResizeObserver watches the canvas parent directly
   if (window.ResizeObserver && _canvasParent) {
     new ResizeObserver(entries => {
       for (const e of entries) {
