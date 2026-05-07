@@ -1,4 +1,4 @@
-import { useRef, useMemo, useEffect } from 'react';
+import React, { useRef, useMemo, useEffect } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Html, OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
@@ -188,108 +188,99 @@ function NeuronParticles({ ns, refs }: { ns: NeuralState; refs: SpikeRefs }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// 2. REGION ORBS — glowing spheres with HTML labels
+// 2. REGION ORBS — individual animated sphere + label per region
 // ─────────────────────────────────────────────────────────────────────────
-function RegionOrbs({ ns, refs }: { ns: NeuralState; refs: SpikeRefs }) {
-  const groupRef = useRef<THREE.Group>(null!);
+function RegionOrb({ rd, ns, spikesRef }: {
+  rd: typeof REGION_DEFS[0];
+  ns: NeuralState;
+  spikesRef: React.MutableRefObject<Record<string, number>>;
+}) {
+  const meshRef = useRef<THREE.Mesh>(null!);
   const t = useRef(0);
-  const thinking = useAxonStore((s) => s.thinking);
-  const thinkRef = useRef(false);
-  useEffect(() => { thinkRef.current = thinking; }, [thinking]);
+  const [actPct, setActPct] = React.useState(5);
+
+  const pos: [number, number, number] = [
+    rd.pos[0] * SPHERE_R * 0.88,
+    rd.pos[1] * SPHERE_R * 0.88,
+    rd.pos[2] * SPHERE_R * 0.88,
+  ];
+  const col = useMemo(() => new THREE.Color(rd.color), [rd.color]);
 
   useFrame((_, delta) => {
     t.current += delta;
-    if (!groupRef.current) return;
-    groupRef.current.children.forEach((child) => {
-      const mesh = child as THREE.Mesh & { __rdKey?: string };
-      const rk = mesh.__rdKey;
-      if (!rk) return;
-      const act = getRegionAct((ns.regions ?? {}) as Record<string,number>, rk);
-      const spk = refs.spikes.current[rk] ?? 0;
-      const rd  = REGION_DEFS.find((r) => r.key === rk)!;
+    if (!meshRef.current) return;
+    const act = getRegionAct((ns.regions ?? {}) as Record<string,number>, rd.key);
+    const spk = spikesRef.current[rd.key] ?? 0;
+    const conflict = (ns.conflict as any)?.score ?? 0;
 
-      const scale = 0.045 + act * 0.16 + spk * 0.14
-        + Math.sin(t.current * (1.4 + act * 3) + rd.pos[0] * 5) * 0.006 * (act + 0.05);
-      mesh.scale.setScalar(Math.max(0.018, scale));
+    const scale = 0.048 + act * 0.18 + spk * 0.16
+      + Math.sin(t.current * (1.4 + act * 3) + rd.pos[0] * 5) * 0.007 * (act + 0.05);
+    meshRef.current.scale.setScalar(Math.max(0.02, scale));
 
-      const mat = mesh.material as THREE.MeshStandardMaterial;
-      const conflict = (ns.conflict as any)?.score ?? 0;
-      const shimmer  = conflict > 0.5 && act > 0.3
-        ? Math.abs(Math.sin(t.current * 14 + rd.pos[1] * 8)) * conflict * 0.5
-        : 0;
-      mat.emissiveIntensity = Math.min(3.5, 0.2 + act * 2.2 + spk * 1.8 + shimmer);
+    const mat = meshRef.current.material as THREE.MeshStandardMaterial;
+    const shimmer = conflict > 0.5 && act > 0.3
+      ? Math.abs(Math.sin(t.current * 14 + rd.pos[1] * 8)) * conflict * 0.45
+      : 0;
+    mat.emissiveIntensity = Math.min(4.0, 0.15 + act * 2.5 + spk * 2.0 + shimmer);
 
-      if (spk > 0.05) {
-        mat.emissive.setHex(0xffffff);
-        mat.emissive.lerp(new THREE.Color(rd.color), 1 - spk * 0.8);
-      } else {
-        mat.emissive.set(rd.color);
-      }
-    });
+    if (spk > 0.05) {
+      mat.emissive.setHex(0xffffff);
+      mat.emissive.lerp(col, 1 - spk * 0.8);
+    } else {
+      mat.emissive.copy(col);
+    }
+
+    // Update label pct at low frequency to avoid React re-render storm
+    if (Math.floor(t.current * 3) !== Math.floor((t.current - delta) * 3)) {
+      setActPct(Math.round(act * 100));
+    }
   });
 
   return (
-    <group ref={groupRef}>
-      {REGION_DEFS.map((rd) => {
-        const pos: [number, number, number] = [
-          rd.pos[0] * SPHERE_R * 0.88,
-          rd.pos[1] * SPHERE_R * 0.88,
-          rd.pos[2] * SPHERE_R * 0.88,
-        ];
-        const col = new THREE.Color(rd.color);
-        const act = getRegionAct((ns.regions ?? {}) as Record<string,number>, rd.key);
-        const pct = Math.round(act * 100);
+    <mesh ref={meshRef} position={pos}>
+      <sphereGeometry args={[1, 12, 12]} />
+      <meshStandardMaterial
+        color={col}
+        emissive={col}
+        emissiveIntensity={0.35}
+        transparent
+        opacity={0.72}
+      />
+      <Html
+        center
+        position={[0, 1.5, 0]}
+        style={{ pointerEvents: 'none', userSelect: 'none' }}
+        distanceFactor={6.5}
+        zIndexRange={[10, 10]}
+      >
+        <div style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+          <div style={{
+            fontSize: 9, fontFamily: 'monospace', fontWeight: 700,
+            color: rd.color, letterSpacing: '0.03em',
+            textShadow: `0 0 8px ${rd.color}, 0 0 2px #000`,
+            lineHeight: 1.2,
+          }}>
+            {rd.label}
+          </div>
+          <div style={{
+            fontSize: 8, fontFamily: 'monospace',
+            color: actPct > 40 ? '#ffffff' : '#64748b',
+            marginTop: 1,
+          }}>
+            {actPct}%
+          </div>
+        </div>
+      </Html>
+    </mesh>
+  );
+}
 
-        return (
-          <mesh
-            key={rd.key}
-            position={pos}
-            /* @ts-ignore attach user data */
-            ref={(m) => { if (m) (m as any).__rdKey = rd.key; }}
-          >
-            <sphereGeometry args={[1, 12, 12]} />
-            <meshStandardMaterial
-              color={col}
-              emissive={col}
-              emissiveIntensity={0.4 + act * 1.2}
-              transparent
-              opacity={0.70}
-            />
-            {/* HTML label — always visible, scales with camera distance */}
-            <Html
-              center
-              position={[0, 1.4, 0]}
-              style={{ pointerEvents: 'none', userSelect: 'none' }}
-              distanceFactor={6}
-            >
-              <div style={{
-                textAlign: 'center',
-                whiteSpace: 'nowrap',
-              }}>
-                <div style={{
-                  fontSize: 9,
-                  fontFamily: 'monospace',
-                  color: rd.color,
-                  fontWeight: 700,
-                  letterSpacing: '0.04em',
-                  textShadow: `0 0 6px ${rd.color}`,
-                  lineHeight: 1.2,
-                }}>
-                  {rd.label}
-                </div>
-                <div style={{
-                  fontSize: 8,
-                  fontFamily: 'monospace',
-                  color: act > 0.4 ? '#ffffff' : '#64748b',
-                  marginTop: 1,
-                }}>
-                  {pct}%
-                </div>
-              </div>
-            </Html>
-          </mesh>
-        );
-      })}
+function RegionOrbs({ ns, refs }: { ns: NeuralState; refs: SpikeRefs }) {
+  return (
+    <group>
+      {REGION_DEFS.map((rd) => (
+        <RegionOrb key={rd.key} rd={rd} ns={ns} spikesRef={refs.spikes} />
+      ))}
     </group>
   );
 }

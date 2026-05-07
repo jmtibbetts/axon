@@ -71,11 +71,11 @@ export function useAxonSocket() {
     });
 
     socket.on('disconnect', () => {
-      set({ connected: false });
+      set({ connected: false, engineRunning: false });
       _startFired = false;
     });
 
-    socket.on('brain_state', (d) => {
+    socket.on('neural_state', (d) => {
       const state = useAxonStore.getState();
       const prev  = state.neuralState;
 
@@ -152,11 +152,11 @@ export function useAxonSocket() {
       set({ lmStatus: d });
     });
 
-    socket.on('vision_frame', (d) => {
-      set({ visionFrame: d.frame ?? d });
+    socket.on('frame', (d) => {
+      set({ visionFrame: d.frame_b64 ?? d.frame ?? d });
     });
 
-    socket.on('face_data', (d) => {
+    socket.on('face', (d) => {
       set({ faceData: d });
     });
 
@@ -242,6 +242,12 @@ export function useAxonSocket() {
       set({ engineRunning: true });
     });
 
+    socket.on('onboarding_state', (d) => {
+      // Engine is up when we receive onboarding state
+      set({ engineRunning: true });
+      if (d) set((state) => ({ neuralState: { ...state.neuralState, onboarding: d } }));
+    });
+
     socket.on('engine_error', (d) => {
       set((state) => ({
         logs: [{ level: 'error', msg: `Engine error: ${d.error ?? d}`, ts: Date.now() }, ...state.logs],
@@ -257,6 +263,29 @@ export function useAxonSocket() {
       set((state) => ({
         logs: [{ msg: '🔬 Diagnostic panel requested', ts: Date.now() }, ...state.logs],
       }));
+    });
+
+
+    socket.on('region_spike', (d) => {
+      set((state) => ({
+        regionSpikes: [{ region: d.cluster ?? d.region, activation: d.activation ?? 0.5, ts: Date.now() }, ...state.regionSpikes].slice(0, 40),
+      }));
+    });
+
+    socket.on('transcript', (d) => {
+      set((state) => ({
+        messages: [...state.messages, { role: 'user', text: d.text ?? d, ts: Date.now() }],
+      }));
+    });
+
+    socket.on('synapse_count', (d) => {
+      set((state) => ({
+        neuralState: { ...state.neuralState, total_connections: d.connections, total_neurons: d.neurons },
+      }));
+    });
+
+    socket.on('new_face', (d) => {
+      set({ faceData: { ...d, new: true, ts: Date.now() } });
     });
 
     // No cleanup — singleton socket lives for the page lifetime
