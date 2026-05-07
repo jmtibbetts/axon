@@ -416,7 +416,18 @@ canvas.spark{display:block;}
             <button onclick="stopPlayback()" style="background:rgba(0,0,0,0.7);border:1px solid #ef4444;color:#ef4444;font-size:9px;padding:2px 5px;border-radius:3px;cursor:pointer;">✕ EXIT</button>
           </div>
         </div>
+        <button onclick="axonDebugDump()" style="
+          background:rgba(0,0,0,0.7);border:1px solid #ef4444;color:#ef4444;
+          font-size:9px;font-family:monospace;padding:2px 6px;border-radius:3px;
+          cursor:pointer;" title="Debug info">🔍 DBG</button>
       </div>
+      <div id="axon-debug-overlay" style="
+        display:none;position:absolute;top:8px;left:8px;right:180px;
+        background:rgba(0,0,0,0.92);border:1px solid #ef4444;border-radius:4px;
+        padding:8px;font-size:9px;font-family:monospace;color:#f87171;
+        z-index:999;white-space:pre-wrap;pointer-events:auto;
+        max-height:200px;overflow-y:auto;
+      "></div>
     </div>
   
   <!-- Chat area (pinned to bottom of neural panel) -->
@@ -2917,6 +2928,30 @@ function renderPlaybackStep() {
 }
 
 // ── Update HUD mode badge ────────────────────────────────────────────────────
+
+function axonDebugDump() {
+  const el = document.getElementById('axon-debug-overlay');
+  if (el.style.display !== 'none') { el.style.display='none'; return; }
+  const c  = document.getElementById('neural-canvas');
+  const pb = document.getElementById('neural-panel-body');
+  const lines = [
+    '=== AXON DEBUG DUMP ===',
+    'canvas.width:   ' + (c ? c.width : 'NO CANVAS'),
+    'canvas.height:  ' + (c ? c.height : 'NO CANVAS'),
+    'panel offsetW:  ' + (pb ? pb.offsetWidth : 'NO PANEL'),
+    'panel offsetH:  ' + (pb ? pb.offsetHeight : 'NO PANEL'),
+    'neuronNodes:    ' + (typeof neuronNodes !== 'undefined' ? neuronNodes.length : 'UNDEFINED'),
+    'drawNeural:     ' + (typeof drawNeural),
+    'axonFrame:      ' + (typeof axonFrame !== 'undefined' ? axonFrame : 'UNDEFINED'),
+    'neuralState:    ' + (neuralState ? JSON.stringify(Object.keys(neuralState)) : 'null'),
+    'socket.conn:    ' + (typeof socket !== 'undefined' ? !!socket.connected : 'UNDEFINED'),
+    'rAF alive:      ' + (typeof axonFrame !== 'undefined' && axonFrame > 0 ? 'YES (frame '+axonFrame+')' : 'STOPPED'),
+  ];
+  el.textContent = lines.join('\n');
+  el.style.display = 'block';
+  setTimeout(() => { el.style.display='none'; }, 15000);
+}
+
 function updateModeBadge(meta, eps) {
   const badge = document.getElementById('mode-badge');
   if (!badge) return;
