@@ -99,7 +99,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);
 .ctrl-btn.active{border-color:var(--green);color:var(--green);}
 
 /* -- NEURAL CANVAS -- */
-#neural-canvas{width:100%;height:100%;display:block;}
+#neural-canvas{position:absolute;top:0;left:0;width:100%;height:100%;display:block;}
 #user-profile-panel .prow{display:flex;gap:4px;margin-bottom:1px;}
 #user-profile-panel .pk{color:#7c3aed;min-width:70px;font-size:7.5px;text-transform:uppercase;letter-spacing:.05em;padding-top:1px;}
 #user-profile-panel .pv{color:#ddd6fe;flex:1;word-break:break-word;}
@@ -1962,17 +1962,10 @@ function scheduleSpikeWave(regionName, intensity) {
 function drawNeural() {
   try {
 
-  // Self-heal: getBoundingClientRect gives REAL rendered pixels
-  {
-    const par = nCanvas.parentElement;
-    const r   = par ? par.getBoundingClientRect() : {width:0,height:0};
-    const pw  = Math.round(r.width)  || par.offsetWidth  || nCanvas.offsetWidth  || 0;
-    const ph  = Math.round(r.height) || par.offsetHeight || nCanvas.offsetHeight || 0;
-    if (pw < 10 || ph < 10) { requestAnimationFrame(drawNeural); return; }
-    if (Math.abs(nCanvas.width - pw) > 2 || Math.abs(nCanvas.height - ph) > 2) {
-      nCanvas.width = pw; nCanvas.height = ph;
-      if (neuronNodes.length === 0) { initNeurons(); buildLegend(); }
-    }
+  // Guard: only proceed if canvas has real pixel dimensions
+  if (nCanvas.width < 20 || nCanvas.height < 20) {
+    requestAnimationFrame(drawNeural);
+    return;
   }
   axonFrame++;
   const W = nCanvas.width, H = nCanvas.height;
@@ -4397,9 +4390,12 @@ window.addEventListener('resize', () => {
   // Debounce resize
   clearTimeout(window._resizeTimer);
   window._resizeTimer = setTimeout(() => {
-    const _p = document.getElementById('neural-panel-body');
-    if (_p && _p.offsetWidth > 20 && _p.offsetHeight > 20) {
-      initNeurons(_p.offsetWidth, _p.offsetHeight);
+    const _p = nCanvas.parentElement;
+    if (_p) {
+      const r = _p.getBoundingClientRect();
+      const w = Math.round(r.width) || _p.offsetWidth;
+      const h = Math.round(r.height) || _p.offsetHeight;
+      if (w > 20 && h > 20) { nCanvas.width = w; nCanvas.height = h; initNeurons(w, h); buildLegend(); }
     }
     const vc = document.getElementById('vision-canvas');
     if (vc.offsetWidth > 0) {
@@ -4414,51 +4410,39 @@ window.addEventListener('load', () => {
   buildPersonalitySliders();
 
   // ── Neural Canvas Boot ────────────────────────────────────────────────────
-  let _neuralBooted = false;
+  // Strategy: set canvas to 800x500 immediately so drawNeural can start.
+  // Then poll for real parent size and resize+reinit once layout is stable.
+  nCanvas.width  = 800;
+  nCanvas.height = 500;
+  initNeurons(800, 500);
+  buildLegend();
+  drawNeural();   // start the rAF loop immediately
 
-  function _syncCanvasToParent(w, h) {
+  function _resizeCanvas() {
+    const par = nCanvas.parentElement;
+    if (!par) return;
+    const r  = par.getBoundingClientRect();
+    const w  = Math.round(r.width)  || par.offsetWidth  || 0;
+    const h  = Math.round(r.height) || par.offsetHeight || 0;
     if (w < 20 || h < 20) return;
-    const wChanged = Math.abs(nCanvas.width  - w) > 4;
-    const hChanged = Math.abs(nCanvas.height - h) > 4;
-    if (wChanged || hChanged || neuronNodes.length === 0) {
+    if (Math.abs(nCanvas.width - w) > 8 || Math.abs(nCanvas.height - h) > 8) {
       nCanvas.width  = w;
       nCanvas.height = h;
       initNeurons(w, h);
       buildLegend();
-      console.log('[AXON] canvas synced:', w+'x'+h, 'neurons:', neuronNodes.length);
-    }
-    if (!_neuralBooted) {
-      _neuralBooted = true;
-      drawNeural();
-      console.log('[AXON] neural canvas LIVE:', w+'x'+h, 'neurons:', neuronNodes.length);
+      console.log('[AXON] canvas resized to:', w+'x'+h, 'neurons:', neuronNodes.length);
     }
   }
 
+  // Poll at increasing intervals so real layout dimensions are captured
+  [100, 300, 700, 1500, 3000].forEach(t => setTimeout(_resizeCanvas, t));
+
+  // Also watch for window resize
   const _canvasParent = nCanvas.parentElement;
-
-  // Boot immediately
-  _syncCanvasToParent(800, 500);
-
-  // Then snap to real rendered size as layout settles
-  function _bootPoll() {
-    const par = nCanvas.parentElement;
-    if (!par) return;
-    const r = par.getBoundingClientRect();
-    const w = Math.round(r.width)  || par.offsetWidth  || 0;
-    const h = Math.round(r.height) || par.offsetHeight || 0;
-    console.log('[AXON] bootPoll dims:', w, 'x', h);
-    if (w > 20 && h > 20) _syncCanvasToParent(w, h);
-  }
-  [50, 150, 400, 800, 1600, 3000].forEach(t => setTimeout(_bootPoll, t));
-
-  // ResizeObserver watches the canvas parent directly
   if (window.ResizeObserver && _canvasParent) {
-    new ResizeObserver(entries => {
-      for (const e of entries) {
-        const nw = Math.floor(e.contentRect.width);
-        const nh = Math.floor(e.contentRect.height);
-        if (nw > 20 && nh > 20) _syncCanvasToParent(nw, nh);
-      }
+    new ResizeObserver(() => {
+      clearTimeout(window._canvasResizeTimer);
+      window._canvasResizeTimer = setTimeout(_resizeCanvas, 100);
     }).observe(_canvasParent);
   }
 

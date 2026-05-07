@@ -63,7 +63,7 @@ class SurpriseDetector:
         "unexpected_conclusion":  10.0,
         "personality_drift":      60.0,
         "goal_progress":          20.0,
-        "cluster_dominance_flip": 5.0,
+        "cluster_dominance_flip": 120.0,
     }
 
     def __init__(self, on_event: Optional[Callable] = None):
