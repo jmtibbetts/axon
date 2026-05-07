@@ -2000,6 +2000,19 @@ function scheduleSpikeWave(regionName, intensity) {
 
 function drawNeural() {
   // rAF is ALWAYS the last line — loop NEVER dies
+
+  // ── HARD DIAGNOSTIC: runs even if guards below fire ─────────────────
+  axonFrame++;
+  if (axonFrame <= 5 || axonFrame % 300 === 0) {
+    const _par = nCanvas.parentElement;
+    const _br = _par ? _par.getBoundingClientRect() : null;
+    console.log('[AXON] drawNeural f:' + axonFrame +
+      ' canvas:' + nCanvas.width + 'x' + nCanvas.height +
+      ' CSS:' + (nCanvas.offsetWidth||'?') + 'x' + (nCanvas.offsetHeight||'?') +
+      ' parent:' + (_br ? Math.round(_br.width)+'x'+Math.round(_br.height) : 'null') +
+      ' neurons:' + neuronNodes.length +
+      ' nCtx:' + (!!nCtx));
+  }
   try {
 
   // Guard: re-acquire context if null (can happen on hidden/minimized tabs)
@@ -2010,9 +2023,21 @@ function drawNeural() {
 
   // Guard: only proceed if canvas has real pixel dimensions
   if (nCanvas.width < 20 || nCanvas.height < 20) {
+    // Draw diagnostic overlay even on bad dims
+    try {
+      if (nCtx && nCanvas.parentElement) {
+        const _pe = nCanvas.parentElement;
+        nCanvas.width  = _pe.offsetWidth  || 800;
+        nCanvas.height = _pe.offsetHeight || 400;
+        nCtx.fillStyle = '#020205';
+        nCtx.fillRect(0,0,nCanvas.width,nCanvas.height);
+        nCtx.fillStyle = '#ff4444';
+        nCtx.font = '11px monospace';
+        nCtx.fillText('CANVAS INIT... w:'+nCanvas.width+' h:'+nCanvas.height+' f:'+axonFrame, 10, 20);
+      }
+    } catch(_) {}
     requestAnimationFrame(drawNeural); return;
   }
-  axonFrame++;
   if (axonFrame === 1) console.log('[AXON] drawNeural STARTED — canvas:', nCanvas.width+'x'+nCanvas.height, 'neurons:', neuronNodes.length);
   const W = nCanvas.width, H = nCanvas.height;
 
@@ -4452,6 +4477,25 @@ socket.on('active_pathways', d => {
 socket.on('neural_state', d => {
   neuralState = d;
   window.neuralState = d;  // expose for tab-switch redraws
+  // ── DIRECT DRAW TEST (fires every 60 ticks ~6s) ───────────────────────
+  if ((d.tick || 0) % 60 === 0) {
+    try {
+      const _tc = document.getElementById('neural-canvas');
+      const _tx = _tc ? _tc.getContext('2d') : null;
+      if (_tx) {
+        _tx.save();
+        _tx.fillStyle = 'rgba(0,212,255,0.12)';
+        _tx.fillRect(0, 0, _tc.width || 100, _tc.height || 100);
+        _tx.fillStyle = '#00d4ff';
+        _tx.font = '10px monospace';
+        _tx.fillText('TICK:' + (d.tick||'?') + ' w:' + _tc.width + ' h:' + _tc.height, 6, 16);
+        _tx.restore();
+        console.log('[AXON] direct-draw test: canvas', _tc.width+'x'+_tc.height, 'ctx:', !!_tx, 'offsetW:', _tc.offsetWidth, 'offsetH:', _tc.offsetHeight);
+      } else {
+        console.warn('[AXON] direct-draw test: NO CTX — canvas:', _tc ? 'found' : 'NULL');
+      }
+    } catch(_e) { console.warn('[AXON] direct-draw test CRASHED:', _e); }
+  }
   // ── DEBUG: visible NS ticker ─────────────────────────────────────────────
   if (!window._nsTicker) {
     window._nsTicker = document.createElement('div');
@@ -4563,9 +4607,14 @@ window.addEventListener('load', () => {
   // Checks every 3 seconds that axonFrame is incrementing
   let _wdLastFrame = 0;
   setInterval(() => {
-    if (axonFrame === _wdLastFrame && neuronNodes.length > 0) {
-      console.warn('[AXON] rAF watchdog: loop stalled at frame', axonFrame, '— restarting');
-      drawNeural();
+    // Watchdog: if canvas still has no neurons after 6s, force re-init
+    if (neuronNodes.length === 0) {
+      const _p = nCanvas.parentElement;
+      const _w = (_p ? _p.offsetWidth : 0) || 800;
+      const _h = (_p ? _p.offsetHeight : 0) || 400;
+      console.warn('[AXON] watchdog: no neurons — forcing initNeurons', _w+'x'+_h);
+      nCanvas.width = _w; nCanvas.height = _h;
+      initNeurons(_w, _h);
     }
     _wdLastFrame = axonFrame;
   }, 3000);
