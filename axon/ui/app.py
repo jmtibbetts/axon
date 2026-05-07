@@ -27,34 +27,22 @@ CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet", logger=False, engineio_logger=False, ping_timeout=120, ping_interval=30, max_http_buffer_size=10_000_000)
 
 # ── Thread-safe emit via a queue drainer ────────────────────────────────────
-# Background threads (CognitiveCycle, vision, audio) and tpool threads all
-# push to _emit_queue. A single greenlet drains it — no concurrent socketio
-# calls, no hub starvation.
-import queue as _queue
-_emit_queue: _queue.Queue = _queue.Queue()
-_drainer_started = False
+# Thread-safe emit: schedule on the eventlet hub via start_background_task.
+# This works from ANY context — OS threads, greenlets, tpool threads.
+# flask-socketio's start_background_task is re-entrant and hub-safe.
 
 def _safe_emit(event: str, data: dict):
-    """Push an emit onto the queue — safe from ANY thread or greenlet."""
-    _emit_queue.put_nowait((event, data))
+    """Schedule a socketio emit on the eventlet hub — safe from any thread."""
+    def _do():
+        try:
+            socketio.emit(event, data, broadcast=True)
+        except Exception:
+            pass
+    socketio.start_background_task(_do)
 
 def _start_drainer():
-    """Spawn the queue drainer inside the eventlet hub (called once on first connect)."""
-    global _drainer_started
-    if _drainer_started:
-        return
-    _drainer_started = True
-    def _drain():
-        while True:
-            try:
-                event, data = _emit_queue.get(timeout=0.02)
-                try:
-                    socketio.emit(event, data, broadcast=True)
-                except Exception:
-                    pass
-            except _queue.Empty:
-                eventlet.sleep(0.001)   # yield to hub without busy-spin
-    socketio.start_background_task(_drain)
+    """No-op — drainer replaced by start_background_task pattern."""
+    pass
 
 _engine: AxonEngine = None
 _engine_lock     = threading.Lock()  # prevents double-init race
@@ -263,15 +251,18 @@ def on_disconnect():
 
 @socketio.on("chat")
 def on_chat(data):
+    txt = data.get("text", "")
+    print(f"[AXON] >>> chat received: {txt[:80]!r}  engine={_engine is not None}")
     if _engine:
+        # Echo back so UI knows message was received
+        _safe_emit("user_input_echo", {"text": txt})
         try:
-            # tpool.execute runs in a real OS thread pool — safe for blocking LLM calls
-            _tpool.execute(_engine.chat, data.get("text", ""))
+            _tpool.execute(_engine.chat, txt)
         except Exception as _chat_err:
             print(f"[AXON] chat tpool error: {_chat_err} — falling back to spawn")
-            eventlet.spawn(_engine.chat, data.get("text", ""))
+            eventlet.spawn(_engine.chat, txt)
     else:
-        emit("log", {"msg": "Engine not started — hit ACTIVATE first."})
+        emit("log", {"msg": "Engine not started — AXON is starting up, please wait."})
 
 @socketio.on("user_text")
 def on_user_text(data):
