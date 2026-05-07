@@ -4,9 +4,23 @@ import { useAxonStore } from '../store/axonStore';
 
 const SERVER = window.location.origin;
 
+// Default start config — matches what the legacy UI sends
+const DEFAULT_START_CONFIG = {
+  api_key:      '',
+  lm_url:       'http://localhost:1234',
+  lm_model:     null,
+  prefer_local: true,
+  voice:        true,
+  camera:       true,
+  mic:          true,
+  mic_index:    null,
+  camera_index: -1,
+};
+
 export function useAxonSocket() {
   const socketRef = useRef<Socket | null>(null);
   const set = useAxonStore((s) => s.set);
+  const startedRef = useRef(false);
 
   useEffect(() => {
     const socket = io(SERVER, {
@@ -18,10 +32,30 @@ export function useAxonSocket() {
 
     socket.on('connect', () => {
       set({ connected: true });
+
+      // Kick the engine if not already running
+      if (!startedRef.current) {
+        startedRef.current = true;
+        // Check engine status first, only start if not already running
+        fetch('/api/status')
+          .then((r) => r.json())
+          .then((d) => {
+            if (!d.running) {
+              socket.emit('start_engine', DEFAULT_START_CONFIG);
+            } else {
+              set({ engineRunning: true });
+            }
+          })
+          .catch(() => {
+            // If status check fails just try to start
+            socket.emit('start_engine', DEFAULT_START_CONFIG);
+          });
+      }
     });
 
     socket.on('disconnect', () => {
       set({ connected: false });
+      startedRef.current = false;
     });
 
     // Full brain state (rich tick)
@@ -31,7 +65,6 @@ export function useAxonSocket() {
         const surprise = d.prediction_surprise ?? 0;
         const rh = [...(state.rewardHistory.slice(-99)), reward];
         const sh = [...(state.surpriseHistory.slice(-99)), surprise];
-        // track top-5 region history
         const rHistory = { ...state.regionHistory };
         const regions = d.regions ?? {};
         Object.entries(regions).forEach(([k, v]) => {
@@ -54,9 +87,12 @@ export function useAxonSocket() {
       });
     });
 
-    // Lightweight neural snapshot
     socket.on('neural_state', (d) => {
-      set({ neuralState: d, lastTick: Date.now() });
+      set((state) => ({
+        neuralState: { ...state.neuralState, ...d },
+        lastTick: Date.now(),
+        engineRunning: true,
+      }));
     });
 
     socket.on('response', (d) => {
@@ -112,6 +148,10 @@ export function useAxonSocket() {
 
     socket.on('log', (d) => {
       set((state) => ({ logs: [d, ...state.logs].slice(0, 200) }));
+      // If engine startup failed, reflect it
+      if (d.msg && d.msg.includes('Engine startup failed')) {
+        set({ engineRunning: false });
+      }
     });
 
     socket.on('thought_competition', (d) => {
@@ -148,7 +188,9 @@ export function useAxonSocket() {
       }));
     });
 
-    return () => { socket.disconnect(); };
+    return () => {
+      socket.disconnect();
+    };
   }, []);
 
   const send = (text: string) => {
