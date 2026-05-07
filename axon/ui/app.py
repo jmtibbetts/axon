@@ -25,33 +25,16 @@ app      = Flask(__name__,
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet", logger=False, engineio_logger=False, ping_timeout=60, ping_interval=25)
 
-# Thread-safe emit bridge — stdlib queue.Queue works from both OS threads
-# AND greenlets; the drainer greenlet polls it and does the actual emit.
-import queue as _stdlib_queue
-_emit_queue = _stdlib_queue.Queue(maxsize=1024)
-
-def _emit_drainer():
-    """Greenlet that drains _emit_queue and fires socketio.emit()."""
-    while True:
-        try:
-            event, data = _emit_queue.get_nowait()
-            try:
-                socketio.emit(event, data, broadcast=True)
-            except Exception:
-                pass
-        except _stdlib_queue.Empty:
-            eventlet.sleep(0.01)  # yield to hub when nothing to drain
-        except Exception:
-            eventlet.sleep(0.05)
-
-eventlet.spawn(_emit_drainer)
-
+# Thread-safe emit bridge.
+# socketio.emit() on the SocketIO INSTANCE (not flask_socketio.emit()) is
+# documented to be safe from background OS threads in flask-socketio + eventlet.
+# We simply call it directly — no queue, no greenlet dance needed.
 def _safe_emit(event: str, data: dict):
-    """Push an event from ANY context — OS thread or greenlet — safely."""
+    """Emit from ANY context — OS thread or greenlet — safely."""
     try:
-        _emit_queue.put_nowait((event, data))
-    except _stdlib_queue.Full:
-        pass  # Drop if full — prevents backpressure stall
+        socketio.emit(event, data, broadcast=True)
+    except Exception:
+        pass
 
 _engine: AxonEngine = None
 _engine_lock     = threading.Lock()  # prevents double-init race

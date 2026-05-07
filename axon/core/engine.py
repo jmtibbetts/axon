@@ -779,16 +779,29 @@ class AxonEngine:
                     self._emit("profile_update", self.language.user_model.get_profile())
                 except Exception:
                     pass
-                # Voice output
-                self._emit("voice_speaking", {
-                    "speaking": True,
-                    "enabled":  self.voice.enabled,
-                    "playback": self.voice.get_status().get("playback","none")
-                })
-                # Lock mic while Axon speaks — prevents self-hearing
-                self.auditory.set_speaking(True)
-                self.voice.speak(response)
-                self.auditory.set_speaking(False)
+                # Voice output — run in a separate thread so we don't block
+                # the _think thread (which needs to return quickly for mic/RL loop).
+                _voice_response = response
+                def _do_voice():
+                    try:
+                        self._emit("voice_speaking", {
+                            "speaking": True,
+                            "enabled":  self.voice.enabled,
+                            "playback": self.voice.get_status().get("playback","none")
+                        })
+                        self.auditory.set_speaking(True)
+                        self.voice.speak(_voice_response, block=True)
+                        self.auditory.set_speaking(False)
+                    except Exception as _ve:
+                        print(f"  [Voice] thread error: {_ve}")
+                    finally:
+                        self._emit("voice_speaking", {
+                            "speaking": False,
+                            "enabled":  self.voice.enabled,
+                            "playback": self.voice.get_status().get("playback","none")
+                        })
+                threading.Thread(target=_do_voice, daemon=True).start()
+
                 # Drive satisfaction: social (response delivered) + competence
                 if hasattr(self, "drives"):
                     self.drives.satisfy("social",     0.25)
@@ -798,11 +811,6 @@ class AxonEngine:
                     align = self.self_model.score_alignment(response)
                     if abs(align) > 0.01:
                         self.fabric.neuromod.reward(align)
-                self._emit("voice_speaking", {
-                    "speaking": False,
-                    "enabled":  self.voice.enabled,
-                    "playback": self.voice.get_status().get("playback","none")
-                })
                 # Stimulate language output neurons
                 self.fabric.stimulate_for_input("language_out", 0.78)
                 self.fabric.stimulate_for_input("thinking",     0.55)
@@ -1203,6 +1211,9 @@ class AxonEngine:
     # ── Helpers ───────────────────────────────────────────────
 
     def _emit(self, event: str, data: dict):
+        # NOTE: app.py overrides self._emit with _engine_emit → _safe_emit for
+        # the full lifetime of the engine. This fallback is only used if socketio
+        # is set but app.py hasn't yet patched _emit (should never happen in prod).
         if not self.socketio:
             return
         import numpy as _np
@@ -1219,14 +1230,10 @@ class AxonEngine:
             return o
         try:
             safe_data = _san(data)
-            # Use start_background_task so SocketIO's own event loop handles the emit,
-            # avoiding lock contention when called from background threads (fabric, LLM, etc.)
-            def _do():
-                try:
-                    self.socketio.emit(event, safe_data, broadcast=True)
-                except Exception:
-                    pass
-            self.socketio.start_background_task(_do)
+            # socketio.emit() on the SocketIO instance is thread-safe in flask-socketio+eventlet.
+            # Do NOT use start_background_task — it spawns a new greenlet per-call and
+            # causes lock contention when emitting at high frequency (neural_state at 10Hz).
+            self.socketio.emit(event, safe_data, broadcast=True)
         except Exception:
             pass
 

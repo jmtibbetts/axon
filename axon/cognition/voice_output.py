@@ -129,8 +129,9 @@ class VoiceOutput:
             "catalogue": VOICE_CATALOGUE,
         }
 
-    def speak(self, text: str, interrupt: bool = False):
-        """Queue text and BLOCK until it has finished playing (max 45s timeout)."""
+    def speak(self, text: str, interrupt: bool = False, block: bool = False):
+        """Queue text for TTS.  block=True waits for playback to finish (legacy).
+        Default is non-blocking — caller returns immediately after queuing."""
         if not self.enabled:
             return
         text = text.strip()
@@ -142,9 +143,9 @@ class VoiceOutput:
                 except: break
         done_event = threading.Event()
         self._queue.put((text, done_event))
-        # Timeout prevents a hung edge-tts call from stalling the thread forever
-        max_wait = max(15.0, len(text) * 0.08)   # ~80ms per char, min 15s
-        done_event.wait(timeout=max_wait)
+        if block:
+            max_wait = max(15.0, len(text) * 0.08)
+            done_event.wait(timeout=max_wait)
 
     def _worker(self):
         loop = asyncio.new_event_loop()
