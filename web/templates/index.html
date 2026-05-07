@@ -1995,10 +1995,13 @@ function drawNeural() {
   nCtx.fillRect(0, 0, W, H);
 
   // When backend isn't connected, use an idle baseline so neurons stay visible
+  // Idle baseline: only a few regions stay warm at rest (DMN, thalamus).
+  // Most regions are near-dark until the backend actually activates them.
+  // These values match biological resting state — not everything fires at once.
   const _IDLE_BASELINE = {
-    prefrontal:0.18, hippocampus:0.14, amygdala:0.10, visual:0.12,
-    auditory:0.10, language:0.12, default_mode:0.22, thalamus:0.16,
-    cerebellum:0.10, association:0.15, social:0.12, metacognition:0.14
+    prefrontal:0.09,  hippocampus:0.07, amygdala:0.05,   visual:0.06,
+    auditory:0.05,    language:0.07,    default_mode:0.18, thalamus:0.12,
+    cerebellum:0.05,  association:0.08, social:0.06,      metacognition:0.07
   };
   const regionMap = (neuralState && neuralState.regions && Object.keys(neuralState.regions).length > 0)
     ? neuralState.regions
@@ -2017,21 +2020,29 @@ function drawNeural() {
   const sharpenedRegion = {};
   for (const [k, v] of Object.entries(regionMap)) {
     let out;
-    if (v < 0.12) {
-      // Below floor — always draw something (dead cluster = dead brain)
-      out = 0.15 + (v / 0.12) * 0.10;
-    } else if (v < 0.35) {
-      // Idle resting range: 0.25 → 0.48
-      const t = (v - 0.12) / 0.23;
-      out = 0.25 + Math.pow(t, 0.8) * 0.23;
-    } else if (v < 0.60) {
-      // Active above baseline: 0.48 → 0.75
-      const t = (v - 0.35) / 0.25;
-      out = 0.48 + Math.pow(t, 0.9) * 0.27;
+    // GOAL: regions below 0.10 are nearly dark (quiet brain).
+    // Active regions (0.30+) glow distinctly. Only the dominant regions pop.
+    // This recreates the visual from the screenshot — clusters are individually
+    // visible with real contrast between hot and cold regions.
+    if (v < 0.08) {
+      // Nearly dark — resting / inhibited
+      out = v * 0.6;            // 0.00 → 0.048  (almost invisible)
+    } else if (v < 0.18) {
+      // Low resting glow — barely visible
+      const t = (v - 0.08) / 0.10;
+      out = 0.048 + t * 0.072;  // 0.048 → 0.12  (faint glow)
+    } else if (v < 0.40) {
+      // Moderate activation — clearly lit
+      const t = (v - 0.18) / 0.22;
+      out = 0.12 + Math.pow(t, 0.75) * 0.28; // 0.12 → 0.40
+    } else if (v < 0.65) {
+      // Active — bright
+      const t = (v - 0.40) / 0.25;
+      out = 0.40 + Math.pow(t, 0.85) * 0.35; // 0.40 → 0.75
     } else {
-      // High activity: 0.75 → 1.0
-      const t = (v - 0.60) / 0.40;
-      out = 0.75 + Math.pow(t, 0.7) * 0.25;
+      // Peak — full glow
+      const t = (v - 0.65) / 0.35;
+      out = 0.75 + Math.pow(t, 0.7) * 0.25;  // 0.75 → 1.0
     }
     sharpenedRegion[k] = Math.max(0, Math.min(1.0, out));
   }
@@ -2044,7 +2055,7 @@ function drawNeural() {
     const allRegionActs = Object.entries(sharpenedRegion);
     allRegionActs.sort((a,b) => b[1]-a[1]);
     // Only regions genuinely above the active threshold count as winners
-    const activeThresh = 0.42; // above-baseline stimulation (idle floor is now ~0.12-0.35)
+    const activeThresh = 0.38; // above the new resting range (idle ≈ 0.05–0.18 sharpened)
     const genuinelyActive = allRegionActs.filter(([r,v]) => v > activeThresh);
     const topN = genuinelyActive.length
       ? Math.max(1, Math.min(3, Math.ceil(genuinelyActive.length * 0.35)))
@@ -2104,21 +2115,20 @@ function drawNeural() {
     newTop.forEach(c => {
       const sharpAct = sharpenedRegion[c.region || regionForCluster(c.name)] || 0;
       // Lower threshold — even resting clusters get mild spike waves
-      if (sharpAct > 0.04) {
-        scheduleSpikeWave(c.region || regionForCluster(c.name), Math.max(0.08, sharpAct));
+      if (sharpAct > 0.32) {
+        scheduleSpikeWave(c.region || regionForCluster(c.name), sharpAct);
       }
     });
-    // Spontaneous idle spike — only on ACTIVE regions, proportional to their activity
-    // No more random all-region constant noise
-    if (axonFrame % 20 === 0) {
-      // Find genuinely active regions only
+    // Spontaneous idle spike — only on regions with significant activation
+    // Fires rarely so the map stays calm between real cognitive events
+    if (axonFrame % 45 === 0) {
       const activeRegs = Object.entries(sharpenedRegion)
-        .filter(([,v]) => v > 0.20)
+        .filter(([,v]) => v > 0.38)
         .sort((a,b) => b[1]-a[1]);
       if (activeRegs.length) {
-        // Fire on top 1-2 active regions to reinforce real activity
-        const pick = activeRegs[Math.floor(Math.random() * Math.min(2, activeRegs.length))];
-        scheduleSpikeWave(pick[0], pick[1] * 0.6);
+        // Fire only on the single hottest region
+        const pick = activeRegs[0];
+        scheduleSpikeWave(pick[0], pick[1] * 0.5);
       }
     }
 
@@ -2128,11 +2138,11 @@ function drawNeural() {
       AXON_ROUTES.forEach(([src, dst, w]) => {
         const sa = sharpenedRegion[src] || 0;
         const da = sharpenedRegion[dst] || 0;
-        if (sa < 0.18 || da < 0.12) return;
+        if (sa < 0.28 || da < 0.22) return;
         const coact = sa * da;
         // Add Hebbian boost so learned paths fire more readily
         const hebbBoost = (window._hebbianWeights && window._hebbianWeights[src+'>'+dst]) || 0;
-        if ((coact + hebbBoost * 0.3) > 0.04 && Math.random() < (coact + hebbBoost * 0.2) * w) {
+        if ((coact + hebbBoost * 0.3) > 0.08 && Math.random() < (coact + hebbBoost * 0.2) * w) {
           addPulse(src, dst, Math.min(1.0, Math.sqrt(coact) * w + hebbBoost * 0.4));
         }
       });
@@ -2188,8 +2198,8 @@ function drawNeural() {
       const sa = sharpenedRegion[src] || 0;
       const da = sharpenedRegion[dst] || 0;
       const coact = sa * da;
-      // Only fire pulse if BOTH endpoints are active enough
-      if (sa > 0.15 && coact > 0.04 && Math.random() < coact * w * 1.2) {
+      // Both endpoints must be genuinely active — prevents idle route spam
+      if (sa > 0.28 && da > 0.20 && coact > 0.08 && Math.random() < coact * w * 0.9) {
         addPulse(src, dst, Math.sqrt(coact) * w);
       }
     });
@@ -2279,10 +2289,11 @@ function drawNeural() {
     n.neighbors.forEach(j => {
       nextActivation[j] = Math.min(1.0, nextActivation[j] + signal * (0.35 + Math.random()*0.25));
     });
-    // Cross-region: only strongly firing neurons propagate across regions
+    // Cross-region: only strongly firing neurons (>0.65) propagate across regions
     if (n.activation > 0.65) {
       n.xNeighbors.forEach(j => {
-        if (Math.random() < n.activation * 0.45) {
+        // Probabilistic — not every spike crosses the region boundary
+        if (Math.random() < n.activation * 0.30) {
           const delay = 3 + Math.floor(Math.random() * 10);
           spikeQueue.push({ idx: j, at: axonFrame + delay });
         }
@@ -2437,10 +2448,10 @@ function drawNeural() {
       const hebbW    = (window._hebbianWeights && window._hebbianWeights[hebbKey]) || 0;
       const totalW   = w * (1.0 + hebbW * 3.0);
 
-      // Only draw cross-region fibers when BOTH regions are meaningfully active
+      // Only draw cross-region fibers when at least one region is meaningfully active
       // OR when Hebbian weight is strong (established pathway)
       const minActivity = Math.max(combined, hebbW * 0.5);
-      if (minActivity < 0.04 && hebbW < 0.2) return;  // skip truly idle routes
+      if (minActivity < 0.12 && hebbW < 0.25) return;  // skip idle routes — keeps map clean
 
       // Alpha: very dim at low activity, bright when both regions fire together
       const activeAlpha = Math.round(Math.pow(minActivity, 0.7) * totalW * 160);
@@ -2656,7 +2667,7 @@ function drawNeural() {
   neuronNodes.forEach(n => {
     const act       = n.activation;
     const regionAct = sharpenedRegion[n.region] || 0;
-    const isWinner  = winnerRegions.has(n.region) && regionAct > 0.15;
+    const isWinner  = winnerRegions.has(n.region) && regionAct > 0.35;
     const fatigue   = fatigueMap[n.region] || 0;
     const dominance = winnerSmooth[n.region] || 0;
 
