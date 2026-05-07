@@ -367,18 +367,16 @@ canvas.spark{display:block;}
     <span id="emo-big-conf"  style="display:none;"></span>
     <div  id="emo-prob-bars" style="display:none;"></div>
 
+    <!-- Active State Readout — sits between camera and system log, always visible -->
+    <div class="panel" style="flex:0 0 auto;">
+      <div class="panel-title">⚡ Active State</div>
+      <div class="panel-body" style="padding:5px 7px;">
+        <div id="active-state-readout" style="font-size:8px;line-height:1.7;color:#475569;"></div>
+      </div>
+    </div>
+
     <div class="panel" style="flex:1 1 0;min-height:200px;display:flex;flex-direction:column;">
       <div class="panel-title">📋 System Log</div>
-      <!-- Pinned active-state readout — always visible, no clicking required -->
-      <div id="active-state-readout" style="
-        flex-shrink:0;
-        padding:5px 7px 4px;
-        border-bottom:1px solid #0f172a;
-        font-size:8px;
-        line-height:1.6;
-        color:#475569;
-        background:#020208;
-      "></div>
       <div class="log-area" id="sys-log" style="flex:1;min-height:0;font-size:9px;line-height:1.5;overflow-y:auto;"></div>
     </div>
 
