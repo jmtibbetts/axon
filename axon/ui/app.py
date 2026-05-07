@@ -25,31 +25,28 @@ app      = Flask(__name__,
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet", logger=False, engineio_logger=False, ping_timeout=60, ping_interval=25)
 
-# Thread-safe emit queue — all background threads push here, one drainer thread
-# pulls and emits inside a proper Flask app context. This is the only reliable
-# way to broadcast from non-request threads with async_mode="eventlet".
-import queue as _queue
-_emit_queue: _queue.Queue = _queue.Queue(maxsize=512)
+# Eventlet-compatible emit queue — uses eventlet.Queue and eventlet.spawn
+# so the drainer yields properly to the eventlet hub instead of blocking it.
+_emit_queue = eventlet.Queue(maxsize=512)
 
 def _emit_drainer():
     while True:
         try:
-            event, data = _emit_queue.get(timeout=0.05)
+            event, data = _emit_queue.get()
             try:
                 socketio.emit(event, data, broadcast=True)
             except Exception:
                 pass
-        except _queue.Empty:
-            pass
+        except Exception:
+            eventlet.sleep(0.05)
 
-_drainer_thread = threading.Thread(target=_emit_drainer, daemon=True)
-_drainer_thread.start()
+eventlet.spawn(_emit_drainer)
 
 def _safe_emit(event: str, data: dict):
-    """Push an event onto the emit queue from any thread."""
+    """Push an event onto the emit queue from any greenlet/thread."""
     try:
         _emit_queue.put_nowait((event, data))
-    except _queue.Full:
+    except eventlet.queue.Full:
         pass  # Drop if queue is full — prevents backpressure
 
 _engine: AxonEngine = None
@@ -347,33 +344,43 @@ def on_start(config):
         _engine._emit = _engine_emit
         _engine.fabric._socket_emit = lambda ev, d: _safe_emit(ev, _sanitize(d))
 
-        _engine.start(
-            enable_camera=config.get("camera",       True),
-            enable_mic=config.get("mic",             True),
-            camera_index=config.get("camera_index",  -1),
-            mic_index=config.get("mic_index", None),
-        )
-        # Wire public API layer
-        _brain = AxonBrain(engine=_engine)
-        # Allow fabric to emit log events
-        _engine.fabric._socket_emit = lambda ev, d: _safe_emit(ev, _sanitize(d))
-        # Apply any deferred onboarding data (preset personality, sample ingestion)
-        _apply_deferred_onboarding(_brain)
-        # Push onboarding state to client so it can show the overlay
-        # (the DOMContentLoaded fetch fires before the engine is ready)
-        emit("onboarding_state", _sanitize(_brain.get_onboarding_state()))
-    except Exception as _start_exc:
-        import traceback
-        global _last_start_error
-        tb = traceback.format_exc()
-        _last_start_error = tb
-        print(f"[AXON] Engine startup FAILED:\n{tb}")
-        _engine = None
-        _brain  = None
-        emit("log", {"msg": f"❌ Engine startup failed: {_start_exc}"})
-        for line in tb.splitlines():
-            emit("log", {"msg": line})
-    finally:
+        # Run engine start in a greenlet so we don't block the eventlet hub
+        # during the long GPU/model init sequence.
+        sid = request.sid
+
+        def _do_start():
+            global _engine, _brain, _engine_starting, _last_start_error
+            try:
+                _engine.start(
+                    enable_camera=config.get("camera",       True),
+                    enable_mic=config.get("mic",             True),
+                    camera_index=config.get("camera_index",  -1),
+                    mic_index=config.get("mic_index", None),
+                )
+                # Wire public API layer
+                _brain = AxonBrain(engine=_engine)
+                _engine.fabric._socket_emit = lambda ev, d: _safe_emit(ev, _sanitize(d))
+                _apply_deferred_onboarding(_brain)
+                socketio.emit("onboarding_state", _sanitize(_brain.get_onboarding_state()))
+                socketio.emit("log", {"msg": "✅ Engine started."})
+            except Exception as _start_exc:
+                import traceback
+                tb = traceback.format_exc()
+                _last_start_error = tb
+                print(f"[AXON] Engine startup FAILED:\n{tb}")
+                _engine = None
+                _brain  = None
+                socketio.emit("log", {"msg": f"❌ Engine startup failed: {_start_exc}"})
+                for line in tb.splitlines():
+                    socketio.emit("log", {"msg": line})
+            finally:
+                _engine_starting = False
+
+        eventlet.spawn(_do_start)
+        emit("log", {"msg": "⏳ Engine initializing…"})
+        return  # handler returns immediately; _do_start runs in background
+    except Exception as _outer_exc:
+        print(f"[AXON] Unexpected outer error in start handler: {_outer_exc}")
         _engine_starting = False
 
 @socketio.on("stop_engine")
