@@ -1095,8 +1095,20 @@ if __name__ == "__main__":
     print("  Axon Non-Commercial License | Copyright (c) 2026 Jon Tibbetts")
     print("  Commercial use requires a license: jon@jontibbetts.com\n")
     print("  Press Ctrl+C to exit\n")
+    def _wait_then_signal():
+        import time as _t, urllib.request as _ur
+        for _ in range(40):           # wait up to 8s for port 7777 to respond
+            _t.sleep(0.2)
+            try:
+                _ur.urlopen("http://localhost:7777/api/ready", timeout=1)
+                _server_ready.set()   # server is actually up and responding
+                return
+            except Exception:
+                pass
+        _server_ready.set()           # fallback: open anyway after 8s
+    _th.Thread(target=_wait_then_signal, daemon=True).start()
+
     try:
-        _server_ready.set()   # signal browser thread: OUR server is about to bind
         socketio.run(app, host="0.0.0.0", port=7777, debug=False,
                      allow_unsafe_werkzeug=True)
     except KeyboardInterrupt:
