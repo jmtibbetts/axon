@@ -231,8 +231,10 @@ def memory_summary():
 @socketio.on("connect")
 def on_connect():
     emit("log", {"msg": "Connected to AXON."})
-    if _engine:
+    if _engine and _engine.running:
         emit("lm_status", _engine.language.get_status())
+        # Tell monitor.html the engine is already online (handles page refresh)
+        emit("log", {"msg": "AXON online — engine running."})
         # Push a full state snapshot directly to the connecting client
         try:
             snap = _sanitize(_engine.fabric.get_state_snapshot())
@@ -361,8 +363,8 @@ def on_start(config):
                 _brain = AxonBrain(engine=_engine)
                 _engine.fabric._socket_emit = lambda ev, d: _safe_emit(ev, _sanitize(d))
                 _apply_deferred_onboarding(_brain)
-                socketio.emit("onboarding_state", _sanitize(_brain.get_onboarding_state()))
-                socketio.emit("log", {"msg": "✅ Engine started."})
+                _safe_emit("onboarding_state", _sanitize(_brain.get_onboarding_state()))
+                _safe_emit("log", {"msg": "✅ AXON online — engine running."})
             except Exception as _start_exc:
                 import traceback
                 tb = traceback.format_exc()
@@ -370,9 +372,9 @@ def on_start(config):
                 print(f"[AXON] Engine startup FAILED:\n{tb}")
                 _engine = None
                 _brain  = None
-                socketio.emit("log", {"msg": f"❌ Engine startup failed: {_start_exc}"})
+                _safe_emit("log", {"msg": f"❌ Engine startup failed: {_start_exc}"})
                 for line in tb.splitlines():
-                    socketio.emit("log", {"msg": line})
+                    _safe_emit("log", {"msg": line})
             finally:
                 _engine_starting = False
 
