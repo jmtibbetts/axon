@@ -26,33 +26,13 @@ CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet", logger=False, engineio_logger=False, ping_timeout=120, ping_interval=30, max_http_buffer_size=10_000_000)
 
 # Thread-safe emit bridge.
-# eventlet.tpool threads are REAL OS threads — calling socketio.emit() from them
-# directly can deadlock the eventlet hub. Instead we push to a stdlib Queue,
-# and a persistent greenlet drains it and does the actual emit inside the hub.
-import queue as _queue
-_emit_queue = _queue.Queue()
-
-def _emit_drainer():
-    """Greenlet that drains _emit_queue and calls socketio.emit safely."""
-    while True:
-        try:
-            event, data = _emit_queue.get(timeout=0.05)
-            try:
-                socketio.emit(event, data, broadcast=True)
-            except Exception:
-                pass
-        except _queue.Empty:
-            eventlet.sleep(0)  # yield back to hub
-        except Exception:
-            eventlet.sleep(0.1)
-
-# Start the drainer greenlet immediately
-eventlet.spawn(_emit_drainer)
-
+# flask-socketio's SocketIO.emit() (on the instance, not flask_socketio.emit())
+# is documented as safe to call from background threads when using eventlet.
+# We wrap it in a try/except to absorb any transient errors.
 def _safe_emit(event: str, data: dict):
-    """Emit from ANY context — OS thread or tpool — safely via queue."""
+    """Emit from ANY context — greenlet, OS thread, or tpool — safely."""
     try:
-        _emit_queue.put_nowait((event, data))
+        socketio.emit(event, data, broadcast=True)
     except Exception:
         pass
 
@@ -264,18 +244,14 @@ def on_disconnect():
 @socketio.on("chat")
 def on_chat(data):
     if _engine:
-        # Run in real OS thread via tpool — LLM inference is long-blocking.
-        # Emits go through _safe_emit → _emit_queue → drainer greenlet.
-        import eventlet.tpool as _tpool
-        eventlet.spawn(_tpool.execute, _engine.chat, data.get("text", ""))
+        eventlet.spawn(_engine.chat, data.get("text", ""))
     else:
         emit("log", {"msg": "Engine not started — hit ACTIVATE first."})
 
 @socketio.on("user_text")
 def on_user_text(data):
     if _engine:
-        import eventlet.tpool as _tpool
-        eventlet.spawn(_tpool.execute, _engine.chat, data.get("text", ""))
+        eventlet.spawn(_engine.chat, data.get("text", ""))
 
 @socketio.on("reprobe_lm")
 def on_reprobe():
