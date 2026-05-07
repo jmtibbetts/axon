@@ -422,23 +422,13 @@ class LanguageCore:
             "model": model, "messages": [{"role": "system", "content": system}] + clean,
             "max_tokens": 400, "temperature": 0.75, "stream": False,
         }).encode()
-
-        def _do_request():
-            req = urllib.request.Request(
-                f"{url}/v1/chat/completions", data=payload,
-                headers={"Content-Type": "application/json", "User-Agent": "AXON/1.0"}, method="POST",
-            )
-            with urllib.request.urlopen(req, timeout=45) as r:
-                data = json.loads(r.read().decode())
-            return data["choices"][0]["message"]["content"].strip()
-
-        # Use tpool so the blocking urllib call runs in a real OS thread,
-        # keeping the eventlet hub free during LLM inference.
-        try:
-            import eventlet.tpool as _tpool
-            return _tpool.execute(_do_request)
-        except ImportError:
-            return _do_request()
+        req = urllib.request.Request(
+            f"{url}/v1/chat/completions", data=payload,
+            headers={"Content-Type": "application/json", "User-Agent": "AXON/1.0"}, method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=45) as r:
+            data = json.loads(r.read().decode())
+        return data["choices"][0]["message"]["content"].strip()
 
     # ── Cloud providers ────────────────────────────────────────
 
@@ -449,19 +439,13 @@ class LanguageCore:
             self._openai_client = OpenAI(api_key=self._cfg.get("openai_key"))
         clean = self._sanitise_messages(messages)
         model = self._cfg.get("openai_model", DEFAULT_MODELS["openai"])
-        client = self._openai_client
-        def _do():
-            return client.chat.completions.create(
-                model=model,
-                messages=[{"role": "system", "content": system}] + clean,
-                max_tokens=400,
-                temperature=0.75,
-            ).choices[0].message.content.strip()
-        try:
-            import eventlet.tpool as _tpool
-            return _tpool.execute(_do)
-        except ImportError:
-            return _do()
+        resp = self._openai_client.chat.completions.create(
+            model=model,
+            messages=[{"role": "system", "content": system}] + clean,
+            max_tokens=400,
+            temperature=0.75,
+        )
+        return resp.choices[0].message.content.strip()
 
     def _call_claude(self, messages: list, system: str) -> str:
         """Call Anthropic Claude."""
