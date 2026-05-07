@@ -1859,6 +1859,7 @@ function addConflictPair(r1, r2, intensity) {
 
 // Per-neuron neighbor list (cross-region via AXON_ROUTES + within-region)
 function initNeurons(forceW, forceH) {
+  try {
   // RELIABLE sizing: getBoundingClientRect > offsetWidth > fallback
   const parent = nCanvas.parentElement;
   const rect = parent ? parent.getBoundingClientRect() : {width:0,height:0};
@@ -1931,6 +1932,7 @@ function initNeurons(forceW, forceH) {
   });
 
   buildLegend();
+  } catch(e) { console.error('[AXON] initNeurons CRASHED:', e); }
 }
 
 function buildLegend() {
@@ -1966,12 +1968,12 @@ function scheduleSpikeWave(regionName, intensity) {
 }
 
 function drawNeural() {
+  // rAF is ALWAYS the last line — loop NEVER dies
   try {
 
   // Guard: only proceed if canvas has real pixel dimensions
   if (nCanvas.width < 20 || nCanvas.height < 20) {
-    requestAnimationFrame(drawNeural);
-    return;
+    requestAnimationFrame(drawNeural); return;
   }
   axonFrame++;
   const W = nCanvas.width, H = nCanvas.height;
