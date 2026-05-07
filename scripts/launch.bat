@@ -1,0 +1,4 @@
+@echo off
+title AXON
+cd /d "%~dp0.."
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0launch.ps1"

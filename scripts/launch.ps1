@@ -1,6 +1,14 @@
 # AXON -- One-click install + launch
 # ASCII-only - no Unicode box characters, no special symbols
-$Host.UI.RawUI.WindowTitle = "AXON"
+
+# Self-relaunch with ExecutionPolicy Bypass if restricted
+if ($PSVersionTable -and (Get-ExecutionPolicy) -eq 'Restricted') {
+    $me = $MyInvocation.MyCommand.Definition
+    Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$me`"" -Verb RunAs
+    exit
+}
+
+try { $Host.UI.RawUI.WindowTitle = "AXON" } catch {}
 $scriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectRoot = Split-Path -Parent $scriptDir
 Set-Location $projectRoot
