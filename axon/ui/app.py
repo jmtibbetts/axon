@@ -1051,16 +1051,6 @@ def api_brain_boredom():
 if __name__ == "__main__":
     import signal, sys, threading as _th
 
-    # ── Kill any stale process on port 7777 ──────────────────────────
-    try:
-        import subprocess as _sp
-        _r = _sp.run(
-            'for /f "tokens=5" %a in ('netstat -aon ^| findstr :7777') do taskkill /F /PID %a',
-            shell=True, capture_output=True
-        )
-    except Exception:
-        pass
-
     # ── Pre-launch menu — runs SYNCHRONOUSLY before anything else ──────
     # The web server has NOT started yet at this point.
     if sys.stdin.isatty():
