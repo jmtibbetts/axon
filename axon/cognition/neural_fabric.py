@@ -2207,11 +2207,11 @@ class NeuralFabric:
 
         regions_raw = {r: round(min(1.0, sum(v)/max(len(v),1)), 4)
                        for r, v in region_act.items()}
-        # ── Remap backend regions → frontend REGION_DEFS keys ─────────────────
-        # Frontend expects "prefrontal"; backend splits it into three sub-regions.
-        # Average them into a single "prefrontal" value so the canvas gets signal.
+        # Keep all 14 regions as-is — frontend now handles planning_cortex,
+        # working_memory_cortex, inhibitory_cortex as separate visual clusters.
+        # Also include a combined "prefrontal" for backward compat.
         pfc_keys = ["planning_cortex", "working_memory_cortex", "inhibitory_cortex"]
-        pfc_vals = [regions_raw.pop(k, 0.0) for k in pfc_keys]
+        pfc_vals = [regions_raw.get(k, 0.0) for k in pfc_keys]
         regions_raw["prefrontal"] = round(sum(pfc_vals) / len(pfc_vals), 4)
         regions = regions_raw
         # Drain the new synapse buffer
