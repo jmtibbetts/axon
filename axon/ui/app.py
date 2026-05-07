@@ -8,7 +8,7 @@ try:
 except ImportError:
     _CUDA_NAME = None
 from pathlib import Path
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, send_from_directory
 import os, tempfile
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
@@ -18,7 +18,10 @@ from axon.core.engine   import AxonEngine
 from axon.core.brain_api import AxonBrain
 _brain: AxonBrain = None
 
-app      = Flask(__name__, template_folder="../../web/templates")
+app      = Flask(__name__,
+                  template_folder="../../web/templates",
+                  static_folder="../../web/static/ui",
+                  static_url_path="/ui")
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 _engine: AxonEngine = None
@@ -65,7 +68,21 @@ def _apply_deferred_onboarding(brain):
 
 
 @app.route("/")
-def index():
+@app.route("/react")
+@app.route("/react/<path:path>")
+def index(path=None):
+    # Serve the React build if it exists, otherwise fall back to old Jinja UI
+    import os as _os
+    react_index = _os.path.join(_os.path.dirname(__file__), "../../web/static/ui/index.html")
+    if _os.path.exists(react_index):
+        return send_from_directory(
+            _os.path.join(_os.path.dirname(__file__), "../../web/static/ui"),
+            "index.html"
+        )
+    return render_template("index.html")
+
+@app.route("/legacy")
+def legacy():
     return render_template("index.html")
 
 @app.route("/monitor")
