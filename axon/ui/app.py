@@ -2,6 +2,7 @@
 AXON — Flask + SocketIO UI server
 """
 import eventlet
+import eventlet.tpool as _tpool
 eventlet.monkey_patch()
 import os, sys, threading
 try:
@@ -30,7 +31,7 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet", logger
 # push to _emit_queue. A single greenlet drains it — no concurrent socketio
 # calls, no hub starvation.
 import queue as _queue
-_emit_queue: _queue.SimpleQueue = _queue.SimpleQueue()
+_emit_queue: _queue.Queue = _queue.Queue()
 _drainer_started = False
 
 def _safe_emit(event: str, data: dict):
@@ -46,13 +47,13 @@ def _start_drainer():
     def _drain():
         while True:
             try:
-                event, data = _emit_queue.get(timeout=0.05)
+                event, data = _emit_queue.get(timeout=0.02)
                 try:
                     socketio.emit(event, data, broadcast=True)
                 except Exception:
                     pass
             except _queue.Empty:
-                eventlet.sleep(0)   # yield to hub
+                eventlet.sleep(0.001)   # yield to hub without busy-spin
     socketio.start_background_task(_drain)
 
 _engine: AxonEngine = None
@@ -263,16 +264,22 @@ def on_disconnect():
 @socketio.on("chat")
 def on_chat(data):
     if _engine:
-        # tpool.execute runs in a real OS thread — safe for blocking urllib/LLM calls
-        # without starving the eventlet hub (which spawn() would do)
-        eventlet.tpool.execute(_engine.chat, data.get("text", ""))
+        try:
+            # tpool.execute runs in a real OS thread pool — safe for blocking LLM calls
+            _tpool.execute(_engine.chat, data.get("text", ""))
+        except Exception as _chat_err:
+            print(f"[AXON] chat tpool error: {_chat_err} — falling back to spawn")
+            eventlet.spawn(_engine.chat, data.get("text", ""))
     else:
         emit("log", {"msg": "Engine not started — hit ACTIVATE first."})
 
 @socketio.on("user_text")
 def on_user_text(data):
     if _engine:
-        eventlet.tpool.execute(_engine.chat, data.get("text", ""))
+        try:
+            _tpool.execute(_engine.chat, data.get("text", ""))
+        except Exception:
+            eventlet.spawn(_engine.chat, data.get("text", ""))
 
 @socketio.on("reprobe_lm")
 def on_reprobe():
