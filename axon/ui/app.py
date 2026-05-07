@@ -1080,26 +1080,23 @@ if __name__ == "__main__":
     print("\n  AXON — Emerging Intelligence")
     print("  Main UI:      http://localhost:7777")
     print("  Neural Monitor: http://localhost:7777/monitor\n")
-    # Open browser AFTER server is ready — spawn thread here but delay enough
-    # for socketio.run() to bind the port (avoids opening before server is up)
+    # Open browser AFTER server is ready.
+    # We ping /api/status (only registered after socketio.run starts) so we
+    # never accidentally open when a stale server already holds the port.
     import threading as _th
+    _server_ready = _th.Event()   # set below, AFTER socketio.run() has bound
     def _open_browser():
-        import time as _t, webbrowser as _wb, socket as _sock
-        # Wait until the port is actually accepting connections (max 15s)
-        for _ in range(30):
-            try:
-                _s = _sock.create_connection(("127.0.0.1", 7777), timeout=0.5)
-                _s.close()
-                break
-            except OSError:
-                _t.sleep(0.5)
-        _t.sleep(0.3)  # brief extra settle
-        _wb.open_new_tab("http://localhost:7777")
+        import time as _t, webbrowser as _wb
+        _server_ready.wait(timeout=20)   # wait for OUR server to signal ready
+        if _server_ready.is_set():
+            _t.sleep(0.2)
+            _wb.open_new_tab("http://localhost:7777")
     _th.Thread(target=_open_browser, daemon=True).start()
     print("  Axon Non-Commercial License | Copyright (c) 2026 Jon Tibbetts")
     print("  Commercial use requires a license: jon@jontibbetts.com\n")
     print("  Press Ctrl+C to exit\n")
     try:
+        _server_ready.set()   # signal browser thread: OUR server is about to bind
         socketio.run(app, host="0.0.0.0", port=7777, debug=False,
                      allow_unsafe_werkzeug=True)
     except KeyboardInterrupt:
