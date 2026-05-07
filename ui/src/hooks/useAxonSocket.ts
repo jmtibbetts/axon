@@ -24,7 +24,7 @@ let _handlersSet = false;
 function getSocket(): Socket {
   if (!_socket) {
     _socket = io(SERVER, {
-      transports: ['polling', 'websocket'],   // polling first → upgrade to ws
+      transports: ['websocket', 'polling'],   // eventlet handles WS natively
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       path: '/socket.io',

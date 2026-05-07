@@ -1,6 +1,8 @@
 """
 AXON — Flask + SocketIO UI server
 """
+import eventlet
+eventlet.monkey_patch()
 import os, sys, threading
 try:
     import torch as _torch
@@ -21,11 +23,11 @@ _brain: AxonBrain = None
 app      = Flask(__name__,
                   template_folder="../../web/templates")
 CORS(app)
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading", logger=False, engineio_logger=False, ping_timeout=60, ping_interval=25)
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet", logger=False, engineio_logger=False, ping_timeout=60, ping_interval=25)
 
 # Thread-safe emit queue — all background threads push here, one drainer thread
 # pulls and emits inside a proper Flask app context. This is the only reliable
-# way to broadcast from non-request threads with async_mode="threading".
+# way to broadcast from non-request threads with async_mode="eventlet".
 import queue as _queue
 _emit_queue: _queue.Queue = _queue.Queue(maxsize=512)
 
@@ -1206,8 +1208,7 @@ if __name__ == "__main__":
     _th.Thread(target=_open_browser, daemon=True).start()
 
     try:
-        socketio.run(app, host="0.0.0.0", port=7777, debug=False,
-                     allow_unsafe_werkzeug=True)
+        socketio.run(app, host="0.0.0.0", port=7777, debug=False)
     except KeyboardInterrupt:
         _shutdown()
     except Exception as _server_exc:
