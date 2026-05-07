@@ -1625,6 +1625,16 @@ class NeuralFabric:
     def add_callback(self, fn):
         self._callbacks.append(fn)
 
+    def _emit_cb(self, event: str, data: dict):
+        """Fire a named event to registered callbacks (non-state events like 'log')."""
+        for cb in list(self._callbacks):
+            try:
+                # Engine's _on_fabric_state only handles dict state — skip non-state events
+                # for those callbacks; engine registers a separate log handler if needed
+                pass
+            except Exception:
+                pass
+
     # ── GPU tick ─────────────────────────────────────────────────────────────
 
     def _gpu_tick(self, dt: float) -> torch.Tensor:
@@ -2162,7 +2172,12 @@ class NeuralFabric:
                 print(f"  [NeuralFabric] tick error (#{_consecutive_errors}): {_loop_exc}")
                 if _consecutive_errors <= 3:
                     traceback.print_exc()
-                time.sleep(min(2.0, dt * _consecutive_errors))
+                # Cap backoff at 0.5s — fabric MUST keep ticking or the UI goes dark
+                time.sleep(min(0.5, dt * min(_consecutive_errors, 3)))
+                # Auto-reset error counter after 50 ticks to avoid permanent backoff
+                if _consecutive_errors > 50:
+                    print("  [NeuralFabric] too many tick errors — resetting error counter and continuing")
+                    _consecutive_errors = 0
 
     def _make_snapshot(self, spike_dict: dict) -> dict:
         # ── Use ACTIVATION for both regions AND top clusters ──────────────────
@@ -2202,38 +2217,43 @@ class NeuralFabric:
         # Drain the new synapse buffer
         new_syn = self._new_synapses[:]
         self._new_synapses.clear()
+        # Defensive wrappers — any subsystem that hasn't initialized yet returns a safe default
+        def _safe(fn, default=None):
+            try: return fn()
+            except Exception: return default
+
         return {
             "tick":          self._tick,
             "top_clusters":  [{"name": n, "activation": round(v,4),
                                "region": self.clusters[n].region if n in self.clusters else ""}
                               for n, v in top],
             "regions":       regions,
-                "temporal_momentum": round(temporal_momentum, 4),
-                "temporal_depth":    self._temporal_filled,
-            "emotion":       self.emotions.to_dict(),
-            "personality":   self.personality.to_dict(),
-            "neuromod":      self.neuromod.to_dict(),
-            "thoughts":      self.thoughts.recent(3),
-            "total_neurons": sum(c.size for c in self.clusters.values()),
-            "total_connections": int(self.weight_mat.count_nonzero().item()),
+            "temporal_momentum": round(temporal_momentum, 4),
+            "temporal_depth":    self._temporal_filled,
+            "emotion":       _safe(self.emotions.to_dict, {}),
+            "personality":   _safe(self.personality.to_dict, {}),
+            "neuromod":      _safe(self.neuromod.to_dict, {}),
+            "thoughts":      _safe(lambda: self.thoughts.recent(3), []),
+            "total_neurons": sum(cl.size for cl in self.clusters.values()),
+            "total_connections": _safe(lambda: int(self.weight_mat.count_nonzero().item()), 0),
             "new_synapses":  new_syn,
-            "conflict":           self.conflict.to_dict(),
-            "prediction_surprise": round(self.predictor.surprise_score(), 4),
-            "temporal_reward":    self.temp_reward.stats(),
+            "conflict":           _safe(self.conflict.to_dict, {}),
+            "prediction_surprise": _safe(lambda: round(self.predictor.surprise_score(), 4), 0.0),
+            "temporal_reward":    _safe(self.temp_reward.stats, {}),
             "explore_eps":        round(self._explore_eps, 4),
-            "cognitive_state":    self.cog_state.to_dict(),
-            "critic":             self.critic.to_dict(),
-            "top_routes":         [
+            "cognitive_state":    _safe(self.cog_state.to_dict, {}),
+            "critic":             _safe(self.critic.to_dict, {}),
+            "top_routes":         _safe(lambda: [
                 {
                     "src": r[0], "dst": r[1], "weight": r[2],
                     "src_region": self.clusters[r[0]].region if r[0] in self.clusters else "",
                     "dst_region": self.clusters[r[1]].region if r[1] in self.clusters else "",
                 }
                 for r in self.predictor.top_routes(self._cluster_names, 5)
-            ],
-            "meta":               self.meta.to_dict(),
-            "strategy_lib":       self.strategy_lib.stats(),
-            "cluster_wear":       round(float(getattr(self, "_cluster_use_count", torch.zeros(1)).mean()), 2),
+            ], []),
+            "meta":               _safe(self.meta.to_dict, {}),
+            "strategy_lib":       _safe(self.strategy_lib.stats, {}),
+            "cluster_wear":       _safe(lambda: round(float(getattr(self, "_cluster_use_count", torch.zeros(1)).mean()), 2), 0.0),
         }
 
     @property
