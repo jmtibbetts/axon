@@ -145,7 +145,7 @@ class AuditorySystem:
     def _loop(self):
         try:
             import sounddevice as sd
-        except ImportError:
+        except (ImportError, OSError):
             print("  [Auditory] sounddevice not installed — mic disabled.")
             return
 

@@ -41,7 +41,7 @@ except ImportError:
 try:
     import sounddevice as sd
     _SD_OK = True
-except ImportError:
+except (ImportError, OSError):
     _SD_OK = False
     print("  [AudioEmo] sounddevice not available")
 
