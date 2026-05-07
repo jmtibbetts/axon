@@ -134,6 +134,14 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);
 .bar-row{display:flex;flex-direction:column;gap:2px;margin:6px 0;}
 .bar-row-main{display:flex;align-items:center;gap:7px;}
 .bar-desc{font-size:8px;color:#475569;line-height:1.3;padding-left:2px;margin-bottom:1px;}
+.readout-row{display:flex;align-items:baseline;gap:5px;padding:1px 0;}
+.readout-name{font-size:8.5px;color:#64748b;font-weight:600;min-width:110px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.readout-bar{flex:1;height:4px;background:#0a0a18;border-radius:2px;overflow:hidden;align-self:center;}
+.readout-fill{height:100%;border-radius:2px;transition:width .5s ease;}
+.readout-pct{font-size:8px;color:#334155;width:26px;text-align:right;flex-shrink:0;}
+.readout-desc{font-size:7.5px;color:#1e293b;flex:2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.readout-section{font-size:7px;color:#1e293b;letter-spacing:1.5px;text-transform:uppercase;padding:3px 0 1px;border-top:1px solid #0d1117;margin-top:2px;}
+.readout-section:first-child{border-top:none;margin-top:0;}
 .bar-label{width:120px;font-size:10px;color:#94a3b8;flex-shrink:0;
            overflow:hidden;text-overflow:ellipsis;white-space:nowrap;letter-spacing:.02em;}
 .bar-track{flex:1;height:10px;background:#0a0a18;border-radius:5px;overflow:hidden;position:relative;}
@@ -359,9 +367,19 @@ canvas.spark{display:block;}
     <span id="emo-big-conf"  style="display:none;"></span>
     <div  id="emo-prob-bars" style="display:none;"></div>
 
-    <div class="panel" style="flex:1 1 0;min-height:200px;">
+    <div class="panel" style="flex:1 1 0;min-height:200px;display:flex;flex-direction:column;">
       <div class="panel-title">📋 System Log</div>
-      <div class="log-area" id="sys-log" style="height:calc(100% - 22px);font-size:9px;line-height:1.5;overflow-y:auto;"></div>
+      <!-- Pinned active-state readout — always visible, no clicking required -->
+      <div id="active-state-readout" style="
+        flex-shrink:0;
+        padding:5px 7px 4px;
+        border-bottom:1px solid #0f172a;
+        font-size:8px;
+        line-height:1.6;
+        color:#475569;
+        background:#020208;
+      "></div>
+      <div class="log-area" id="sys-log" style="flex:1;min-height:0;font-size:9px;line-height:1.5;overflow-y:auto;"></div>
     </div>
 
   </div>
@@ -3416,6 +3434,7 @@ function updateNeuralPanel(state) {
   window._unp_step = 7;
   // Draw brain radar from region data
   drawBrainRadar(state.regions||{});
+  updateActiveReadout(state);
 
   window._unp_step = 8;
   // Emotion
@@ -3833,6 +3852,121 @@ function renderProfile() {
 renderProfile();
 setInterval(renderProfile, 60000);  // fallback — normally driven by profile_update event
 socket.on('profile_update', () => renderProfile());
+
+// ── Active State Readout (pinned above sys-log) ──────────────────────────
+function updateActiveReadout(state) {
+  const el = document.getElementById('active-state-readout');
+  if (!el) return;
+
+  const NM_COLORS_R = {
+    dopamine:'#eab308', serotonin:'#10b981', norepinephrine:'#f97316',
+    acetylcholine:'#3b82f6', gaba:'#ec4899', glutamate:'#ef4444',
+  };
+  const NM_DESC_R = {
+    dopamine:'Reward & motivation', serotonin:'Mood & calm',
+    norepinephrine:'Alertness & stress', acetylcholine:'Attention & learning',
+    gaba:'Inhibition & quiet', glutamate:'Excitation & energy',
+  };
+  const REGION_INFO_R = {
+    prefrontal:'Decision-making & planning', planning_cortex:'Goal maintenance',
+    working_memory_cortex:'Active working memory', inhibitory_cortex:'Impulse control',
+    hippocampus:'Memory encoding', amygdala:'Emotion & threat detection',
+    visual:'Vision processing', auditory:'Sound & speech input',
+    language:'Language & meaning', default_mode:'Self-reflection',
+    thalamus:'Sensory relay hub', cerebellum:'Timing & prediction',
+    association:'Creativity & analogy', social:'Empathy & social cognition',
+    metacognition:'Self-awareness & confidence',
+  };
+  const REGION_COLOR_R = {
+    prefrontal:'#00d4ff', planning_cortex:'#00d4ff', working_memory_cortex:'#38bdf8',
+    inhibitory_cortex:'#7dd3fc', hippocampus:'#a855f7', amygdala:'#ff6b35',
+    visual:'#ffcc00', auditory:'#00ff88', language:'#c084fc',
+    default_mode:'#4ade80', thalamus:'#f9a8d4', cerebellum:'#7ec8e3',
+    association:'#fb923c', social:'#ff006e', metacognition:'#ff4060',
+  };
+  const CLUSTER_DESC_R = {
+    working_memory:'Holds info in mind right now',
+    executive_control:'Manages goals & task-switching',
+    decision_making:'Weighs options & picks actions',
+    planning:'Sequences future actions',
+    inhibitory_control:'Suppresses irrelevant responses',
+    action_selection:'Picks best action from candidates',
+    hippocampus_encode:'Writing new memories',
+    hippocampus_retrieve:'Reading past memories',
+    episodic_memory:'Autobiographical event storage',
+    pattern_completion:'Reconstructing full memories from cues',
+    amygdala_fear:'Processing fear & threat',
+    amygdala_reward:'Tracking reward expectation',
+    reward_anticipation:'Anticipating positive outcomes',
+    curiosity_drive:'Exploring unknowns',
+    identity_core:'Stable self-representation',
+    consciousness_gate:'Regulating conscious attention',
+    metacognition:'Monitoring own thinking',
+    self_awareness:'Model of self as distinct entity',
+    creativity:'Generating novel ideas',
+    social_cognition:"Modeling others' mental states",
+    empathy:'Sharing emotional states of others',
+  };
+
+  let html = '';
+
+  // ── Neurochemicals ────────────────────────────────────────────────────
+  const nm = state.neuromod || {};
+  const nmEntries = Object.entries(nm).sort((a,b) => b[1]-a[1]);
+  if (nmEntries.length) {
+    html += '<div class="readout-section">Neurochemicals</div>';
+    nmEntries.forEach(([k,v]) => {
+      const pct  = Math.round((v||0)*100);
+      const col  = NM_COLORS_R[k] || '#64748b';
+      const desc = NM_DESC_R[k] || '';
+      const name = k.charAt(0).toUpperCase()+k.slice(1);
+      html += `<div class="readout-row">
+        <span class="readout-name">${name}</span>
+        <div class="readout-bar"><div class="readout-fill" style="width:${pct}%;background:${col}"></div></div>
+        <span class="readout-pct">${pct}%</span>
+        <span class="readout-desc">${desc}</span>
+      </div>`;
+    });
+  }
+
+  // ── Top active regions ────────────────────────────────────────────────
+  const regions = state.regions || {};
+  const topRegs = Object.entries(regions).filter(([,v])=>v>0.05).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  if (topRegs.length) {
+    html += '<div class="readout-section">Active Regions</div>';
+    topRegs.forEach(([r,v]) => {
+      const pct  = Math.round((v||0)*100);
+      const col  = REGION_COLOR_R[r] || '#3b82f6';
+      const desc = REGION_INFO_R[r] || '';
+      const name = r.replace(/_/g,' ');
+      html += `<div class="readout-row">
+        <span class="readout-name">${name}</span>
+        <div class="readout-bar"><div class="readout-fill" style="width:${pct}%;background:${col}"></div></div>
+        <span class="readout-pct">${pct}%</span>
+        <span class="readout-desc">${desc}</span>
+      </div>`;
+    });
+  }
+
+  // ── Top active clusters ───────────────────────────────────────────────
+  const topClusters = (state.top_clusters||[]).filter(c=>c.activation>0.05).slice(0,4);
+  if (topClusters.length) {
+    html += '<div class="readout-section">Active Clusters</div>';
+    topClusters.forEach(c => {
+      const pct  = Math.round((c.activation||0)*100);
+      const desc = CLUSTER_DESC_R[c.name] || '';
+      const name = c.name.replace(/_/g,' ');
+      html += `<div class="readout-row">
+        <span class="readout-name">${name}</span>
+        <div class="readout-bar"><div class="readout-fill" style="width:${pct}%;background:#6366f1"></div></div>
+        <span class="readout-pct">${pct}%</span>
+        <span class="readout-desc">${desc}</span>
+      </div>`;
+    });
+  }
+
+  el.innerHTML = html;
+}
 
 // Auto-scan cameras and mics on load
 scanCameras();
