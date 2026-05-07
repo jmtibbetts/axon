@@ -26,15 +26,38 @@ CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet", logger=False, engineio_logger=False, ping_timeout=120, ping_interval=30, max_http_buffer_size=10_000_000)
 
 # Thread-safe emit bridge.
-# flask-socketio's SocketIO.emit() (on the instance, not flask_socketio.emit())
-# is documented as safe to call from background threads when using eventlet.
-# We wrap it in a try/except to absorb any transient errors.
+# OS threads (optic/auditory) cannot call socketio.emit() directly under eventlet —
+# the hub can't schedule them and frames get silently dropped after the first.
+# Solution: a thread-safe queue + a greenlet drainer started AFTER the hub is live.
+import queue as _emit_q_mod
+_emit_queue: "queue.Queue[tuple]" = _emit_q_mod.Queue(maxsize=120)
+_drainer_started = False
+
 def _safe_emit(event: str, data: dict):
-    """Emit from ANY context — greenlet, OS thread, or tpool — safely."""
+    """Put emit onto the queue — safe to call from any OS thread or greenlet."""
     try:
-        socketio.emit(event, data, broadcast=True)
-    except Exception:
-        pass
+        _emit_queue.put_nowait((event, data))
+    except _emit_q_mod.Full:
+        pass  # drop oldest-ish frames rather than block the camera thread
+
+def _start_emit_drainer():
+    """Greenlet that drains the emit queue. Must be called AFTER eventlet hub starts."""
+    global _drainer_started
+    if _drainer_started:
+        return
+    _drainer_started = True
+    def _drain():
+        while True:
+            try:
+                event, data = _emit_queue.get(timeout=0.05)
+                try:
+                    socketio.emit(event, data, broadcast=True)
+                except Exception:
+                    pass
+            except _emit_q_mod.Empty:
+                pass
+            eventlet.sleep(0)  # yield to hub
+    eventlet.spawn(_drain)
 
 _engine: AxonEngine = None
 _engine_lock     = threading.Lock()  # prevents double-init race
@@ -112,9 +135,7 @@ def _react_exists():
 @app.route("/react")
 @app.route("/react/<path:path>")
 def index(path=None):
-    if _react_exists():
-        return send_from_directory(_UI_BUILD_DIR, "index.html")
-    return render_template("index.html")
+    return render_template("monitor.html")
 
 @app.route("/assets/<path:filename>")
 def react_assets(filename):
@@ -242,14 +263,16 @@ def on_disconnect():
 @socketio.on("chat")
 def on_chat(data):
     if _engine:
-        eventlet.spawn(_engine.chat, data.get("text", ""))
+        import threading as _t
+        _t.Thread(target=_engine.chat, args=(data.get("text", ""),), daemon=True).start()
     else:
         emit("log", {"msg": "Engine not started — hit ACTIVATE first."})
 
 @socketio.on("user_text")
 def on_user_text(data):
     if _engine:
-        eventlet.spawn(_engine.chat, data.get("text", ""))
+        import threading as _t
+        _t.Thread(target=_engine.chat, args=(data.get("text", ""),), daemon=True).start()
 
 @socketio.on("reprobe_lm")
 def on_reprobe():
@@ -337,6 +360,7 @@ def on_start(config):
 
         def _do_start():
             global _engine, _brain, _engine_starting, _last_start_error
+            _start_emit_drainer()  # safe — hub is live by the time a socket event fires
             try:
                 _engine.start(
                     enable_camera=config.get("camera",       True),
