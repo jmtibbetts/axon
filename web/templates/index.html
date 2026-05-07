@@ -3629,10 +3629,17 @@ function sendChat() {
   // Intercept diagnostic triggers: "diagnostic", "/diagnostic", "/diag"
   if (/^\/?diagnostics?(\s+mode)?$/i.test(txt)) {
     inp.value = '';
-    requestDiagnostic();
+    if (typeof requestDiagnostic === 'function') requestDiagnostic();
+    else if (socket && socket.connected) socket.emit('diagnostic');
     return;
   }
   addMsg(txt, 'user');
+  if (!socket || !socket.connected) {
+    sysLog('[WARN] Not connected — retrying in 1s...');
+    setTimeout(() => sendChat(), 1000);
+    inp.value = txt; // restore text
+    return;
+  }
   socket.emit('chat', {text: txt});
   inp.value = '';
 }
@@ -6021,6 +6028,7 @@ function saveLMStudioUrl() {
 
 // ── Global UI helpers (called from HTML onclick attributes) ──
 function startAxon() {
+  if (!socket) { sysLog('[WARN] Socket not ready yet.'); return; }
   socket.emit('start_engine', {
     api_key:      document.getElementById('cfg-api').value,
     lm_url:       document.getElementById('cfg-lmurl').value || 'http://localhost:1234',
@@ -6034,8 +6042,8 @@ function startAxon() {
   });
   sysLog('Activating AXON...');
 }
-function stopAxon()  { socket.emit('stop_engine'); }
-function reprobe()   { socket.emit('reprobe_lm'); sysLog('Re-probing LM Studio...'); }
+function stopAxon()  { if (socket) socket.emit('stop_engine'); }
+function reprobe()   { if (socket) socket.emit('reprobe_lm'); sysLog('Re-probing LM Studio...'); }
 function resetOnboarding() {
   if (!confirm("Re-run the setup wizard? You\'ll need to reload after.")) return;
   fetch("/api/onboarding/reset", {method:"POST"})
