@@ -2743,6 +2743,29 @@ function drawNeural() {
   // ── Draw neurons ────────────────────────────────────────────────────────────
   // NO resting glow floor. Neurons are drawn based purely on their activation.
   // Idle = nearly invisible dark dot. Active = bright, glowing, large.
+
+  // ── DIAGNOSTIC: every 120 frames, draw region centroids + activation values
+  if (axonFrame % 120 === 1) {
+    nCtx.save();
+    nCtx.font = '9px monospace';
+    let _anyAbove = 0;
+    neuronNodes.forEach(n => { if (n.activation > 0.005) _anyAbove++; });
+    Object.entries(REGION_DEFS).forEach(([k, p]) => {
+      const _a = sharpenedRegion[k] || 0;
+      nCtx.fillStyle = _a > 0.1 ? '#00ff88' : '#ff4444';
+      nCtx.beginPath();
+      nCtx.arc(p.x * W, p.y * H, 6, 0, Math.PI*2);
+      nCtx.fill();
+      nCtx.fillStyle = '#ffffff';
+      nCtx.fillText(k.slice(0,4)+':'+_a.toFixed(2), p.x * W + 8, p.y * H + 4);
+    });
+    nCtx.fillStyle = '#ffff00';
+    nCtx.fillText('neurons:'+neuronNodes.length+' visible:'+_anyAbove+' f:'+axonFrame, 6, H - 20);
+    nCtx.restore();
+    console.log('[AXON] neuron diag f:'+axonFrame+' total:'+neuronNodes.length+' visible:'+_anyAbove, 
+      'regions:', Object.fromEntries(Object.entries(sharpenedRegion).map(([k,v])=>[k,v.toFixed(3)])));
+  }
+
   neuronNodes.forEach(n => {
     const act       = n.activation;
     const regionAct = sharpenedRegion[n.region] || 0;
