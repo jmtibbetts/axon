@@ -486,7 +486,10 @@ canvas.spark{display:block;}
 
       <!-- Active State Readout -->
       <div class="neuro-section" style="padding:5px 7px;">
-        <div class="neuro-title">⚡ Active State</div>
+        <div class="neuro-title" style="display:flex;justify-content:space-between;align-items:center;">
+          <span>⚡ Active State</span>
+          <span id="ns-badge" style="font-size:7px;font-family:monospace;color:#374151;background:#0a0014;padding:1px 5px;border-radius:10px;border:1px solid #1e293b;">no signal</span>
+        </div>
         <div id="active-state-readout" style="font-size:8px;line-height:1.7;color:#94a3b8;"></div>
       </div>
 
@@ -4507,7 +4510,19 @@ socket.on('neural_state', d => {
   }
   window._nsCount = (window._nsCount||0) + 1;
   window._nsTicker.textContent = 'NS#' + window._nsCount + ' tick:' + (d.tick||'?');
-  try { updateNeuralPanel(d); } catch(e) { console.warn('[AXON] updateNeuralPanel error:', e); }
+  // Update brain tab NS badge
+  const _nsBadge = document.getElementById('ns-badge');
+  if (_nsBadge) {
+    const _now = new Date().toLocaleTimeString('en-US', {hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    _nsBadge.textContent = '🟢 tick:' + (d.tick||'?') + ' @' + _now;
+    _nsBadge.style.color = '#00ff88';
+    _nsBadge.style.borderColor = '#00ff8844';
+  }
+  try { updateNeuralPanel(d); } catch(e) {
+    console.warn('[AXON] updateNeuralPanel error:', e);
+    const _asr = document.getElementById('active-state-readout');
+    if (_asr) _asr.innerHTML = '<div style="color:#ef4444;font-size:8px;padding:4px;">⚠️ panel crash at step ' + (window._unp_step||'?') + ': ' + e.message + '</div>';
+  }
   // Also update emotion bars (merged from duplicate handler)
   if (d && d.neuromod) {
     const reward   = d.recent_reward || d.reward_avg || d.last_reward || 0;

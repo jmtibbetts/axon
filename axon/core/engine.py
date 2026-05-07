@@ -1187,11 +1187,26 @@ class AxonEngine:
         state["last_reward"]   = float(getattr(self, "_last_reward", 0.0))
         state["last_surprise"] = float(getattr(self.fabric, "_last_surprise", 0.0))
 
-        # Emit directly — fabric callback already runs in fabric's own thread.
-        # Spawning a new thread per emit was causing a ~10/s thread storm that
-        # deadlocked the SocketIO threading lock, freezing all neural_state updates.
+        # Direct emit — we're already in a background thread (fabric tick),
+        # so we bypass start_background_task to avoid spawning yet another thread.
         import time as _t2
-        self._emit("neural_state", state)
+        if self.socketio:
+            import numpy as _np2
+            def _san2(o):
+                if isinstance(o, dict):  return {k: _san2(v) for k,v in o.items()}
+                if isinstance(o, (list, tuple)): return [_san2(v) for v in o]
+                if isinstance(o, _np2.integer):   return int(o)
+                if isinstance(o, (_np2.floating, _np2.float32, _np2.float64)): return float(o)
+                if isinstance(o, _np2.ndarray):   return o.tolist()
+                try:
+                    import torch as _t3
+                    if isinstance(o, _t3.Tensor): return o.item() if o.numel()==1 else o.tolist()
+                except ImportError: pass
+                return o
+            try:
+                self.socketio.emit("neural_state", _san2(state), broadcast=True)
+            except Exception as _ee:
+                pass  # Don't let emit errors kill the fabric callback
         # Synapse count (throttled to every 5s)
         if not hasattr(self, '_last_synapse_emit') or (_t2.time() - self._last_synapse_emit) >= 5.0:
             self._last_synapse_emit = _t2.time()
