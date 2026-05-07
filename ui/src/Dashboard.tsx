@@ -10,6 +10,7 @@ import PersonalityPanel from './components/dashboard/PersonalityPanel';
 import KnowledgePanel from './components/dashboard/KnowledgePanel';
 import ProvidersPanel from './components/dashboard/ProvidersPanel';
 import ChatPanel from './components/ChatPanel';
+import SystemLog from './components/dashboard/SystemLog';
 
 const BrainCanvas = lazy(() => import('./components/BrainCanvas'));
 
@@ -23,6 +24,7 @@ const TABS = [
   { id: 'personality', label: '🎭 Personality',   desc: 'Live trait sliders' },
   { id: 'knowledge',   label: '📚 Knowledge',     desc: 'Upload docs, force opinions' },
   { id: 'providers',   label: '🔌 Providers',     desc: 'LLM provider & model config' },
+  { id: 'syslog',      label: '🖥 System Log',     desc: 'Startup errors & live logs' },
 ];
 
 function TopBar() {
@@ -137,6 +139,7 @@ export default function Dashboard() {
     personality: <PersonalityPanel />,
     knowledge:   <KnowledgePanel />,
     providers:   <ProvidersPanel />,
+    syslog:      <SystemLog />,
   };
 
   return (

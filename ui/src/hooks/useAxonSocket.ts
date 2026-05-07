@@ -4,7 +4,6 @@ import { useAxonStore } from '../store/axonStore';
 
 const SERVER = window.location.origin;
 
-// Default start config — matches what the legacy UI sends
 const DEFAULT_START_CONFIG = {
   api_key:      '',
   lm_url:       'http://localhost:1234',
@@ -17,10 +16,12 @@ const DEFAULT_START_CONFIG = {
   camera_index: -1,
 };
 
+// Module-level guard so React StrictMode double-mount doesn't double-start
+let _globalStartFired = false;
+
 export function useAxonSocket() {
   const socketRef = useRef<Socket | null>(null);
   const set = useAxonStore((s) => s.set);
-  const startedRef = useRef(false);
 
   useEffect(() => {
     const socket = io(SERVER, {
@@ -33,48 +34,56 @@ export function useAxonSocket() {
     socket.on('connect', () => {
       set({ connected: true });
 
-      // Kick the engine if not already running
-      if (!startedRef.current) {
-        startedRef.current = true;
-        // Check engine status first, only start if not already running
-        fetch('/api/status')
-          .then((r) => r.json())
-          .then((d) => {
-            if (!d.running) {
-              socket.emit('start_engine', DEFAULT_START_CONFIG);
-            } else {
-              set({ engineRunning: true });
-            }
-          })
-          .catch(() => {
-            // If status check fails just try to start
+      if (_globalStartFired) return;
+      _globalStartFired = true;
+
+      fetch('/api/status')
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.running) {
+            set({ engineRunning: true });
+          } else {
+            // Check if there's a previous startup error
+            fetch('/api/start_error')
+              .then((r) => r.json())
+              .then((err) => {
+                if (err.error) {
+                  console.error('[AXON] Last startup error:\n', err.error);
+                  set((state) => ({
+                    logs: [{ msg: '⚠️ Previous startup failed — retrying...', ts: Date.now() }, ...state.logs],
+                  }));
+                }
+              }).catch(() => {});
             socket.emit('start_engine', DEFAULT_START_CONFIG);
-          });
-      }
+          }
+        })
+        .catch(() => {
+          socket.emit('start_engine', DEFAULT_START_CONFIG);
+        });
     });
 
     socket.on('disconnect', () => {
       set({ connected: false });
-      startedRef.current = false;
+      _globalStartFired = false; // allow restart on reconnect
     });
 
-    // Full brain state (rich tick)
     socket.on('brain_state', (d) => {
       set((state) => {
-        const reward = d.cognitive_state?.temporal_reward?.mean ?? d.temporal_reward?.mean ?? 0;
+        const reward = d.temporal_reward?.mean ?? 0;
         const surprise = d.prediction_surprise ?? 0;
-        const rh = [...(state.rewardHistory.slice(-99)), reward];
-        const sh = [...(state.surpriseHistory.slice(-99)), surprise];
+        const rh = [...state.rewardHistory.slice(-99), reward];
+        const sh = [...state.surpriseHistory.slice(-99), surprise];
+
         const rHistory = { ...state.regionHistory };
-        const regions = d.regions ?? {};
-        Object.entries(regions).forEach(([k, v]) => {
-          rHistory[k] = [...((rHistory[k] ?? []).slice(-49)), v as number];
+        Object.entries(d.regions ?? {}).forEach(([k, v]) => {
+          rHistory[k] = [...(rHistory[k] ?? []).slice(-49), v as number];
         });
+
         const nmHistory = { ...state.nmHistory };
-        const nm = d.neuromod ?? {};
-        Object.entries(nm).forEach(([k, v]) => {
-          nmHistory[k] = [...((nmHistory[k] ?? []).slice(-49)), v as number];
+        Object.entries(d.neuromod ?? {}).forEach(([k, v]) => {
+          nmHistory[k] = [...(nmHistory[k] ?? []).slice(-49), v as number];
         });
+
         return {
           neuralState: d,
           lastTick: Date.now(),
@@ -135,22 +144,31 @@ export function useAxonSocket() {
     });
 
     socket.on('hebbian_event', (d) => {
-      set((state) => ({ hebbianEvents: [{ ...d, ts: Date.now() }, ...state.hebbianEvents].slice(0, 50) }));
+      set((state) => ({
+        hebbianEvents: [{ ...d, ts: Date.now() }, ...state.hebbianEvents].slice(0, 50),
+      }));
     });
 
     socket.on('memory_event', (d) => {
-      set((state) => ({ memoryEvents: [{ ...d, ts: Date.now() }, ...state.memoryEvents].slice(0, 50) }));
+      set((state) => ({
+        memoryEvents: [{ ...d, ts: Date.now() }, ...state.memoryEvents].slice(0, 50),
+      }));
     });
 
     socket.on('region_spike', (d) => {
-      set((state) => ({ regionSpikes: [d, ...state.regionSpikes].slice(0, 100) }));
+      set((state) => ({
+        regionSpikes: [d, ...state.regionSpikes].slice(0, 100),
+      }));
     });
 
     socket.on('log', (d) => {
-      set((state) => ({ logs: [d, ...state.logs].slice(0, 200) }));
-      // If engine startup failed, reflect it
-      if (d.msg && d.msg.includes('Engine startup failed')) {
+      const msg = typeof d === 'string' ? d : d.msg ?? JSON.stringify(d);
+      set((state) => ({
+        logs: [{ msg, ts: Date.now() }, ...state.logs].slice(0, 200),
+      }));
+      if (msg.includes('Engine startup failed') || msg.includes('startup FAILED')) {
         set({ engineRunning: false });
+        console.error('[AXON startup]', msg);
       }
     });
 

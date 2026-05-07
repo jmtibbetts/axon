@@ -25,6 +25,7 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 _engine: AxonEngine = None
 _engine_lock     = threading.Lock()  # prevents double-init race
 _engine_starting = False               # True while start_engine is in progress
+_last_start_error: str = None          # last startup traceback for diagnostics
 
 def _apply_deferred_onboarding(brain):
     """After engine starts, apply any onboarding choices that were saved pre-engine."""
@@ -109,9 +110,20 @@ def ready():
     """Lightweight liveness probe — returns 200 as soon as the server is up."""
     return jsonify({"ready": True})
 
+@app.route("/api/start_error")
+def start_error():
+    """Return the last engine startup traceback for debugging."""
+    return jsonify({"error": _last_start_error, "has_engine": bool(_engine), "starting": _engine_starting})
+
 @app.route("/api/status")
 def status():
-    return jsonify(_engine.get_status() if _engine else {"running": False})
+    if not _engine:
+        return jsonify({"running": False})
+    try:
+        return jsonify(_sanitize(_engine.get_status()))
+    except Exception as e:
+        import traceback
+        return jsonify({"running": bool(_engine and _engine.running), "error": str(e), "tb": traceback.format_exc()})
 
 @app.route("/api/audio_diag")
 def audio_diag():
@@ -269,12 +281,15 @@ def on_start(config):
         emit("onboarding_state", _sanitize(_brain.get_onboarding_state()))
     except Exception as _start_exc:
         import traceback
+        global _last_start_error
         tb = traceback.format_exc()
+        _last_start_error = tb
         print(f"[AXON] Engine startup FAILED:\n{tb}")
         _engine = None
         _brain  = None
         emit("log", {"msg": f"❌ Engine startup failed: {_start_exc}"})
-        emit("log", {"msg": "Check the terminal for the full traceback."})
+        for line in tb.splitlines():
+            emit("log", {"msg": line})
     finally:
         _engine_starting = False
 
