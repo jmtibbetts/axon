@@ -33,9 +33,26 @@ export interface NeuralState {
   critic?: { regret?: number; hesitations?: number };
   top_clusters?: Array<{ name: string; activation: number; region: string }>;
   top_routes?: any[];
-  meta?: { explore_rate?: number; stability?: number };
+  meta?: { explore_rate?: number; stability?: number; mood?: string };
   strategy_lib?: { count?: number; avg_score?: number };
   cluster_wear?: number;
+  drives?: Record<string, { pressure: number; urgency: number; satisfied: boolean }>;
+  beliefs?: Array<{ key: string; strength: number; valence: number; dissonance?: number }>;
+  goals?: any[];
+  self_model?: {
+    I_am?: string[];
+    I_believe?: string[];
+    I_like?: string[];
+    I_avoid?: string[];
+    I_want?: string[];
+  };
+  narratives?: Record<string, number>;
+  reflections?: Array<{ text: string; timestamp?: number }>;
+  thought_competition?: any[];
+  memory_hierarchy?: Record<string, { count: number; salience: number }>;
+  interests?: Record<string, number>;
+  boredom?: { level: number; factors?: string[] };
+  value_scores?: Record<string, number>;
 }
 
 export interface ChatMessage {
@@ -44,33 +61,46 @@ export interface ChatMessage {
   ts: number;
 }
 
+export interface KnowledgeIngestion {
+  filename: string;
+  status: 'processing' | 'done' | 'error';
+  concepts?: number;
+  opinions?: number;
+  ts: number;
+  error?: string;
+}
+
 interface AxonStore {
-  // connection
   connected: boolean;
-  // neural
+  engineRunning: boolean;
   neuralState: NeuralState;
   lastTick: number;
-  // chat
   messages: ChatMessage[];
   thinking: boolean;
-  // vision
   visionFrame: string | null;
   faceData: any;
-  // events
   hebbianEvents: any[];
   memoryEvents: any[];
   regionSpikes: any[];
   logs: any[];
-  // lm
   lmStatus: any;
-  // ui
   activeTab: string;
-  // setter
+  ingestions: KnowledgeIngestion[];
+  thoughtCompetition: any[];
+  surpriseEvents: any[];
+  reflections: any[];
+  autonomousMode: boolean;
+  // historical series for charts
+  rewardHistory: number[];
+  surpriseHistory: number[];
+  regionHistory: Record<string, number[]>;
+  nmHistory: Record<string, number[]>;
   set: (partial: Partial<AxonStore> | ((state: AxonStore) => Partial<AxonStore>)) => void;
 }
 
 export const useAxonStore = create<AxonStore>((set) => ({
   connected: false,
+  engineRunning: false,
   neuralState: {},
   lastTick: 0,
   messages: [],
@@ -82,7 +112,16 @@ export const useAxonStore = create<AxonStore>((set) => ({
   regionSpikes: [],
   logs: [],
   lmStatus: null,
-  activeTab: 'brain',
+  activeTab: 'overview',
+  ingestions: [],
+  thoughtCompetition: [],
+  surpriseEvents: [],
+  reflections: [],
+  autonomousMode: false,
+  rewardHistory: [],
+  surpriseHistory: [],
+  regionHistory: {},
+  nmHistory: {},
   set: (partial) =>
     set((state) =>
       typeof partial === 'function' ? partial(state) : { ...state, ...partial }

@@ -7,7 +7,7 @@ export default function StatusBar() {
   const lmStatus  = useAxonStore((s) => s.lmStatus);
   const thinking  = useAxonStore((s) => s.thinking);
   const lastTick  = useAxonStore((s) => s.lastTick);
-  const { setSpeed } = useAxonSocket();
+  const { emit } = useAxonSocket();
 
   const secAgo = lastTick ? Math.round((Date.now() - lastTick) / 1000) : null;
   const alive  = secAgo !== null && secAgo < 10;
@@ -79,7 +79,7 @@ export default function StatusBar() {
       {[['💤', 0.5], ['🐢', 5], ['✅', 10], ['⚡', 20], ['🚀', 50]].map(([emoji, hz]) => (
         <button
           key={String(hz)}
-          onClick={() => setSpeed(Number(hz))}
+          onClick={() => emit('set_speed', { hz: Number(hz) })}
           style={{
             padding: '1px 5px', borderRadius: 4,
             background: '#0d1117', border: '1px solid #1e293b',

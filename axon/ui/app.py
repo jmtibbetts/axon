@@ -89,6 +89,13 @@ def react_static(filename=None):
     name = _os.path.basename(request.path)
     return send_from_directory(_UI_BUILD_DIR, name)
 
+@app.route("/dashboard")
+@app.route("/dashboard/<path:path>")
+def dashboard(path=None):
+    if _react_exists():
+        return send_from_directory(_UI_BUILD_DIR, "index.html")
+    return render_template("monitor.html")
+
 @app.route("/legacy")
 def legacy():
     return render_template("index.html")
