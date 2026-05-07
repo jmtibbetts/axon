@@ -1918,7 +1918,7 @@ function initNeurons(forceW, forceH) {
         y:          cy + Math.sin(angle) * rr * sy,
         region,
         color:      props.color,
-        activation: Math.random() * 0.04,
+        activation: 0.05 + Math.random() * 0.10,  // seed with visible activation
         baseR:      1.0 + Math.random() * 1.2,
         phase:      Math.random() * Math.PI * 2,
         speed:      0.015 + Math.random() * 0.035,
@@ -2085,45 +2085,27 @@ function drawNeural() {
       // These are display values, not biological values — just enough to show
       // the brain map is running and regions are in their correct positions.
       const _OFFLINE_DISPLAY = {
-        default_mode: 0.35, thalamus: 0.28, metacognition: 0.22,
-        prefrontal:   0.18, language: 0.16, hippocampus:   0.15,
-        association:  0.14, cerebellum: 0.12, social:      0.10,
-        amygdala:     0.08, visual:    0.07, auditory:     0.07,
+        default_mode: 0.42, thalamus: 0.35, metacognition: 0.28,
+        prefrontal:   0.25, language: 0.22, hippocampus:   0.20,
+        association:  0.20, cerebellum: 0.18, social:      0.16,
+        amygdala:     0.15, visual:    0.14, auditory:     0.14,
       };
-      sharpenedRegion[k] = _OFFLINE_DISPLAY[k] ?? 0.10;
+      sharpenedRegion[k] = _OFFLINE_DISPLAY[k] ?? 0.15;
       continue;
     }
 
-    // ── LIVE mode: excess-above-baseline contrast stretch ──────────────────
+    // ── LIVE mode: base-glow + excess contrast stretch ──────────────────
+    // FIX: idle neurons were NEVER rendered because floor==value → norm=0 → ember too dim.
+    // New formula: every region gets a visible base glow (0.12–0.18), then
+    // genuine activation above the floor stretches cleanly from base → 1.0.
+    // idle:   base=0.12+floor*0.30  → ~0.135 (visual) to 0.18 (DMN)   [clearly visible]
+    // active: base + norm*(1-base)  → up to 1.0 when fully fired       [bright]
     const floor   = _REGION_FLOOR[k] || 0.07;
-    // Excess: how much above the biological floor is this region?
-    // floor   → excess = 0   → nearly dark (dim ember only for DMN/thalamus)
-    // floor+0.15 → excess ≈ 0.35 → clearly lit
-    // floor+0.40 → excess ≈ 0.75 → bright active
-    // 1.0     → excess = 1.0  → peak glow
+    const base    = 0.12 + floor * 0.30;  // idle glow floor: 0.135–0.18
     const excess  = Math.max(0, v - floor);
     const ceiling = 1.0 - floor;
     const norm    = ceiling > 0 ? Math.min(1.0, excess / ceiling) : 0;
-
-    let out;
-    // dim ember: the floor itself is not zero — gives a barely-perceptible glow
-    const ember = floor * 0.30;   // DMN ember = 0.06, thalamus = 0.042, visual = 0.015
-
-    if (norm < 0.05) {
-      out = ember + norm * 0.10;
-    } else if (norm < 0.25) {
-      const t = (norm - 0.05) / 0.20;
-      out = ember + 0.005 + Math.pow(t, 0.8) * 0.15;
-    } else if (norm < 0.55) {
-      const t = (norm - 0.25) / 0.30;
-      out = ember + 0.155 + Math.pow(t, 0.75) * 0.30;
-    } else if (norm < 0.80) {
-      const t = (norm - 0.55) / 0.25;
-      out = ember + 0.455 + Math.pow(t, 0.85) * 0.30;
-    } else {
-      const t = (norm - 0.80) / 0.20;
-      out = ember + 0.755 + Math.pow(t, 0.7) * (1.0 - ember - 0.755);
-    }
+    const out     = base + norm * (1.0 - base);
     sharpenedRegion[k] = Math.max(0, Math.min(1.0, out));
   }
 
@@ -2306,12 +2288,12 @@ function drawNeural() {
     // Each neuron has its own sensitivity multiplier (set once)
     if (!n.personalMult) n.personalMult = 0.5 + Math.random() * 1.0;
 
-    if (regionAct < 0.04) {
-      // Region is quiet — neuron decays hard toward zero
-      // Only a tiny fraction spontaneously fire (biological noise)
-      n.activation *= 0.92;
-      if (Math.random() < 0.0008) {
-        n.activation = Math.min(0.12, n.activation + 0.08);
+    if (regionAct < 0.08) {
+      // Region is quiet — neuron decays toward near-zero
+      // Keep a tiny spontaneous ember so the brain never goes fully dark
+      n.activation *= 0.94;
+      if (Math.random() < 0.002) {
+        n.activation = Math.min(0.10, n.activation + 0.06);
       }
     } else {
       // Region is active — drive neuron toward target activation
@@ -2319,7 +2301,7 @@ function drawNeural() {
       // fire hard, others lag — realistic heterogeneity
       const target = Math.min(1.0, regionAct * n.personalMult * fatigueScale);
       // Fast rise, slow decay (like real membrane potential)
-      const lerpRate = target > n.activation ? 0.12 : 0.05;
+      const lerpRate = target > n.activation ? 0.18 : 0.06;
       n.activation += (target - n.activation) * lerpRate;
       // Biological noise jitter — only when region is firing
       const jitter = (Math.sin(n.phase) * 0.5 + 0.5) * regionAct * 0.04;
