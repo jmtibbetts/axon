@@ -106,7 +106,7 @@ function NeuronParticles({ ns, refs }: { ns: NeuralState; refs: SceneRefs }) {
   useEffect(() => { if (ns.neuromod)        neuromodRef.current   = ns.neuromod as Record<string,number>; }, [ns.neuromod]);
   useEffect(() => { if (ns.explore_eps != null) exploreEpsRef.current = ns.explore_eps; },  [ns.explore_eps]);
   useEffect(() => { if (ns.prediction_surprise != null) surpriseLevelRef.current = ns.prediction_surprise; }, [ns.prediction_surprise]);
-  useEffect(() => { if (ns.conflict?.score != null)     conflictScoreRef.current = ns.conflict!.score!; },    [ns.conflict]);
+  useEffect(() => { if (ns.conflict)  conflictScoreRef.current = ns.conflict.score ?? (ns.conflict as any).dominance_mean ?? 0; }, [ns.conflict]);
 
   const thinking = useAxonStore((s) => s.thinking);
   useEffect(() => { thinkingRef.current = thinking; }, [thinking]);
@@ -297,7 +297,7 @@ function RegionOrbs({ ns, refs }: { ns: NeuralState; refs: SceneRefs }) {
 
       const mat = mesh.material as THREE.MeshStandardMaterial;
       // Emissive: activation + spike + conflict shimmer
-      const conflictScore = ns.conflict?.score ?? 0;
+      const conflictScore = ns.conflict?.score ?? (ns.conflict as any)?.dominance_mean ?? 0;
       const shimmer = conflictScore > 0.5
         ? Math.abs(Math.sin(t.current * 12 + i * 0.7)) * conflictScore * 0.5
         : 0;
@@ -359,7 +359,7 @@ function DynamicLights({ ns }: { ns: NeuralState }) {
     t.current += delta;
     rewardFlashRef.current *= Math.max(0, 1 - delta * 2);
 
-    const emotion  = ns.emotion?.current?.toLowerCase() ?? 'neutral';
+    const emotion  = (ns.emotion?.current ?? (ns.emotion as any)?.emotion ?? 'neutral').toLowerCase();
     const emoCol   = EMOTION_COLORS[emotion] ?? '#475569';
     const nm       = ns.neuromod as Record<string,number> ?? {};
     const dopamine = nm['dopamine']  ?? 0.3;

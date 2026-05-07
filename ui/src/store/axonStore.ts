@@ -102,6 +102,24 @@ interface AxonStore {
   set: (partial: Partial<AxonStore> | ((state: AxonStore) => Partial<AxonStore>)) => void;
 }
 
+// ── Normalization helpers ──────────────────────────────────────────────────
+/** Get normalized emotion object — handles both {current:} and {emotion:} from backend */
+export function normalizeEmotion(e: any): { current?: string; valence?: number; arousal?: number; intensity?: number } {
+  if (!e) return {};
+  return {
+    current:   e.current ?? e.emotion,
+    valence:   e.valence,
+    arousal:   e.arousal,
+    intensity: e.intensity,
+  };
+}
+
+/** Get conflict score regardless of which key backend used */
+export function conflictScore(c: any): number {
+  if (!c) return 0;
+  return c.score ?? c.dominance_mean ?? 0;
+}
+
 export const useAxonStore = create<AxonStore>((set) => ({
   connected: false,
   engineRunning: false,

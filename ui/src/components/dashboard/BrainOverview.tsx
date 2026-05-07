@@ -100,7 +100,7 @@ export default function BrainOverview() {
 
       {/* Emotion + NM row */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
-        <EmotionOrb emotion={emo.current ?? 'neutral'} valence={emo.valence ?? 0} arousal={emo.arousal ?? 0} />
+        <EmotionOrb emotion={(emo.current ?? (emo as any)?.emotion) ?? 'neutral'} valence={emo.valence ?? 0} arousal={emo.arousal ?? 0} />
 
         {/* NM bars */}
         <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px' }}>

@@ -68,24 +68,29 @@ export function useAxonSocket() {
     });
 
     socket.on('brain_state', (d) => {
+      // Apply same normalization as neural_state
+      const normalized = { ...d };
+      if (normalized.emotion && normalized.emotion.emotion !== undefined && normalized.emotion.current === undefined) {
+        normalized.emotion = { ...normalized.emotion, current: normalized.emotion.emotion };
+      }
+      if (normalized.conflict && normalized.conflict.score === undefined) {
+        normalized.conflict = { ...normalized.conflict, score: normalized.conflict.dominance_mean ?? 0, winner_set: normalized.conflict.top_dominant ?? [] };
+      }
       set((state) => {
-        const reward = d.temporal_reward?.mean ?? 0;
-        const surprise = d.prediction_surprise ?? 0;
+        const reward = normalized.temporal_reward?.mean ?? 0;
+        const surprise = normalized.prediction_surprise ?? 0;
         const rh = [...state.rewardHistory.slice(-99), reward];
         const sh = [...state.surpriseHistory.slice(-99), surprise];
-
         const rHistory = { ...state.regionHistory };
-        Object.entries(d.regions ?? {}).forEach(([k, v]) => {
+        Object.entries(normalized.regions ?? {}).forEach(([k, v]) => {
           rHistory[k] = [...(rHistory[k] ?? []).slice(-49), v as number];
         });
-
         const nmHistory = { ...state.nmHistory };
-        Object.entries(d.neuromod ?? {}).forEach(([k, v]) => {
+        Object.entries(normalized.neuromod ?? {}).forEach(([k, v]) => {
           nmHistory[k] = [...(nmHistory[k] ?? []).slice(-49), v as number];
         });
-
         return {
-          neuralState: d,
+          neuralState: normalized,
           lastTick: Date.now(),
           engineRunning: true,
           rewardHistory: rh,
@@ -97,19 +102,47 @@ export function useAxonSocket() {
     });
 
     socket.on('neural_state', (d) => {
+      // Normalize field name mismatches between Python backend and frontend store
+      const normalized = { ...d };
+      // emotion: backend sends {emotion: "calm"}, frontend expects {current: "calm"}
+      if (normalized.emotion && normalized.emotion.emotion !== undefined && normalized.emotion.current === undefined) {
+        normalized.emotion = { ...normalized.emotion, current: normalized.emotion.emotion };
+      }
+      // conflict: backend sends {dominance_mean: 0.5}, frontend expects {score: 0.5}
+      if (normalized.conflict && normalized.conflict.score === undefined) {
+        normalized.conflict = {
+          ...normalized.conflict,
+          score: normalized.conflict.dominance_mean ?? 0,
+          dominant: (normalized.conflict.top_dominant ?? [])[0] ?? '',
+          winner_set: normalized.conflict.top_dominant ?? [],
+        };
+      }
+      // top_routes: if empty, synthesize from top active regions
+      if ((!normalized.top_routes || normalized.top_routes.length === 0) && normalized.top_clusters && normalized.top_clusters.length >= 2) {
+        const top = (normalized.top_clusters as any[]).slice(0, 4);
+        normalized.top_routes = top.slice(0, 3).map((src: any, i: number) => {
+          const dst = top[(i + 1) % top.length];
+          return {
+            src: src.name, dst: dst.name,
+            src_region: src.region, dst_region: dst.region,
+            weight: (src.activation + dst.activation) / 2,
+          };
+        });
+      }
+
       set((state) => {
         const rHistory = { ...state.regionHistory };
-        Object.entries(d.regions ?? {}).forEach(([k, v]) => {
+        Object.entries(normalized.regions ?? {}).forEach(([k, v]) => {
           rHistory[k] = [...(rHistory[k] ?? []).slice(-49), v as number];
         });
         const nmHistory = { ...state.nmHistory };
-        Object.entries(d.neuromod ?? {}).forEach(([k, v]) => {
+        Object.entries(normalized.neuromod ?? {}).forEach(([k, v]) => {
           nmHistory[k] = [...(nmHistory[k] ?? []).slice(-49), v as number];
         });
-        const reward   = d.temporal_reward?.mean ?? 0;
-        const surprise = d.prediction_surprise ?? 0;
+        const reward   = normalized.temporal_reward?.mean ?? 0;
+        const surprise = normalized.prediction_surprise ?? 0;
         return {
-          neuralState: { ...state.neuralState, ...d },
+          neuralState: { ...state.neuralState, ...normalized },
           lastTick: Date.now(),
           engineRunning: true,
           regionHistory: rHistory,

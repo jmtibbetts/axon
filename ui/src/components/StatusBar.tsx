@@ -39,19 +39,23 @@ export default function StatusBar() {
       <span>neurons: <span style={{ color: '#22d3ee' }}>{ns.total_neurons?.toLocaleString() ?? '—'}</span></span>
 
       {/* Emotion */}
-      {ns.emotion?.current && (
-        <>
-          <Sep />
-          <span>
-            {getEmoji(ns.emotion.current)}{' '}
-            <span style={{ color: '#e2e8f0' }}>{ns.emotion.current}</span>
-            {' '}
-            <span style={{ color: '#94a3b8', fontSize: 8 }}>
-              v:{(ns.emotion.valence ?? 0).toFixed(2)}
+      {(() => {
+        const emoStr = ns.emotion?.current ?? (ns.emotion as any)?.emotion;
+        if (!emoStr) return null;
+        return (
+          <>
+            <Sep />
+            <span>
+              {getEmoji(emoStr)}{' '}
+              <span style={{ color: '#e2e8f0' }}>{emoStr}</span>
+              {' '}
+              <span style={{ color: '#94a3b8', fontSize: 8 }}>
+                v:{(ns.emotion?.valence ?? 0).toFixed(2)}
+              </span>
             </span>
-          </span>
-        </>
-      )}
+          </>
+        );
+      })()}
 
       {/* Thinking */}
       {thinking && (

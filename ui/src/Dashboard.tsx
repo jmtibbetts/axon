@@ -85,11 +85,11 @@ function TopBar() {
       </span>
 
       {/* Emotion */}
-      {emo.current && (
+      {(emo.current ?? (emo as any)?.emotion) && (
         <>
           <div style={{ width: 1, height: 24, background: '#1e1b4e' }} />
           <span style={{ fontSize: 9, color: '#94a3b8' }}>
-            {emotionEmoji[emo.current?.toLowerCase()] ?? '🧠'} {emo.current}
+            {emotionEmoji[(emo.current ?? (emo as any)?.emotion)?.toLowerCase()] ?? '🧠'} {(emo.current ?? (emo as any)?.emotion)}
             <span style={{ color: '#374151' }}> v:{(emo.valence ?? 0).toFixed(2)} a:{(emo.arousal ?? 0).toFixed(2)}</span>
           </span>
         </>
@@ -267,7 +267,7 @@ function LiveBrainOverlay() {
           border: '1px solid #1e1b4e', borderRadius: 5, fontSize: 8, fontFamily: 'monospace',
           color: (emo.valence ?? 0) > 0 ? '#4ade80' : '#f43f5e',
         }}>
-          {emo.current ?? 'neutral'} v:{(emo.valence ?? 0).toFixed(2)}
+          {(emo.current ?? (emo as any)?.emotion) ?? 'neutral'} v:{(emo.valence ?? 0).toFixed(2)}
         </div>
       </div>
 

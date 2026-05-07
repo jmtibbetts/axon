@@ -112,11 +112,11 @@ export default function NeuralPanel() {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: 18, flexShrink: 0,
           }}>
-            {getEmoji(emo.current ?? 'neutral')}
+            {getEmoji((emo.current ?? (emo as any)?.emotion) ?? 'neutral')}
           </div>
           <div>
             <div style={{ fontWeight: 700, fontSize: 13, color: emotionColor(emo.valence ?? 0), letterSpacing: '0.04em' }}>
-              {emo.current ?? 'neutral'}
+              {(emo.current ?? (emo as any)?.emotion) ?? 'neutral'}
             </div>
             <div style={{ fontSize: 8, color: '#64748b', fontFamily: 'monospace' }}>
               v:{(emo.valence ?? 0).toFixed(2)} a:{(emo.arousal ?? 0).toFixed(2)} i:{(emo.intensity ?? 0).toFixed(2)}
