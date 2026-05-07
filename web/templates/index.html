@@ -3751,11 +3751,26 @@ socket.on('connect', () => {
   }
 });
 
-socket.on('disconnect', () => {
-  sysLog('Socket disconnected — reconnecting...');
-  // Allow startup sequence to re-run if we reconnect before engine came online
+socket.on('disconnect', (reason) => {
+  sysLog('⚠️ Socket disconnected: ' + reason + ' — reconnecting...');
+  document.getElementById('pill-engine').className = 'status-pill';
+  document.getElementById('pill-engine').textContent = 'RECONNECTING';
+  // Allow startup sequence to re-run if engine wasn't confirmed online
   if (!window._axonEngineOnline) {
     window._axonStarted = false;
+  }
+});
+
+socket.on('reconnect', () => {
+  sysLog('🔄 Reconnected — re-syncing state...');
+  // Re-request engine status so UI knows what's running
+  if (window._axonEngineOnline) {
+    // Engine was running — just update the pill, don't restart
+    document.getElementById('pill-engine').className = 'status-pill on';
+    document.getElementById('pill-engine').textContent = 'ONLINE';
+  } else if (!window._axonStarted) {
+    // Engine never started — try again
+    setTimeout(() => startAxon(), 1000);
   }
 });
 
@@ -4242,6 +4257,18 @@ setInterval(() => {
   const tab = document.querySelector('.info-tab.active');
   if (tab && tab.dataset.tab === 'memory') refreshMemoryPanel();
 }, 10000);
+
+// Refresh other data-heavy tabs every 15s if visible
+setInterval(() => {
+  const tab = document.querySelector('.info-tab.active');
+  if (!tab) return;
+  const name = tab.dataset.tab;
+  if (name === 'personality' && typeof buildPersonalitySliders === 'function') buildPersonalitySliders();
+  if (name === 'timeline'    && typeof renderTimeline === 'function') renderTimeline();
+  if (name === 'people'      && typeof renderPeopleList === 'function') renderPeopleList();
+  if (name === 'knowme'      && typeof renderProfile === 'function') renderProfile();
+  if (name === 'llm'         && typeof loadProviderStatus === 'function') loadProviderStatus();
+}, 15000);
 
 // ── Hook into existing events to populate activity feed ────────────────────
 // Intercept socket events for feed logging

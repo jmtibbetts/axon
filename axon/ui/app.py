@@ -23,7 +23,7 @@ _brain: AxonBrain = None
 app      = Flask(__name__,
                   template_folder="../../web/templates")
 CORS(app)
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet", logger=False, engineio_logger=False, ping_timeout=60, ping_interval=25)
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet", logger=False, engineio_logger=False, ping_timeout=120, ping_interval=30, max_http_buffer_size=10_000_000)
 
 # Thread-safe emit bridge.
 # socketio.emit() on the SocketIO INSTANCE (not flask_socketio.emit()) is
@@ -244,14 +244,15 @@ def on_disconnect():
 @socketio.on("chat")
 def on_chat(data):
     if _engine:
-        _engine.chat(data.get("text", ""))
+        # Spawn into greenlet so we never block the eventlet hub during LLM inference
+        eventlet.spawn(_engine.chat, data.get("text", ""))
     else:
         emit("log", {"msg": "Engine not started — hit ACTIVATE first."})
 
 @socketio.on("user_text")
 def on_user_text(data):
     if _engine:
-        _engine.chat(data.get("text", ""))
+        eventlet.spawn(_engine.chat, data.get("text", ""))
 
 @socketio.on("reprobe_lm")
 def on_reprobe():
