@@ -2800,7 +2800,7 @@ function drawNeural() {
 
     // ── Thought bubble — fire when cluster decisively wins (dom > 0.65) ──
     if (isW && dom > 0.65 && axonFrame % 90 === Math.floor(Math.random()*4)) {
-      spawnThoughtBubble(cx, cy - props.spread * H * 0.75 - 18, key, dom);
+      // spawnThoughtBubble disabled
     }
 
     // Center dot — larger for winners
@@ -2845,7 +2845,7 @@ function drawNeural() {
   }
 
   // ── Thought bubbles overlay ────────────────────────────────────────────
-  drawThoughtBubbles(nCtx);
+  // drawThoughtBubbles disabled
   // ── Pruned connection fades ────────────────────────────────────────────
   drawPrunedConnections(nCtx, W, H);
 
