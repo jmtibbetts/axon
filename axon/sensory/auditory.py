@@ -18,10 +18,10 @@ from typing import Callable
 
 SAMPLE_RATE   = 16000
 CHUNK         = 1024
-SILENCE_DB    = -28        # raised from -35: ignore quieter background noise
-MIN_DURATION  = 1.0        # must speak for ≥1s before transcribing (was 0.5)
+SILENCE_DB    = -40        # lowered: catches normal speech at mic distance
+MIN_DURATION  = 0.5        # min speech length before transcribing
 MAX_DURATION  = 20.0
-SILENCE_AFTER = 1.5        # silence gap to end utterance (was 0.8)
+SILENCE_AFTER = 1.2        # silence gap to end utterance
 LOCKOUT_PAD   = 0.6        # extra seconds to stay locked after voice stops
 
 # Whisper sometimes hallucinates these on near-silence or room noise

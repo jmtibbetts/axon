@@ -300,6 +300,7 @@ canvas.spark{display:block;}
   <div style="margin-left:auto;display:flex;gap:6px;align-items:center;">
     <div class="status-pill off" id="pill-engine">OFFLINE</div>
     <div class="status-pill off" id="pill-cam">CAM</div>
+    <div class="status-pill off" id="pill-mic">MIC</div>
     <span id="llm-status" style="font-size:8px;color:#4ade80;padding:0 6px;letter-spacing:.03em;"></span>
     <a href="/" style="font-size:0.72rem;color:#475569;text-decoration:none;padding:3px 8px;border:1px solid #334155;border-radius:4px;">← Main</a>
   </div>
@@ -325,6 +326,16 @@ canvas.spark{display:block;}
 
     <!-- TAB: Brain State -->
     <div id="tab-brain" class="tab-pane active" style="overflow-y:auto;flex:1;padding:6px 8px;">
+      <!-- Mic volume meter -->
+      <div style="margin-bottom:8px;">
+        <div style="font-size:8px;color:#64748b;letter-spacing:.06em;text-transform:uppercase;margin-bottom:3px;">🎤 Mic Level</div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <div style="flex:1;height:6px;background:#0f172a;border-radius:3px;overflow:hidden;border:1px solid #1e293b;">
+            <div id="mic-vol-bar" style="width:0%;height:100%;background:#22c55e;transition:width .15s,background .2s;border-radius:3px;"></div>
+          </div>
+          <span id="mic-vol-label" style="font-size:8px;color:#64748b;width:52px;text-align:right;font-variant-numeric:tabular-nums;">– dB</span>
+        </div>
+      </div>
 
       <!-- Emotion -->
       <div class="neuro-section">
@@ -3551,31 +3562,77 @@ socket.on('face', d => {
 });
 
 socket.on('transcript', d => {
-  sysLog('? ' + d.text);
+  // Chat UI
+  sysLog('🎤 ' + d.text);
   addMsg(d.text, 'user');
+  // Canvas / neural effects
+  addFeedEvent('🎤', 'Voice input received', `"${(d.text||'').slice(0,50)}${d.text&&d.text.length>50?'…':''}"`, '#00ff88');
+  scheduleSpikeWave('auditory', 0.80);
+  scheduleSpikeWave('language', 0.60);
+  scheduleSpikeWave('thalamus', 0.55);
+  addSynapseEvent('auditory', 'language', 0.65, 'strengthen');
+  addPulse('auditory', 'language', 0.70);
+  addPulse('thalamus', 'prefrontal', 0.50);
+  addLearningBurst('auditory', 'surprise', 0.6);
+});
+
+socket.on('mic_volume', d => {
+  const el = document.getElementById('mic-vol-bar');
+  const vl = document.getElementById('mic-vol-label');
+  if (!el || !vl) return;
+  // dBFS range: -60 (silent) to 0 (clipping). Map to 0-100% width.
+  const pct = Math.max(0, Math.min(100, ((d.db + 60) / 60) * 100));
+  el.style.width = pct + '%';
+  // Color: green below -20, yellow -20 to -10, red above -10
+  el.style.background = d.db > -10 ? '#ef4444' : d.db > -20 ? '#facc15' : '#22c55e';
+  vl.textContent = d.db.toFixed(1) + ' dB';
+  // Light up the pill if above speech threshold
+  setPill('pill-mic', d.db > -40);
 });
 
 socket.on('onboarding_state', state => {
   obInit(state);  // obInit checks completed internally
 });
 socket.on('thinking', d => {
+  // Chat UI
   if (d.state) {
     thinkingEl = addMsg('thinking...', 'axon', true);
   } else if (thinkingEl) {
     thinkingEl.remove();
     thinkingEl = null;
   }
+  // Canvas / neural effects
+  if (d.state) {
+    addFeedEvent('⚙️', 'Processing input…', 'Neural fabric integrating stimulus', '#64748b');
+    scheduleSpikeWave('prefrontal', 0.70);
+    scheduleSpikeWave('thalamus', 0.60);
+    scheduleSpikeWave('association', 0.50);
+    addPulse('thalamus', 'prefrontal', 0.65);
+    addPulse('prefrontal', 'association', 0.55);
+    addLearningBurst('prefrontal', 'surprise', 0.5);
+  } else {
+    scheduleSpikeWave('metacognition', 0.45);
+  }
 });
 
 socket.on('response', d => {
+  // Chat UI
   if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; }
   if (d && d.text) {
     addMsg(d.text, 'axon');
-    sysLog('? response received (' + d.text.length + ' chars)');
+    sysLog('✓ response received (' + d.text.length + ' chars)');
     addTimelineEvent('decision', '🧠 Response', d.text.substring(0,80)+'…');
   } else {
-    sysLog('? response event received but no text', true);
+    sysLog('⚠ response event received but no text', true);
   }
+  // Canvas / neural effects
+  addFeedEvent('💬', 'Response generated', 'Language + prefrontal cortex output', '#00d4ff');
+  scheduleSpikeWave('language', 0.75);
+  scheduleSpikeWave('prefrontal', 0.55);
+  addSynapseEvent('prefrontal', 'language', 0.6, 'strengthen');
+  addPulse('prefrontal', 'language', 0.65);
+  addPulse('language', 'social', 0.45);
+  addLearningBurst('language', 'weight_update', 0.55);
 });
 
 // Observe-mode inner monologue
@@ -3879,42 +3936,9 @@ socket.on('region_spike', data => {
 });
 
 // Intercept existing socket events and drive canvas
-socket.on('thinking', d => {
-  if (d.state) {
-    addFeedEvent('⚙️', 'Processing input…', 'Neural fabric integrating stimulus', '#64748b');
-    // Thinking = prefrontal + thalamus + association light up
-    scheduleSpikeWave('prefrontal', 0.70);
-    scheduleSpikeWave('thalamus', 0.60);
-    scheduleSpikeWave('association', 0.50);
-    addPulse('thalamus', 'prefrontal', 0.65);
-    addPulse('prefrontal', 'association', 0.55);
-    addLearningBurst('prefrontal', 'surprise', 0.5);
-  } else {
-    // Done thinking — metacognition evaluates the output
-    scheduleSpikeWave('metacognition', 0.45);
-  }
-});
-socket.on('response', () => {
-  addFeedEvent('💬', 'Response generated', 'Language + prefrontal cortex output', '#00d4ff');
-  // Response generation = language → prefrontal → social
-  scheduleSpikeWave('language', 0.75);
-  scheduleSpikeWave('prefrontal', 0.55);
-  addSynapseEvent('prefrontal', 'language', 0.6, 'strengthen');
-  addPulse('prefrontal', 'language', 0.65);
-  addPulse('language', 'social', 0.45);
-  addLearningBurst('language', 'weight_update', 0.55);
-});
-socket.on('transcript', d => {
-  addFeedEvent('🎤', 'Voice input received', `"${(d.text||'').slice(0,50)}${d.text&&d.text.length>50?'…':''}"`, '#00ff88');
-  // Hearing voice = auditory → language → thalamus gates attention
-  scheduleSpikeWave('auditory', 0.80);
-  scheduleSpikeWave('language', 0.60);
-  scheduleSpikeWave('thalamus', 0.55);
-  addSynapseEvent('auditory', 'language', 0.65, 'strengthen');
-  addPulse('auditory', 'language', 0.70);
-  addPulse('thalamus', 'prefrontal', 0.50);
-  addLearningBurst('auditory', 'surprise', 0.6);
-});
+
+
+
 
 
 socket.on('synapse_count', data => {

@@ -171,7 +171,12 @@ class AxonEngine:
             on_frame=self._on_frame,
             on_face=self._on_face,
         )
-        self.auditory = AuditorySystem(on_speech=lambda text, conf: self._on_transcript(text), on_volume=lambda v: None, device_index=None, on_audio_chunk=self.audio_emo.push_chunk)
+        self.auditory = AuditorySystem(
+            on_speech=lambda text, conf: self._on_transcript(text),
+            on_volume=self._on_mic_volume,
+            device_index=None,
+            on_audio_chunk=self.audio_emo.push_chunk,
+        )
 
         self._last_visual_ctx            = {}
         self._emotion_before_response    = "neutral"
@@ -207,8 +212,11 @@ class AxonEngine:
 
         if enable_mic:
             try:
-                if mic_index is not None:
-                    self.auditory.device_idx = mic_index
+                # Normalize mic_index: -1 or 0 from UI "default" → None (let sounddevice auto-pick)
+                if mic_index is not None and int(mic_index) >= 0:
+                    self.auditory.device_idx = int(mic_index)
+                else:
+                    self.auditory.device_idx = None
                 self.auditory.start()
                 self._emit("log", {"msg": "🎤 Auditory system online"})
             except Exception as e:
@@ -600,6 +608,16 @@ class AxonEngine:
         if hasattr(self, "explorer") and self.explorer:
             result["search_history"] = self.explorer.search_history()
         return result
+
+    # Throttle mic volume to ~5Hz to avoid flooding the socket
+    _last_vol_emit: float = 0.0
+
+    def _on_mic_volume(self, db: float):
+        import time as _tv
+        now = _tv.time()
+        if now - self._last_vol_emit >= 0.2:
+            self._last_vol_emit = now
+            self._emit("mic_volume", {"db": round(db, 1)})
 
     def _on_transcript(self, text: str):
         if not text.strip():
@@ -1153,7 +1171,7 @@ class AxonEngine:
     # ── Neural fabric state → UI ──────────────────────────────
 
     def _on_fabric_state(self, state: dict):
-        # Idle hobby detection: check if system is self-activating a preference
+        # Idle hobby detection
         if hasattr(self, 'hobbies') and hasattr(self, 'fabric'):
             try:
                 act = self.fabric.activation
@@ -1164,22 +1182,27 @@ class AxonEngine:
                     self.fabric.neuromod.curiosity(0.12)
             except Exception:
                 pass
-        # Inject reward/surprise into the neural_state so frontend bars update
-        state["last_reward"]  = getattr(self, "_last_reward", 0.0)
-        state["last_surprise"] = getattr(self.fabric, "_last_surprise", 0.0)
-        self._emit("neural_state", state)
-        # Push synapse count to header (already throttled to 1Hz via fabric callback)
-        import time as _t2
-        if not hasattr(self, '_last_synapse_emit') or (_t2.time() - self._last_synapse_emit) >= 5.0:
-            self._last_synapse_emit = _t2.time()
-            self._emit("synapse_count", {
-                "connections": state.get("total_connections", 0),
-                "neurons":     state.get("total_neurons", 0),
-            })
-        # Bubble thoughts to UI
-        thoughts = state.get("thoughts", [])
-        if thoughts:
-            self._emit("thought", {"text": thoughts[-1]})
+
+        # Inject reward/surprise scalars — these are already Python floats
+        state["last_reward"]   = float(getattr(self, "_last_reward", 0.0))
+        state["last_surprise"] = float(getattr(self.fabric, "_last_surprise", 0.0))
+
+        # Fire neural_state in a separate thread so we never block the fabric tick
+        import threading as _thr, time as _t2
+        _state_copy = state  # state is a fresh dict each snapshot — safe to hand off
+        def _do_emit():
+            self._emit("neural_state", _state_copy)
+            # Synapse count (throttled to every 5s)
+            if not hasattr(self, '_last_synapse_emit') or (_t2.time() - self._last_synapse_emit) >= 5.0:
+                self._last_synapse_emit = _t2.time()
+                self._emit("synapse_count", {
+                    "connections": _state_copy.get("total_connections", 0),
+                    "neurons":     _state_copy.get("total_neurons", 0),
+                })
+            thoughts = _state_copy.get("thoughts", [])
+            if thoughts:
+                self._emit("thought", {"text": thoughts[-1]})
+        _thr.Thread(target=_do_emit, daemon=True).start()
 
     # ── Helpers ───────────────────────────────────────────────
 

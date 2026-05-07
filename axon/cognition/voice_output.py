@@ -86,7 +86,13 @@ class VoiceOutput:
         self.pitch    = DEFAULT_PITCH
         self._thread  = threading.Thread(target=self._worker, daemon=True)
         self._thread.start()
-        print(f"  [Voice] edge-tts={EDGE_TTS_OK}, playback={PLAYBACK}, enabled={self.enabled}")
+        if not self.enabled:
+            reasons = []
+            if not EDGE_TTS_OK: reasons.append("edge-tts missing (pip install edge-tts)")
+            if PLAYBACK is None: reasons.append("no audio playback (pygame/winsound unavailable)")
+            print(f"  [Voice] DISABLED — {'; '.join(reasons)}")
+        else:
+            print(f"  [Voice] READY — edge-tts={EDGE_TTS_OK}, playback={PLAYBACK}, voice={self.voice}")
 
     @staticmethod
     def _norm_param(val: str, unit: str) -> str:
@@ -124,7 +130,7 @@ class VoiceOutput:
         }
 
     def speak(self, text: str, interrupt: bool = False):
-        """Queue text and BLOCK until it has finished playing."""
+        """Queue text and BLOCK until it has finished playing (max 45s timeout)."""
         if not self.enabled:
             return
         text = text.strip()
@@ -136,7 +142,9 @@ class VoiceOutput:
                 except: break
         done_event = threading.Event()
         self._queue.put((text, done_event))
-        done_event.wait()   # ← caller blocks here until audio finishes
+        # Timeout prevents a hung edge-tts call from stalling the thread forever
+        max_wait = max(15.0, len(text) * 0.08)   # ~80ms per char, min 15s
+        done_event.wait(timeout=max_wait)
 
     def _worker(self):
         loop = asyncio.new_event_loop()
